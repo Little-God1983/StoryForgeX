@@ -197,6 +197,59 @@ public sealed class SettingsPageTests
     }
 
     [Fact]
+    public async Task Flushing_does_not_wait_for_the_provider_checks()
+    {
+        // Closing must not hang on `claude --version` and HTTP timeouts.
+        var page = await LoadedPage(saveDelay: TimeSpan.FromSeconds(30));
+        _client.StatusGate = new TaskCompletionSource().Task;   // checks that never finish
+        page.ProjectsFolder = @"D:\StoryForge";
+
+        var flush = page.FlushAsync();
+        var finished = await Task.WhenAny(flush, Task.Delay(TimeSpan.FromSeconds(5)));
+
+        Assert.Same(flush, finished);
+        Assert.Equal(@"D:\StoryForge", _client.Settings.Paths.ProjectsFolder);
+    }
+
+    [Fact]
+    public async Task There_is_a_pending_save_only_between_an_edit_and_its_write()
+    {
+        var main = new MainViewModel(_client, _board, TimeSpan.FromSeconds(30));
+        await main.LoadAsync();
+        var settings = (SettingsPageViewModel)main.NavItems.Single(item => item.Title == "Settings").Page;
+        Assert.False(main.HasPendingSave);
+
+        settings.Ffmpeg.Executable = "ffmpeg7";
+        Assert.True(main.HasPendingSave);
+
+        await main.FlushAsync();
+        Assert.False(main.HasPendingSave);
+    }
+
+    [Fact]
+    public async Task A_failing_check_after_a_save_does_not_fault_the_save()
+    {
+        var page = await LoadedPage();
+        _client.StatusFailure = new InvalidOperationException("settings unreadable");
+
+        page.ComfyUi.Host = "gpu-box";
+        await page.PendingSave;
+
+        Assert.Equal("gpu-box", _client.Settings.ComfyUi.Host);
+    }
+
+    [Fact]
+    public async Task Clearing_the_section_selection_keeps_the_breadcrumb()
+    {
+        // Ctrl+click on the selected section pushes null through the binding.
+        var page = await LoadedPage();
+
+        page.SelectedSection = null!;
+
+        Assert.Equal("Settings / Providers", page.Breadcrumb);
+    }
+
+    [Fact]
     public async Task Flushing_with_nothing_pending_saves_nothing()
     {
         var page = await LoadedPage(saveDelay: TimeSpan.FromSeconds(30));

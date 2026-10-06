@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using CommunityToolkit.Mvvm.ComponentModel;
 using StoryForge.App.ViewModels.Settings;
 using StoryForge.Client;
@@ -93,9 +94,13 @@ public sealed partial class SettingsPageViewModel : PageViewModel
     public async Task FlushAsync()
     {
         _pendingDelay?.Cancel();
-        await SaveNowAsync();
+        // No provider re-check here: closing must not wait for CLIs and HTTP timeouts.
+        await SaveNowAsync(recheckProviders: false);
         await PendingSave;
     }
+
+    /// <summary>An edit has been made that is not written yet.</summary>
+    public bool HasPendingSave => _savePending;
 
     public async Task LoadAsync()
     {
@@ -118,7 +123,14 @@ public sealed partial class SettingsPageViewModel : PageViewModel
         }
     }
 
-    partial void OnSelectedSectionChanged(SettingsSection value) => Breadcrumb = $"Settings / {value.Title}";
+    partial void OnSelectedSectionChanged(SettingsSection value)
+    {
+        // Null comes from Ctrl+click on the selected section; the view puts the selection back.
+        if (value is not null)
+        {
+            Breadcrumb = $"Settings / {value.Title}";
+        }
+    }
 
     partial void OnProjectsFolderChanged(string value) => ScheduleSave();
 
@@ -162,7 +174,7 @@ public sealed partial class SettingsPageViewModel : PageViewModel
     /// Writes the current fields, one save at a time. A card with an invalid field keeps its last
     /// saved values (its field shows the error); every other card's edits are written.
     /// </summary>
-    private async Task SaveNowAsync()
+    private async Task SaveNowAsync(bool recheckProviders = true)
     {
         await _saveLock.WaitAsync();
         try
@@ -200,6 +212,18 @@ public sealed partial class SettingsPageViewModel : PageViewModel
         {
             _saveLock.Release();
         }
-        await _board.RefreshAsync();
+
+        if (recheckProviders)
+        {
+            try
+            {
+                await _board.RefreshAsync();
+            }
+            catch (Exception ex)
+            {
+                // The save itself worked; the cards keep their last status until the next check.
+                Debug.WriteLine($"Provider check after save failed: {ex}");
+            }
+        }
     }
 }

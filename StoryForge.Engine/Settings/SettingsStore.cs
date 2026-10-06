@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
 using Microsoft.EntityFrameworkCore;
 using StoryForge.Client;
@@ -78,8 +79,34 @@ internal sealed class SettingsStore(IDbContextFactory<StoryForgeDbContext> conte
         }
     }
 
-    private static T Read<T>(IReadOnlyDictionary<string, string> saved, string key, T fallback) =>
-        saved.TryGetValue(key, out var json) ? JsonSerializer.Deserialize<T>(json, Json) ?? fallback : fallback;
+    /// <summary>
+    /// The saved group laid over its defaults field by field, so a field added in a later version
+    /// gets its default rather than null. A row that can't be read at all (corrupt, or an enum
+    /// value renamed since) falls back to the group's defaults instead of breaking startup.
+    /// </summary>
+    private static T Read<T>(IReadOnlyDictionary<string, string> saved, string key, T fallback)
+    {
+        if (!saved.TryGetValue(key, out var json))
+        {
+            return fallback;
+        }
+        try
+        {
+            var merged = JsonSerializer.SerializeToNode(fallback, Json)!.AsObject();
+            if (JsonNode.Parse(json) is JsonObject stored)
+            {
+                foreach (var (name, value) in stored)
+                {
+                    merged[name] = value?.DeepClone();
+                }
+            }
+            return merged.Deserialize<T>(Json) ?? fallback;
+        }
+        catch (Exception ex) when (ex is JsonException or InvalidOperationException or NotSupportedException)
+        {
+            return fallback;
+        }
+    }
 
     private static void Upsert<T>(StoryForgeDbContext db, string key, T value)
     {

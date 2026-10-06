@@ -93,6 +93,45 @@ public sealed class SettingsTests : IDisposable
     }
 
     [Fact]
+    public async Task An_unreadable_settings_row_falls_back_to_its_defaults_and_the_rest_still_loads()
+    {
+        var client = await _engine.StartClientAsync();
+        await client.SaveSettingsAsync(Changed());
+        await WriteRowAsync("providers.ffmpeg", """{"Executable":"ffmpeg","TimelineExport":"RenamedInAFutureVersion"}""");
+
+        var loaded = await client.GetSettingsAsync();
+
+        Assert.Equal(EngineSettings.Defaults.Ffmpeg, loaded.Ffmpeg);
+        Assert.Equal(Changed().ComfyUi, loaded.ComfyUi);
+    }
+
+    [Fact]
+    public async Task A_field_missing_from_an_older_saved_row_gets_its_default()
+    {
+        var client = await _engine.StartClientAsync();
+        await client.SaveSettingsAsync(Changed());
+        await WriteRowAsync("providers.claude-cli", """{"Executable":"claude.cmd","TimeoutSeconds":120,"MaxParallel":3}""");
+
+        var claude = (await client.GetSettingsAsync()).ClaudeCli;
+
+        Assert.Equal("claude.cmd", claude.Executable);
+        Assert.Equal(EngineSettings.Defaults.ClaudeCli.Arguments, claude.Arguments);
+        Assert.Equal(120, claude.TimeoutSeconds);
+    }
+
+    private async Task WriteRowAsync(string key, string json)
+    {
+        await using var connection = new Microsoft.Data.Sqlite.SqliteConnection(
+            $"Data Source={Path.Combine(_engine.DataDirectory, "storyforge.db")}");
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = "UPDATE Settings SET Json = $json WHERE Key = $key";
+        command.Parameters.AddWithValue("$json", json);
+        command.Parameters.AddWithValue("$key", key);
+        Assert.Equal(1, await command.ExecuteNonQueryAsync());
+    }
+
+    [Fact]
     public async Task A_secret_can_be_stored_and_removed()
     {
         var client = await _engine.StartClientAsync();

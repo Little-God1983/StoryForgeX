@@ -24,9 +24,16 @@ internal sealed class FakeStoryForgeClient : IStoryForgeClient
     /// <summary>When set, provider checks wait for it, like slow real checks.</summary>
     public Task? StatusGate { get; set; }
 
+    /// <summary>When set, provider checks throw it.</summary>
+    public Exception? StatusFailure { get; set; }
+
     public async Task<IReadOnlyList<ProviderStatus>> GetProviderStatusesAsync(CancellationToken cancellationToken = default)
     {
         StatusChecks++;
+        if (StatusFailure is not null)
+        {
+            throw StatusFailure;
+        }
         if (StatusGate is not null)
         {
             await StatusGate;

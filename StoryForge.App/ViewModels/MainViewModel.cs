@@ -74,6 +74,8 @@ public sealed partial class MainViewModel : ObservableObject
     /// <summary>Writes anything still waiting to be saved; called when the window closes.</summary>
     public Task FlushAsync() => _settings.FlushAsync();
 
+    public bool HasPendingSave => _settings.HasPendingSave;
+
     private void ShowPills()
     {
         ProviderPills.Clear();
