@@ -20,7 +20,13 @@ public partial class App : Application
         base.OnStartup(e);
         try
         {
-            var builder = Host.CreateApplicationBuilder(e.Args);
+            // Content root is the exe's folder, not the working directory: a shortcut or file
+            // association can start the app anywhere, and the host watches its content root.
+            var builder = Host.CreateApplicationBuilder(new HostApplicationBuilderSettings
+            {
+                Args = e.Args,
+                ContentRootPath = AppContext.BaseDirectory,
+            });
             builder.Services.AddStoryForgeEngine(options => options.DataDirectory = DataDirectory());
             builder.Services.AddSingleton<MainViewModel>();
             builder.Services.AddSingleton<MainWindow>();

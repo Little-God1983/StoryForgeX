@@ -480,3 +480,8 @@ $RECYCLE.BIN/
 
 # Vim temporary swap files
 *.swp
+
+# Local SQLite databases (e.g. the EF design-time database in StoryForge.Engine/)
+*.db
+*.db-shm
+*.db-wal

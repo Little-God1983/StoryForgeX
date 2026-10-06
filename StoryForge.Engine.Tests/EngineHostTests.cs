@@ -137,6 +137,17 @@ public sealed class EngineHostTests : IDisposable
     }
 
     [Fact]
+    public void Every_options_interface_sees_the_same_data_directory()
+    {
+        using var host = BuildHost();
+
+        Assert.Equal(_dataDirectory, host.Services.GetRequiredService<IOptions<StoryForgeEngineOptions>>().Value.DataDirectory);
+        Assert.Equal(_dataDirectory, host.Services.GetRequiredService<IOptionsMonitor<StoryForgeEngineOptions>>().CurrentValue.DataDirectory);
+        using var scope = host.Services.CreateScope();
+        Assert.Equal(_dataDirectory, scope.ServiceProvider.GetRequiredService<IOptionsSnapshot<StoryForgeEngineOptions>>().Value.DataDirectory);
+    }
+
+    [Fact]
     public async Task A_data_directory_with_connection_string_characters_works()
     {
         var folder = Path.Combine(_dataDirectory, "a;b=c");
