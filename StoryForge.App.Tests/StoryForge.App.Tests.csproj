@@ -18,7 +18,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\src\StoryForge.App\StoryForge.App.csproj" />
+    <ProjectReference Include="..\StoryForge.App\StoryForge.App.csproj" />
   </ItemGroup>
 
 </Project>
