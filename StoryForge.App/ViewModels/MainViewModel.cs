@@ -62,7 +62,8 @@ public sealed partial class MainViewModel : ObservableObject
 
     partial void OnSelectedNavItemChanged(NavItemViewModel? value)
     {
-        // The list clears its selection when its items are rebuilt; keep the screen in that case.
+        // Null comes from Ctrl+click on the selected item; the screen stays and the window puts
+        // the highlight back (MainWindow.Navigation_SelectionChanged).
         if (value is not null)
         {
             CurrentPage = value.Page;

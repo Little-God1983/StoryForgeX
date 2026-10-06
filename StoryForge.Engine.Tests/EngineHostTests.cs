@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Options;
 using StoryForge.Client;
 using StoryForge.Engine.Data;
 
@@ -116,6 +117,36 @@ public sealed class EngineHostTests : IDisposable
         var projects = await client.GetRecentProjectsAsync();
 
         Assert.Empty(projects);
+        await host.StopAsync();
+    }
+
+    [Fact]
+    public async Task A_configure_callback_that_names_a_new_folder_on_every_call_still_starts()
+    {
+        var calls = 0;
+        var builder = Host.CreateApplicationBuilder();
+        builder.Services.AddStoryForgeEngine(options =>
+            options.DataDirectory = Path.Combine(_dataDirectory, $"call{++calls}"));
+        using var host = builder.Build();
+
+        await host.StartAsync();
+
+        var options = host.Services.GetRequiredService<IOptions<StoryForgeEngineOptions>>().Value;
+        Assert.True(File.Exists(Path.Combine(options.DataDirectory, "storyforge.db")));
+        await host.StopAsync();
+    }
+
+    [Fact]
+    public async Task A_data_directory_with_connection_string_characters_works()
+    {
+        var folder = Path.Combine(_dataDirectory, "a;b=c");
+        var builder = Host.CreateApplicationBuilder();
+        builder.Services.AddStoryForgeEngine(options => options.DataDirectory = folder);
+        using var host = builder.Build();
+
+        await host.StartAsync();
+
+        Assert.True(File.Exists(Path.Combine(folder, "storyforge.db")));
         await host.StopAsync();
     }
 

@@ -68,6 +68,7 @@
       <Border Grid.Column="0" Background="{StaticResource NavBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,1,0" Padding="14,20">
         <StackPanel>
           <ListBox ItemsSource="{Binding NavItems}" SelectedItem="{Binding SelectedNavItem}"
+                   SelectionChanged="Navigation_SelectionChanged"
                    ItemContainerStyle="{StaticResource NavItemStyle}"
                    Background="Transparent" BorderThickness="0" Padding="0"
                    ScrollViewer.HorizontalScrollBarVisibility="Disabled"
