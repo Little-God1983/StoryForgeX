@@ -1,6 +1,7 @@
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 using StoryForge.Client;
 using StoryForge.Engine.Data;
 
@@ -24,12 +25,16 @@ public static class ServiceCollectionExtensions
                 nameof(configure));
         }
 
-        // The callback runs once; its result feeds both the connection string and the options
-        // pipeline (IOptions, IOptionsMonitor, IOptionsSnapshot), so the folder the initializer
-        // creates is always the folder the database opens in.
+        // The callback runs once; its result goes into the options pipeline, and both the
+        // initializer and the connection string read the folder from there. So the folder the
+        // initializer creates is always the folder the database opens in, whatever else
+        // configures the options later.
         services.AddOptions<StoryForgeEngineOptions>().Configure(o => o.DataDirectory = options.DataDirectory);
-        var connectionString = new SqliteConnectionStringBuilder { DataSource = options.DatabasePath }.ToString();
-        services.AddDbContextFactory<StoryForgeDbContext>(db => db.UseSqlite(connectionString));
+        services.AddDbContextFactory<StoryForgeDbContext>((provider, db) =>
+        {
+            var path = provider.GetRequiredService<IOptions<StoryForgeEngineOptions>>().Value.DatabasePath;
+            db.UseSqlite(new SqliteConnectionStringBuilder { DataSource = path }.ToString());
+        });
         services.AddHostedService<DatabaseInitializer>();
         services.AddSingleton<IStoryForgeClient, InProcessStoryForgeClient>();
         return services;

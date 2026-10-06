@@ -137,6 +137,21 @@ public sealed class EngineHostTests : IDisposable
     }
 
     [Fact]
+    public async Task Configuration_added_after_registration_moves_the_database_too()
+    {
+        var moved = Path.Combine(_dataDirectory, "moved");
+        var builder = Host.CreateApplicationBuilder();
+        builder.Services.AddStoryForgeEngine(options => options.DataDirectory = _dataDirectory);
+        builder.Services.PostConfigure<StoryForgeEngineOptions>(options => options.DataDirectory = moved);
+        using var host = builder.Build();
+
+        await host.StartAsync();
+
+        Assert.True(File.Exists(Path.Combine(moved, "storyforge.db")));
+        await host.StopAsync();
+    }
+
+    [Fact]
     public void Every_options_interface_sees_the_same_data_directory()
     {
         using var host = BuildHost();
