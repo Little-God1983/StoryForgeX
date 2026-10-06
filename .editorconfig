@@ -1,0 +1,93 @@
+# StoryForge X house style, taken over from the owner's other repos (RawCutX).
+# A rule set to `warning` here is one the code follows everywhere; preferences that are genuinely
+# mixed stay `silent`, so they never show up as build or review noise.
+
+root = true
+
+[*]
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+indent_size = 4
+
+[*.{csproj,props,targets,slnx,xaml}]
+indent_size = 2
+
+[*.md]
+trim_trailing_whitespace = false     # two trailing spaces is a markdown line break
+
+[*.cs]
+
+csharp_style_namespace_declarations = file_scoped:warning
+
+dotnet_sort_system_directives_first = true
+dotnet_separate_import_directive_groups = false
+
+csharp_new_line_before_open_brace = all
+csharp_new_line_before_else = true
+csharp_new_line_before_catch = true
+csharp_new_line_before_finally = true
+csharp_new_line_before_members_in_object_initializers = true
+csharp_new_line_before_members_in_anonymous_types = true
+csharp_new_line_between_query_expression_clauses = true
+
+dotnet_style_qualification_for_field = false:warning
+dotnet_style_qualification_for_property = false:warning
+dotnet_style_qualification_for_method = false:warning
+dotnet_style_qualification_for_event = false:warning
+
+csharp_indent_case_contents = true
+csharp_indent_switch_labels = true
+csharp_preserve_single_line_blocks = true
+
+# Unused usings and unused parameters.
+dotnet_diagnostic.IDE0005.severity = warning
+dotnet_code_quality_unused_parameters = non_public:warning
+dotnet_diagnostic.IDE0060.severity = warning
+
+# Mixed preferences: available in the IDE, never noise.
+dotnet_diagnostic.IDE0028.severity = silent
+dotnet_diagnostic.IDE0300.severity = silent
+dotnet_diagnostic.IDE0301.severity = silent
+dotnet_diagnostic.IDE0305.severity = silent
+dotnet_diagnostic.IDE0290.severity = silent
+dotnet_diagnostic.IDE0042.severity = silent
+dotnet_diagnostic.IDE0017.severity = silent
+dotnet_diagnostic.IDE0031.severity = silent
+dotnet_diagnostic.IDE0062.severity = silent
+dotnet_diagnostic.IDE0063.severity = silent
+dotnet_diagnostic.IDE0044.severity = silent
+
+# EF Core migrations are generated code.
+[**/Migrations/*.cs]
+generated_code = true
+
+[*.cs]
+
+# Naming: PascalCase constants and static readonly fields, _camelCase instance fields.
+dotnet_naming_rule.private_const_pascal.symbols  = private_const_fields
+dotnet_naming_rule.private_const_pascal.style    = pascal_case
+dotnet_naming_rule.private_const_pascal.severity = warning
+
+dotnet_naming_rule.private_static_readonly_pascal.symbols  = private_static_readonly_fields
+dotnet_naming_rule.private_static_readonly_pascal.style    = pascal_case
+dotnet_naming_rule.private_static_readonly_pascal.severity = warning
+
+dotnet_naming_rule.private_instance_underscore.symbols  = private_instance_fields
+dotnet_naming_rule.private_instance_underscore.style    = underscore_camel_case
+dotnet_naming_rule.private_instance_underscore.severity = warning
+
+dotnet_naming_symbols.private_const_fields.applicable_kinds           = field
+dotnet_naming_symbols.private_const_fields.applicable_accessibilities = private
+dotnet_naming_symbols.private_const_fields.required_modifiers         = const
+
+dotnet_naming_symbols.private_static_readonly_fields.applicable_kinds           = field
+dotnet_naming_symbols.private_static_readonly_fields.applicable_accessibilities = private
+dotnet_naming_symbols.private_static_readonly_fields.required_modifiers         = static,readonly
+
+dotnet_naming_symbols.private_instance_fields.applicable_kinds           = field
+dotnet_naming_symbols.private_instance_fields.applicable_accessibilities = private
+
+dotnet_naming_style.pascal_case.capitalization = pascal_case
+dotnet_naming_style.underscore_camel_case.required_prefix = _
+dotnet_naming_style.underscore_camel_case.capitalization  = camel_case
