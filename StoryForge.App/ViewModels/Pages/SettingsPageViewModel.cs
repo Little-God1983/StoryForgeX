@@ -20,7 +20,9 @@ public sealed partial class SettingsPageViewModel : PageViewModel
     private readonly TimeSpan _saveDelay;
     private readonly SemaphoreSlim _saveLock = new(1, 1);
     private CancellationTokenSource? _pendingDelay;
-    private bool _savePending;
+    private int _editVersion;
+    private int _savedVersion;
+    private bool _flushing;
     private bool _loading;
 
     public SettingsPageViewModel(IStoryForgeClient client, ProviderStatusBoard board, TimeSpan saveDelay)
@@ -93,14 +95,16 @@ public sealed partial class SettingsPageViewModel : PageViewModel
     /// </summary>
     public async Task FlushAsync()
     {
+        // No provider re-check from here on, not even for a save already under way: closing
+        // must not wait for CLIs and HTTP timeouts.
+        _flushing = true;
         _pendingDelay?.Cancel();
-        // No provider re-check here: closing must not wait for CLIs and HTTP timeouts.
-        await SaveNowAsync(recheckProviders: false);
+        await SaveNowAsync();
         await PendingSave;
     }
 
-    /// <summary>An edit has been made that is not written yet.</summary>
-    public bool HasPendingSave => _savePending;
+    /// <summary>An edit has been made that is not written yet (including one whose write failed).</summary>
+    public bool HasPendingSave => _editVersion != _savedVersion;
 
     public async Task LoadAsync()
     {
@@ -148,7 +152,7 @@ public sealed partial class SettingsPageViewModel : PageViewModel
         {
             return;
         }
-        _savePending = true;
+        _editVersion++;
         _pendingDelay?.Cancel();
         _pendingDelay = new CancellationTokenSource();
         PendingSave = SaveAfterDelayAsync(_pendingDelay.Token);
@@ -172,31 +176,33 @@ public sealed partial class SettingsPageViewModel : PageViewModel
 
     /// <summary>
     /// Writes the current fields, one save at a time. A card with an invalid field keeps its last
-    /// saved values (its field shows the error); every other card's edits are written.
+    /// saved values (its field shows the error); every other card's edits are written. Edits are
+    /// counted: a write marks the edits it saw as saved, so an edit made while it ran stays
+    /// pending, and a write that fails leaves everything pending for the next try.
     /// </summary>
-    private async Task SaveNowAsync(bool recheckProviders = true)
+    private async Task SaveNowAsync()
     {
         await _saveLock.WaitAsync();
         try
         {
-            if (!_savePending)
+            var version = _editVersion;
+            if (version == _savedVersion)
             {
                 return;
             }
-            _savePending = false;
 
             var saved = await _client.GetSettingsAsync();
             var settings = Cards.Where(card => !card.HasErrors)
                 .Aggregate(saved, (current, card) => card.ApplyTo(current))
                 with { Paths = new PathSettings(ProjectsFolder.Trim()) };
-            if (settings == saved)
+            if (settings != saved)
             {
-                return;   // Only invalid fields changed: nothing valid to write.
+                await _client.SaveSettingsAsync(settings);
+                EffectiveProjectsFolder = await _client.GetEffectiveProjectsFolderAsync();
             }
-
-            await _client.SaveSettingsAsync(settings);
+            // Equal: only invalid fields changed, nothing valid to write; that counts as done.
+            _savedVersion = version;
             SaveError = null;
-            EffectiveProjectsFolder = await _client.GetEffectiveProjectsFolderAsync();
         }
         catch (ArgumentException ex)
         {
@@ -213,7 +219,7 @@ public sealed partial class SettingsPageViewModel : PageViewModel
             _saveLock.Release();
         }
 
-        if (recheckProviders)
+        if (!_flushing)
         {
             try
             {

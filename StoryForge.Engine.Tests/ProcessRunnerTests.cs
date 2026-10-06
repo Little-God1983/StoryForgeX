@@ -75,6 +75,29 @@ public sealed class ProcessRunnerTests : IDisposable
     }
 
     [Fact]
+    public async Task A_child_that_keeps_the_output_open_after_the_process_exits_still_times_out()
+    {
+        // The .cmd exits at once, but the background ping inherits its stdout and holds it open.
+        var cmd = WriteCmd("leaky", "start /b ping -n 30 127.0.0.1\r\necho started");
+        var started = DateTime.UtcNow;
+
+        await Assert.ThrowsAsync<TimeoutException>(
+            () => _runner.RunAsync(cmd, "", TimeSpan.FromSeconds(2), CancellationToken.None));
+
+        Assert.True(DateTime.UtcNow - started < TimeSpan.FromSeconds(10));
+    }
+
+    [Fact]
+    public void A_quoted_path_entry_is_searched_without_its_quotes()
+    {
+        var cmd = WriteCmd("quotedcli", "echo hi");
+
+        var resolved = ExecutableResolver.Resolve("quotedcli", pathVariable: $"\"{_folder}\"", pathExt: ".CMD");
+
+        Assert.Equal(cmd, resolved, ignoreCase: true);
+    }
+
+    [Fact]
     public async Task A_process_that_runs_too_long_is_stopped_and_reported_as_timed_out()
     {
         var cmd = WriteCmd("slow", "ping -n 30 127.0.0.1 >nul");

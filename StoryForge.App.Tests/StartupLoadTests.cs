@@ -48,6 +48,39 @@ public sealed class StartupLoadTests
     }
 
     [Fact]
+    public void The_pills_are_there_from_the_start_and_say_checking()
+    {
+        var main = Main();
+
+        Assert.Equal(4, main.ProviderPills.Count);
+        Assert.Equal("ComfyUI · checking…", main.ProviderPills.Single(p => p.Id == ProviderId.ComfyUi).Text);
+    }
+
+    [Fact]
+    public async Task A_refresh_updates_the_existing_pills_instead_of_replacing_them()
+    {
+        _client.Providers.Add(new(ProviderId.ComfyUi, "ComfyUI", ProviderState.Ok));
+        var main = Main();
+        var before = main.ProviderPills.ToList();
+
+        await main.LoadAsync();
+
+        Assert.Equal(before, main.ProviderPills);
+    }
+
+    [Fact]
+    public async Task A_failing_first_check_does_not_fail_loading()
+    {
+        _client.StatusFailure = new InvalidOperationException("settings unreadable");
+        _client.RecentProjects.Add(new(Guid.NewGuid(), "Soul Coins", "Script · running"));
+        var main = Main();
+
+        await main.LoadAsync();
+
+        Assert.Single(main.RecentProjects);
+    }
+
+    [Fact]
     public async Task Refreshing_the_board_updates_the_pills()
     {
         _client.Providers.Add(new(ProviderId.ComfyUi, "ComfyUI", ProviderState.Off));
@@ -58,7 +91,7 @@ public sealed class StartupLoadTests
         _client.Providers[0] = new(ProviderId.ComfyUi, "ComfyUI", ProviderState.Ok, "ComfyUI 0.37.4");
         await board.RefreshAsync();
 
-        Assert.Equal("ComfyUI · ok", main.ProviderPills.Single().Text);
+        Assert.Equal("ComfyUI · ok", main.ProviderPills.Single(p => p.Id == ProviderId.ComfyUi).Text);
     }
 
     [Fact]
@@ -87,7 +120,7 @@ public sealed class StartupLoadTests
     }
 
     [Fact]
-    public async Task Loading_twice_does_not_duplicate_pills_or_projects()
+    public async Task Loading_twice_does_not_duplicate_projects_and_keeps_the_four_pills()
     {
         _client.Providers.Add(new(ProviderId.ComfyUi, "ComfyUI", ProviderState.NotSetUp));
         _client.RecentProjects.Add(new(Guid.NewGuid(), "Soul Coins", "Script · running"));
@@ -96,7 +129,7 @@ public sealed class StartupLoadTests
         await main.LoadAsync();
         await main.LoadAsync();
 
-        Assert.Single(main.ProviderPills);
+        Assert.Equal(4, main.ProviderPills.Count);
         Assert.Single(main.RecentProjects);
     }
 }

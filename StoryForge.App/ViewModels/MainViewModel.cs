@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.Diagnostics;
 using System.ComponentModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using StoryForge.App.ViewModels.Pages;
@@ -9,8 +10,13 @@ namespace StoryForge.App.ViewModels;
 public sealed partial class MainViewModel : ObservableObject
 {
     /// <summary>The providers with a pill in the top bar, as on the design canvas.</summary>
-    private static readonly ProviderId[] TopBarProviders =
-        [ProviderId.ClaudeCli, ProviderId.ComfyUi, ProviderId.ContentAutomatorX, ProviderId.DavinciResolve];
+    private static readonly (ProviderId Id, string Name)[] TopBarProviders =
+    [
+        (ProviderId.ClaudeCli, "Claude CLI"),
+        (ProviderId.ComfyUi, "ComfyUI"),
+        (ProviderId.ContentAutomatorX, "CAX"),
+        (ProviderId.DavinciResolve, "Resolve"),
+    ];
 
     private readonly IStoryForgeClient _client;
     private readonly ProviderStatusBoard _board;
@@ -32,6 +38,7 @@ public sealed partial class MainViewModel : ObservableObject
         _selectedNavItem = NavItems[0];
         _currentPage = NavItems[0].Page;
         _currentPage.PropertyChanged += OnPagePropertyChanged;
+        ProviderPills = [.. TopBarProviders.Select(p => new ProviderPillViewModel(p.Id, p.Name))];
         board.StatusesChanged += (_, _) => ShowPills();
     }
 
@@ -46,7 +53,7 @@ public sealed partial class MainViewModel : ObservableObject
 
     public string Breadcrumb => CurrentPage.Breadcrumb;
 
-    public ObservableCollection<ProviderPillViewModel> ProviderPills { get; } = [];
+    public IReadOnlyList<ProviderPillViewModel> ProviderPills { get; }
 
     public ObservableCollection<ProjectSummary> RecentProjects { get; } = [];
 
@@ -68,7 +75,15 @@ public sealed partial class MainViewModel : ObservableObject
         }
         OnPropertyChanged(nameof(HasRecentProjects));
 
-        await _board.RefreshAsync();
+        try
+        {
+            await _board.RefreshAsync();
+        }
+        catch (Exception ex)
+        {
+            // The app works without statuses; the pills keep saying "checking…" until a later check.
+            Debug.WriteLine($"First provider check failed: {ex}");
+        }
     }
 
     /// <summary>Writes anything still waiting to be saved; called when the window closes.</summary>
@@ -78,13 +93,9 @@ public sealed partial class MainViewModel : ObservableObject
 
     private void ShowPills()
     {
-        ProviderPills.Clear();
-        foreach (var id in TopBarProviders)
+        foreach (var pill in ProviderPills)
         {
-            if (_board.Get(id) is { } status)
-            {
-                ProviderPills.Add(new ProviderPillViewModel(status));
-            }
+            pill.Update(_board.Get(pill.Id), _board.HasChecked);
         }
     }
 

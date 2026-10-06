@@ -64,7 +64,19 @@ public sealed partial class LmStudioCardViewModel(IStoryForgeClient client)
     /// <summary>Whether an API token is stored. The token itself never comes back to the app.</summary>
     public bool HasApiToken { get; private set; }
 
-    public async Task LoadApiTokenStateAsync() => SetHasApiToken(await client.HasSecretAsync(SecretKey.LmStudioApiToken));
+    public async Task LoadApiTokenStateAsync()
+    {
+        try
+        {
+            SetHasApiToken(await client.HasSecretAsync(SecretKey.LmStudioApiToken));
+        }
+        catch (Exception)
+        {
+            // Credential Manager unavailable (e.g. no logon session): show "none stored" rather
+            // than failing the whole Settings screen. Saving a token will report the real error.
+            SetHasApiToken(false);
+        }
+    }
 
     /// <summary>Raised after the token was stored or removed (not when its state is first read).</summary>
     public event EventHandler? ApiTokenChanged;

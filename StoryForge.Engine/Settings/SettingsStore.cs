@@ -97,7 +97,10 @@ internal sealed class SettingsStore(IDbContextFactory<StoryForgeDbContext> conte
             {
                 foreach (var (name, value) in stored)
                 {
-                    merged[name] = value?.DeepClone();
+                    if (value is not null)   // a stored null keeps the default
+                    {
+                        merged[name] = value.DeepClone();
+                    }
                 }
             }
             return merged.Deserialize<T>(Json) ?? fallback;

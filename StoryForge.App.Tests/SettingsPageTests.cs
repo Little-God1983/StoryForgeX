@@ -250,6 +250,64 @@ public sealed class SettingsPageTests
     }
 
     [Fact]
+    public async Task A_credential_store_that_cannot_be_read_does_not_stop_the_page_from_loading()
+    {
+        _client.SecretFailure = new System.ComponentModel.Win32Exception(1312, "A specified logon session does not exist.");
+
+        var page = await LoadedPage();
+
+        Assert.False(page.LmStudio.HasApiToken);
+        Assert.Equal("claude", page.ClaudeCli.Executable);
+    }
+
+    [Fact]
+    public async Task A_failed_save_stays_pending_so_closing_tries_again()
+    {
+        var page = await LoadedPage();
+        _client.SaveFailure = new InvalidOperationException("database is locked");
+        page.ComfyUi.Host = "gpu-box";
+        await page.PendingSave;
+        Assert.True(page.HasPendingSave);
+
+        _client.SaveFailure = null;
+        await page.FlushAsync();
+
+        Assert.Equal("gpu-box", _client.Settings.ComfyUi.Host);
+        Assert.False(page.HasPendingSave);
+    }
+
+    [Fact]
+    public async Task Flushing_does_not_wait_for_the_check_of_a_save_already_under_way()
+    {
+        var page = await LoadedPage();
+        var saveGate = new TaskCompletionSource();
+        _client.SaveGate = saveGate.Task;
+        _client.StatusGate = new TaskCompletionSource().Task;   // checks that never finish
+        page.ComfyUi.Host = "gpu-box";                         // its save is now writing
+
+        var flush = page.FlushAsync();
+        saveGate.SetResult();
+        var finished = await Task.WhenAny(flush, Task.Delay(TimeSpan.FromSeconds(5)));
+
+        Assert.Same(flush, finished);
+    }
+
+    [Fact]
+    public async Task Reverting_a_field_after_a_failed_save_clears_the_error()
+    {
+        var page = await LoadedPage();
+        _client.SaveFailure = new InvalidOperationException("database is locked");
+        page.ComfyUi.Host = "gpu-box";
+        await page.PendingSave;
+        _client.SaveFailure = null;
+
+        page.ComfyUi.Host = "127.0.0.1";
+        await page.PendingSave;
+
+        Assert.Null(page.SaveError);
+    }
+
+    [Fact]
     public async Task Flushing_with_nothing_pending_saves_nothing()
     {
         var page = await LoadedPage(saveDelay: TimeSpan.FromSeconds(30));

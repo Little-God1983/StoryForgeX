@@ -78,8 +78,11 @@ internal sealed class FakeStoryForgeClient : IStoryForgeClient
     public Task<string> GetEffectiveProjectsFolderAsync(CancellationToken cancellationToken = default) =>
         Task.FromResult(Settings.Paths.ProjectsFolder is { Length: > 0 } folder ? folder : DefaultProjectsFolder);
 
+    /// <summary>When set, reading whether a secret exists throws it.</summary>
+    public Exception? SecretFailure { get; set; }
+
     public Task<bool> HasSecretAsync(SecretKey key, CancellationToken cancellationToken = default) =>
-        Task.FromResult(Secrets.ContainsKey(key));
+        SecretFailure is not null ? Task.FromException<bool>(SecretFailure) : Task.FromResult(Secrets.ContainsKey(key));
 
     public Task SetSecretAsync(SecretKey key, string? value, CancellationToken cancellationToken = default)
     {

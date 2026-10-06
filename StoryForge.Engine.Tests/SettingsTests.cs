@@ -119,6 +119,19 @@ public sealed class SettingsTests : IDisposable
         Assert.Equal(120, claude.TimeoutSeconds);
     }
 
+    [Fact]
+    public async Task A_null_in_a_saved_row_gets_the_default_too()
+    {
+        var client = await _engine.StartClientAsync();
+        await client.SaveSettingsAsync(Changed());
+        await WriteRowAsync("providers.lm-studio", """{"BaseUrl":null,"Model":"qwen3-32b"}""");
+
+        var lmStudio = (await client.GetSettingsAsync()).LmStudio;
+
+        Assert.Equal(EngineSettings.Defaults.LmStudio.BaseUrl, lmStudio.BaseUrl);
+        Assert.Equal("qwen3-32b", lmStudio.Model);
+    }
+
     private async Task WriteRowAsync(string key, string json)
     {
         await using var connection = new Microsoft.Data.Sqlite.SqliteConnection(

@@ -35,11 +35,21 @@ internal sealed class ProcessRunner : IProcessRunner
         try
         {
             await process.WaitForExitAsync(deadline.Token);
+            // The output counts too: a child that inherited the pipe can hold it open long after
+            // the process itself has exited.
+            await Task.WhenAll(output, error).WaitAsync(deadline.Token);
         }
         catch (OperationCanceledException)
         {
             // The whole tree: a .cmd shim runs the real tool as a child of cmd.exe.
-            process.Kill(entireProcessTree: true);
+            try
+            {
+                process.Kill(entireProcessTree: true);
+            }
+            catch (InvalidOperationException)
+            {
+                // Already gone; only a detached child still holds the output.
+            }
             cancellationToken.ThrowIfCancellationRequested();
             throw new TimeoutException($"'{executable}' did not finish within {timeout.TotalSeconds:0} s.");
         }
@@ -77,6 +87,7 @@ internal static class ExecutableResolver
 
         return (pathVariable ?? "")
             .Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(folder => folder.Trim('"'))   // PATH entries may be quoted
             .SelectMany(folder => Candidates(Path.Combine(folder, executable), extensions))
             .FirstOrDefault(File.Exists);
     }
