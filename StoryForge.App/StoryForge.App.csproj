@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <!-- For DarkTitleBar's DwmSetWindowAttribute: [LibraryImport] source-generates its marshalling
+         and that generated code needs unsafe (SYSLIB1062). No hand-written unsafe code exists. -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\StoryForge.Client\StoryForge.Client.csproj" />
+    <ProjectReference Include="..\StoryForge.Engine\StoryForge.Engine.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.2" />
+    <PackageReference Include="Microsoft.Extensions.Hosting" Version="10.0.12" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- IBM Plex, SIL Open Font License 1.1 (Assets/Fonts/OFL.txt). -->
+    <Resource Include="Assets\Fonts\*.ttf" />
+  </ItemGroup>
+
+</Project>

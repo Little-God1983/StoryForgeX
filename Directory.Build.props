@@ -1,0 +1,22 @@
+<Project>
+  <PropertyGroup>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
+    <!-- Needed for IDE0005 (unused usings) to run on build. CS1591 would demand a doc comment
+         on every public member and CS1573 a <param> tag for every parameter once one is
+         documented; neither is the house style. -->
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <NoWarn>$(NoWarn);CS1591;CS1573</NoWarn>
+    <LangVersion>latest</LangVersion>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <Version>0.1.0</Version>
+    <Product>StoryForge X</Product>
+    <Company>Little-God1983</Company>
+    <Authors>Little-God1983</Authors>
+    <Copyright>Copyright © Little-God1983</Copyright>
+  </PropertyGroup>
+</Project>

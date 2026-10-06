@@ -1,0 +1,9 @@
+<Solution>
+  <Project Path="StoryForge.App/StoryForge.App.csproj" />
+  <Project Path="StoryForge.Client/StoryForge.Client.csproj" />
+  <Project Path="StoryForge.Engine/StoryForge.Engine.csproj" />
+  <Folder Name="/Tests/">
+    <Project Path="StoryForge.App.Tests/StoryForge.App.Tests.csproj" />
+    <Project Path="StoryForge.Engine.Tests/StoryForge.Engine.Tests.csproj" />
+  </Folder>
+</Solution>
