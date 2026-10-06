@@ -1,0 +1,431 @@
+using StoryForge.App.ViewModels;
+using StoryForge.App.ViewModels.Pages;
+using StoryForge.Client;
+
+namespace StoryForge.App.Tests;
+
+public sealed class SettingsPageTests
+{
+    private readonly FakeStoryForgeClient _client = new();
+    private readonly ProviderStatusBoard _board;
+
+    public SettingsPageTests() => _board = new ProviderStatusBoard(_client);
+
+    private async Task<SettingsPageViewModel> LoadedPage(TimeSpan? saveDelay = null)
+    {
+        var page = new SettingsPageViewModel(_client, _board, saveDelay ?? TimeSpan.Zero);
+        await page.LoadAsync();
+        return page;
+    }
+
+    [Fact]
+    public async Task Loading_fills_every_card_from_the_saved_settings()
+    {
+        _client.Settings = EngineSettings.Defaults with
+        {
+            ClaudeCli = new ClaudeCliSettings("claude.cmd", "-p", 120, 3),
+            ComfyUi = new ComfyUiSettings("10.0.0.5", 8190, @"D:\wf", 2, false),
+        };
+
+        var page = await LoadedPage();
+
+        Assert.Equal("claude.cmd", page.ClaudeCli.Executable);
+        Assert.Equal(120, page.ClaudeCli.TimeoutSeconds);
+        Assert.Equal("10.0.0.5", page.ComfyUi.Host);
+        Assert.Equal(8190, page.ComfyUi.Port);
+        Assert.False(page.ComfyUi.FreeVramBetweenStages);
+        Assert.Equal("ffmpeg", page.Ffmpeg.Executable);
+        Assert.Equal(StructuredOutputMode.JsonSchema, page.LmStudio.StructuredOutput);
+    }
+
+    [Fact]
+    public async Task Settings_are_filled_before_the_slow_provider_checks_finish()
+    {
+        var gate = new TaskCompletionSource();
+        _client.StatusGate = gate.Task;
+        var main = new MainViewModel(_client, _board, TimeSpan.Zero);
+        var settings = (SettingsPageViewModel)main.NavItems.Single(item => item.Title == "Settings").Page;
+
+        var loading = main.LoadAsync();
+
+        Assert.Equal("claude", settings.ClaudeCli.Executable);
+        Assert.Equal("checking…", settings.ClaudeCli.StateText);
+        gate.SetResult();
+        await loading;
+    }
+
+    [Fact]
+    public async Task A_provider_the_checks_did_not_report_shows_not_set_up_after_a_check()
+    {
+        var page = await LoadedPage();
+
+        await _board.RefreshAsync();
+
+        Assert.Equal("not set up", page.ComfyUi.StateText);
+    }
+
+    [Fact]
+    public async Task Loading_does_not_save()
+    {
+        await LoadedPage();
+
+        Assert.Equal(0, _client.Saves);
+    }
+
+    [Fact]
+    public async Task Changing_a_field_saves_it_and_rechecks_the_providers()
+    {
+        var page = await LoadedPage();
+        var checksBefore = _client.StatusChecks;
+
+        page.ComfyUi.Port = 8190;
+        await page.PendingSave;
+
+        Assert.Equal(8190, _client.Settings.ComfyUi.Port);
+        Assert.True(_client.StatusChecks > checksBefore);
+    }
+
+    [Fact]
+    public async Task Quick_changes_in_a_row_are_saved_once()
+    {
+        var page = await LoadedPage(saveDelay: TimeSpan.FromMilliseconds(200));
+
+        page.ClaudeCli.Executable = "c";
+        page.ClaudeCli.Executable = "cl";
+        page.ClaudeCli.Executable = "claude.cmd";
+        await page.PendingSave;
+
+        Assert.Equal(1, _client.Saves);
+        Assert.Equal("claude.cmd", _client.Settings.ClaudeCli.Executable);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(70000)]
+    public async Task An_out_of_range_port_shows_an_error_and_is_not_saved(int port)
+    {
+        var page = await LoadedPage();
+
+        page.ComfyUi.Port = port;
+        await page.PendingSave;
+
+        Assert.True(page.ComfyUi.HasErrors);
+        Assert.Equal(0, _client.Saves);
+    }
+
+    [Fact]
+    public async Task Fixing_an_invalid_field_saves_again()
+    {
+        var page = await LoadedPage();
+        page.ClaudeCli.MaxParallel = 0;
+        await page.PendingSave;
+
+        page.ClaudeCli.MaxParallel = 4;
+        await page.PendingSave;
+
+        Assert.False(page.ClaudeCli.HasErrors);
+        Assert.Equal(4, _client.Settings.ClaudeCli.MaxParallel);
+    }
+
+    [Fact]
+    public async Task A_rejected_save_shows_the_reason()
+    {
+        var page = await LoadedPage();
+        _client.SaveFailure = new ArgumentException("ComfyUI port must be between 1 and 65535.");
+
+        page.ComfyUi.Host = "gpu-box";
+        await page.PendingSave;
+
+        Assert.Equal("ComfyUI port must be between 1 and 65535.", page.SaveError);
+    }
+
+    [Fact]
+    public async Task Any_failed_save_shows_its_reason_not_just_rejected_values()
+    {
+        var page = await LoadedPage();
+        _client.SaveFailure = new InvalidOperationException("database is locked");
+
+        page.ComfyUi.Host = "gpu-box";
+        await page.PendingSave;
+
+        Assert.Equal("Could not save: database is locked", page.SaveError);
+    }
+
+    [Fact]
+    public async Task Saves_never_run_at_the_same_time()
+    {
+        var page = await LoadedPage();
+        var gate = new TaskCompletionSource();
+        _client.SaveGate = gate.Task;
+
+        page.ClaudeCli.Executable = "first";
+        var first = page.PendingSave;
+        page.ClaudeCli.Executable = "second";
+        var second = page.PendingSave;
+        gate.SetResult();
+        await Task.WhenAll(first, second);
+
+        Assert.Equal(1, _client.MostSavesAtOnce);
+        Assert.Equal("second", _client.Settings.ClaudeCli.Executable);
+    }
+
+    [Fact]
+    public async Task Flushing_writes_a_pending_edit_at_once()
+    {
+        // Closing the window flushes, so an edit typed just before closing is not lost.
+        var page = await LoadedPage(saveDelay: TimeSpan.FromSeconds(30));
+        page.ProjectsFolder = @"D:\StoryForge";
+
+        var flush = page.FlushAsync();
+        var finished = await Task.WhenAny(flush, Task.Delay(TimeSpan.FromSeconds(5)));
+
+        Assert.Same(flush, finished);
+        Assert.Equal(@"D:\StoryForge", _client.Settings.Paths.ProjectsFolder);
+    }
+
+    [Fact]
+    public async Task Flushing_the_main_view_model_writes_a_pending_settings_edit()
+    {
+        var main = new MainViewModel(_client, _board, TimeSpan.FromSeconds(30));
+        await main.LoadAsync();
+        var settings = (SettingsPageViewModel)main.NavItems.Single(item => item.Title == "Settings").Page;
+        settings.Ffmpeg.Executable = "ffmpeg7";
+
+        await main.FlushAsync();
+
+        Assert.Equal("ffmpeg7", _client.Settings.Ffmpeg.Executable);
+    }
+
+    [Fact]
+    public async Task Flushing_does_not_wait_for_the_provider_checks()
+    {
+        // Closing must not hang on `claude --version` and HTTP timeouts.
+        var page = await LoadedPage(saveDelay: TimeSpan.FromSeconds(30));
+        _client.StatusGate = new TaskCompletionSource().Task;   // checks that never finish
+        page.ProjectsFolder = @"D:\StoryForge";
+
+        var flush = page.FlushAsync();
+        var finished = await Task.WhenAny(flush, Task.Delay(TimeSpan.FromSeconds(5)));
+
+        Assert.Same(flush, finished);
+        Assert.Equal(@"D:\StoryForge", _client.Settings.Paths.ProjectsFolder);
+    }
+
+    [Fact]
+    public async Task There_is_a_pending_save_only_between_an_edit_and_its_write()
+    {
+        var main = new MainViewModel(_client, _board, TimeSpan.FromSeconds(30));
+        await main.LoadAsync();
+        var settings = (SettingsPageViewModel)main.NavItems.Single(item => item.Title == "Settings").Page;
+        Assert.False(main.HasPendingSave);
+
+        settings.Ffmpeg.Executable = "ffmpeg7";
+        Assert.True(main.HasPendingSave);
+
+        await main.FlushAsync();
+        Assert.False(main.HasPendingSave);
+    }
+
+    [Fact]
+    public async Task A_failing_check_after_a_save_does_not_fault_the_save()
+    {
+        var page = await LoadedPage();
+        _client.StatusFailure = new InvalidOperationException("settings unreadable");
+
+        page.ComfyUi.Host = "gpu-box";
+        await page.PendingSave;
+
+        Assert.Equal("gpu-box", _client.Settings.ComfyUi.Host);
+    }
+
+    [Fact]
+    public async Task Clearing_the_section_selection_keeps_the_breadcrumb()
+    {
+        // Ctrl+click on the selected section pushes null through the binding.
+        var page = await LoadedPage();
+
+        page.SelectedSection = null!;
+
+        Assert.Equal("Settings / Providers", page.Breadcrumb);
+    }
+
+    [Fact]
+    public async Task A_credential_store_that_cannot_be_read_does_not_stop_the_page_from_loading()
+    {
+        _client.SecretFailure = new System.ComponentModel.Win32Exception(1312, "A specified logon session does not exist.");
+
+        var page = await LoadedPage();
+
+        Assert.False(page.LmStudio.HasApiToken);
+        Assert.Equal("claude", page.ClaudeCli.Executable);
+    }
+
+    [Fact]
+    public async Task A_failed_save_stays_pending_so_closing_tries_again()
+    {
+        var page = await LoadedPage();
+        _client.SaveFailure = new InvalidOperationException("database is locked");
+        page.ComfyUi.Host = "gpu-box";
+        await page.PendingSave;
+        Assert.True(page.HasPendingSave);
+
+        _client.SaveFailure = null;
+        await page.FlushAsync();
+
+        Assert.Equal("gpu-box", _client.Settings.ComfyUi.Host);
+        Assert.False(page.HasPendingSave);
+    }
+
+    [Fact]
+    public async Task Flushing_does_not_wait_for_the_check_of_a_save_already_under_way()
+    {
+        var page = await LoadedPage();
+        var saveGate = new TaskCompletionSource();
+        _client.SaveGate = saveGate.Task;
+        _client.StatusGate = new TaskCompletionSource().Task;   // checks that never finish
+        page.ComfyUi.Host = "gpu-box";                         // its save is now writing
+
+        var flush = page.FlushAsync();
+        saveGate.SetResult();
+        var finished = await Task.WhenAny(flush, Task.Delay(TimeSpan.FromSeconds(5)));
+
+        Assert.Same(flush, finished);
+    }
+
+    [Fact]
+    public async Task Reverting_a_field_after_a_failed_save_clears_the_error()
+    {
+        var page = await LoadedPage();
+        _client.SaveFailure = new InvalidOperationException("database is locked");
+        page.ComfyUi.Host = "gpu-box";
+        await page.PendingSave;
+        _client.SaveFailure = null;
+
+        page.ComfyUi.Host = "127.0.0.1";
+        await page.PendingSave;
+
+        Assert.Null(page.SaveError);
+    }
+
+    [Fact]
+    public async Task Flushing_with_nothing_pending_saves_nothing()
+    {
+        var page = await LoadedPage(saveDelay: TimeSpan.FromSeconds(30));
+
+        await page.FlushAsync();
+
+        Assert.Equal(0, _client.Saves);
+    }
+
+    [Fact]
+    public async Task An_invalid_field_on_one_card_does_not_hold_back_edits_on_the_others()
+    {
+        var page = await LoadedPage();
+        page.ComfyUi.Port = 0;
+        await page.PendingSave;
+
+        page.Ffmpeg.Executable = @"C:\ffmpeg\bin\ffmpeg.exe";
+        page.ProjectsFolder = @"D:\StoryForge";
+        await page.PendingSave;
+
+        Assert.Equal(@"C:\ffmpeg\bin\ffmpeg.exe", _client.Settings.Ffmpeg.Executable);
+        Assert.Equal(@"D:\StoryForge", _client.Settings.Paths.ProjectsFolder);
+        Assert.Equal(8188, _client.Settings.ComfyUi.Port);
+    }
+
+    [Fact]
+    public async Task A_pasted_token_is_trimmed_and_a_blank_one_is_not_stored()
+    {
+        var page = await LoadedPage();
+
+        await page.LmStudio.SaveApiTokenAsync("   ");
+        Assert.Empty(_client.Secrets);
+        Assert.False(page.LmStudio.HasApiToken);
+
+        await page.LmStudio.SaveApiTokenAsync(" tok-123\r\n");
+        Assert.Equal("tok-123", _client.Secrets[SecretKey.LmStudioApiToken]);
+    }
+
+    [Fact]
+    public async Task Each_card_shows_its_providers_status_and_reason()
+    {
+        _client.Providers.Add(new(ProviderId.ComfyUi, "ComfyUI", ProviderState.Off, "not reachable at 127.0.0.1:8190"));
+        _client.Providers.Add(new(ProviderId.ClaudeCli, "Claude CLI", ProviderState.Ok, "2.1.285 (Claude Code)"));
+        var page = await LoadedPage();
+
+        await _board.RefreshAsync();
+
+        Assert.Equal(ProviderState.Off, page.ComfyUi.State);
+        Assert.Equal("off", page.ComfyUi.StateText);
+        Assert.Equal("not reachable at 127.0.0.1:8190", page.ComfyUi.Detail);
+        Assert.Equal("ok", page.ClaudeCli.StateText);
+        Assert.Equal("2.1.285 (Claude Code)", page.ClaudeCli.Detail);
+    }
+
+    [Fact]
+    public async Task The_lm_studio_token_goes_to_the_secret_store_and_can_be_removed()
+    {
+        var page = await LoadedPage();
+        Assert.False(page.LmStudio.HasApiToken);
+
+        await page.LmStudio.SaveApiTokenAsync("tok-123");
+
+        Assert.Equal("tok-123", _client.Secrets[SecretKey.LmStudioApiToken]);
+        Assert.True(page.LmStudio.HasApiToken);
+        Assert.Equal(0, _client.Saves);
+
+        await page.LmStudio.RemoveApiTokenAsync();
+
+        Assert.False(page.LmStudio.HasApiToken);
+        Assert.Empty(_client.Secrets);
+    }
+
+    [Fact]
+    public async Task Changing_the_token_rechecks_the_providers()
+    {
+        var page = await LoadedPage();
+        var checksBefore = _client.StatusChecks;
+
+        await page.LmStudio.SaveApiTokenAsync("tok-123");
+
+        Assert.True(_client.StatusChecks > checksBefore);
+    }
+
+    [Fact]
+    public async Task The_side_menu_lists_the_settings_sections_and_opens_on_providers()
+    {
+        var page = await LoadedPage();
+
+        Assert.Equal(
+            ["Providers", "Storage", "Assembly & export", "Paths & cache", "Engine host"],
+            page.Sections.Select(s => s.Title));
+        Assert.Same(page.Sections[0], page.SelectedSection);
+        Assert.Equal("Settings / Providers", page.Breadcrumb);
+    }
+
+    [Fact]
+    public async Task Choosing_a_section_updates_the_breadcrumb_in_the_top_bar()
+    {
+        var main = new MainViewModel(_client, _board, TimeSpan.Zero);
+        await main.LoadAsync();
+        var settings = (SettingsPageViewModel)main.NavItems.Single(item => item.Title == "Settings").Page;
+        main.SelectedNavItem = main.NavItems.Single(item => item.Title == "Settings");
+
+        settings.SelectedSection = settings.Sections.Single(s => s.Title == "Paths & cache");
+
+        Assert.Equal("Settings / Paths & cache", main.Breadcrumb);
+    }
+
+    [Fact]
+    public async Task The_projects_folder_shows_the_folder_in_use_and_saves_a_new_one()
+    {
+        var page = await LoadedPage();
+        Assert.Equal(@"C:\Data\projects", page.EffectiveProjectsFolder);
+
+        page.ProjectsFolder = @"D:\StoryForge";
+        await page.PendingSave;
+
+        Assert.Equal(@"D:\StoryForge", _client.Settings.Paths.ProjectsFolder);
+        Assert.Equal(@"D:\StoryForge", page.EffectiveProjectsFolder);
+    }
+}

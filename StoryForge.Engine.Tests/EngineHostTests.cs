@@ -92,22 +92,6 @@ public sealed class EngineHostTests : IDisposable
     }
 
     [Fact]
-    public async Task The_client_reports_every_provider_as_not_set_up()
-    {
-        using var host = BuildHost();
-        await host.StartAsync();
-        var client = host.Services.GetRequiredService<IStoryForgeClient>();
-
-        var statuses = await client.GetProviderStatusesAsync();
-
-        Assert.Equal(
-            ["Claude CLI", "ComfyUI", "CAX", "Resolve"],
-            statuses.Select(s => s.Name));
-        Assert.All(statuses, s => Assert.Equal(ProviderState.NotSetUp, s.State));
-        await host.StopAsync();
-    }
-
-    [Fact]
     public async Task The_client_has_no_recent_projects_yet()
     {
         using var host = BuildHost();

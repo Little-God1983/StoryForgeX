@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using System.Windows;
 using System.Windows.Controls;
 using StoryForge.App.Interop;
@@ -13,9 +14,33 @@ public partial class MainWindow : Window
         ViewModel = viewModel;
         DataContext = viewModel;
         SourceInitialized += (_, _) => DarkTitleBar.Apply(this);
+        Closing += OnClosing;
     }
 
     public MainViewModel ViewModel { get; }
+
+    private bool _flushedBeforeClose;
+
+    // Settings save a moment after the last keystroke; closing first writes what is still waiting.
+    private async void OnClosing(object? sender, CancelEventArgs e)
+    {
+        if (_flushedBeforeClose || !ViewModel.HasPendingSave)
+        {
+            return;
+        }
+        e.Cancel = true;
+        try
+        {
+            await ViewModel.FlushAsync();
+        }
+        finally
+        {
+            _flushedBeforeClose = true;
+            // Posted, not called: Close() inside the Closing event throws, and the flush can
+            // finish without ever leaving it.
+            _ = Dispatcher.BeginInvoke(Close);
+        }
+    }
 
     /// <summary>
     /// Ctrl+click on the selected item clears a single-select ListBox, which would leave a screen

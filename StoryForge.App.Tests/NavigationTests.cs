@@ -5,7 +5,8 @@ namespace StoryForge.App.Tests;
 
 public sealed class NavigationTests
 {
-    private readonly MainViewModel _main = new(new FakeStoryForgeClient());
+    private static readonly FakeStoryForgeClient Client = new();
+    private readonly MainViewModel _main = new(Client, new ProviderStatusBoard(Client), TimeSpan.Zero);
 
     [Fact]
     public void The_navigation_lists_the_four_screens_in_order()
