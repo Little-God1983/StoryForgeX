@@ -1,0 +1,42 @@
+name: CI
+
+# A pull request builds the merge of its branch and main; a push to main checks what just landed.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build and test
+    # The app and its tests target net10.0-windows and use WPF.
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Cache NuGet packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-${{ hashFiles('**/*.csproj', 'Directory.Build.props') }}
+          restore-keys: nuget-${{ runner.os }}-
+
+      - name: Restore
+        run: dotnet restore StoryForgeX.slnx
+
+      - name: Build
+        run: dotnet build StoryForgeX.slnx --no-restore --configuration Release
+
+      - name: Test
+        run: dotnet test StoryForgeX.slnx --no-build --configuration Release
