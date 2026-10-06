@@ -71,6 +71,9 @@ public sealed partial class MainViewModel : ObservableObject
         await _board.RefreshAsync();
     }
 
+    /// <summary>Writes anything still waiting to be saved; called when the window closes.</summary>
+    public Task FlushAsync() => _settings.FlushAsync();
+
     private void ShowPills()
     {
         ProviderPills.Clear();

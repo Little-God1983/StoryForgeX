@@ -60,6 +60,39 @@ public sealed class SettingsTests : IDisposable
     }
 
     [Fact]
+    public async Task Saves_running_at_the_same_time_on_a_fresh_database_all_succeed()
+    {
+        var client = await _engine.StartClientAsync();
+
+        await Task.WhenAll(Enumerable.Range(0, 8).Select(i =>
+            client.SaveSettingsAsync(Changed() with { Paths = new PathSettings($@"D:\run{i}") })));
+
+        Assert.StartsWith(@"D:\run", (await client.GetSettingsAsync()).Paths.ProjectsFolder);
+    }
+
+    [Fact]
+    public async Task Paths_pasted_with_quotes_are_saved_without_them()
+    {
+        // Explorer's "Copy as path" wraps the path in quotes.
+        var client = await _engine.StartClientAsync();
+        var d = EngineSettings.Defaults;
+
+        await client.SaveSettingsAsync(d with
+        {
+            ClaudeCli = d.ClaudeCli with { Executable = "\"C:\\Program Files\\nodejs\\claude.cmd\"" },
+            Ffmpeg = d.Ffmpeg with { Executable = " \"C:\\ffmpeg\\bin\\ffmpeg.exe\" " },
+            ComfyUi = d.ComfyUi with { WorkflowTemplatesFolder = "\"D:\\workflows\"" },
+            Paths = new PathSettings("\"D:\\StoryForge\""),
+        });
+
+        var saved = await client.GetSettingsAsync();
+        Assert.Equal(@"C:\Program Files\nodejs\claude.cmd", saved.ClaudeCli.Executable);
+        Assert.Equal(@"C:\ffmpeg\bin\ffmpeg.exe", saved.Ffmpeg.Executable);
+        Assert.Equal(@"D:\workflows", saved.ComfyUi.WorkflowTemplatesFolder);
+        Assert.Equal(@"D:\StoryForge", saved.Paths.ProjectsFolder);
+    }
+
+    [Fact]
     public async Task A_secret_can_be_stored_and_removed()
     {
         var client = await _engine.StartClientAsync();

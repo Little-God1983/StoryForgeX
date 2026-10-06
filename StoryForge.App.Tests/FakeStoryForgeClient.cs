@@ -39,15 +39,33 @@ internal sealed class FakeStoryForgeClient : IStoryForgeClient
 
     public Task<EngineSettings> GetSettingsAsync(CancellationToken cancellationToken = default) => Task.FromResult(Settings);
 
-    public Task SaveSettingsAsync(EngineSettings settings, CancellationToken cancellationToken = default)
+    /// <summary>When set, saves wait for it, so tests can see whether two overlap.</summary>
+    public Task? SaveGate { get; set; }
+
+    public int MostSavesAtOnce { get; private set; }
+
+    private int _savesRunning;
+
+    public async Task SaveSettingsAsync(EngineSettings settings, CancellationToken cancellationToken = default)
     {
         if (SaveFailure is not null)
         {
             throw SaveFailure;
         }
-        Saves++;
-        Settings = settings;
-        return Task.CompletedTask;
+        MostSavesAtOnce = Math.Max(MostSavesAtOnce, ++_savesRunning);
+        try
+        {
+            if (SaveGate is not null)
+            {
+                await SaveGate;
+            }
+            Saves++;
+            Settings = settings;
+        }
+        finally
+        {
+            _savesRunning--;
+        }
     }
 
     public Task<string> GetEffectiveProjectsFolderAsync(CancellationToken cancellationToken = default) =>

@@ -69,10 +69,16 @@ public sealed partial class LmStudioCardViewModel(IStoryForgeClient client)
     /// <summary>Raised after the token was stored or removed (not when its state is first read).</summary>
     public event EventHandler? ApiTokenChanged;
 
+    /// <summary>Stores the token, trimmed (pasted tokens often carry a newline); a blank one is ignored.</summary>
     public async Task SaveApiTokenAsync(string token)
     {
+        token = token.Trim();
+        if (token.Length == 0)
+        {
+            return;
+        }
         await client.SetSecretAsync(SecretKey.LmStudioApiToken, token);
-        SetHasApiToken(!string.IsNullOrEmpty(token));
+        SetHasApiToken(true);
         ApiTokenChanged?.Invoke(this, EventArgs.Empty);
     }
 

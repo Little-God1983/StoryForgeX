@@ -140,6 +140,102 @@ public sealed class SettingsPageTests
     }
 
     [Fact]
+    public async Task Any_failed_save_shows_its_reason_not_just_rejected_values()
+    {
+        var page = await LoadedPage();
+        _client.SaveFailure = new InvalidOperationException("database is locked");
+
+        page.ComfyUi.Host = "gpu-box";
+        await page.PendingSave;
+
+        Assert.Equal("Could not save: database is locked", page.SaveError);
+    }
+
+    [Fact]
+    public async Task Saves_never_run_at_the_same_time()
+    {
+        var page = await LoadedPage();
+        var gate = new TaskCompletionSource();
+        _client.SaveGate = gate.Task;
+
+        page.ClaudeCli.Executable = "first";
+        var first = page.PendingSave;
+        page.ClaudeCli.Executable = "second";
+        var second = page.PendingSave;
+        gate.SetResult();
+        await Task.WhenAll(first, second);
+
+        Assert.Equal(1, _client.MostSavesAtOnce);
+        Assert.Equal("second", _client.Settings.ClaudeCli.Executable);
+    }
+
+    [Fact]
+    public async Task Flushing_writes_a_pending_edit_at_once()
+    {
+        // Closing the window flushes, so an edit typed just before closing is not lost.
+        var page = await LoadedPage(saveDelay: TimeSpan.FromSeconds(30));
+        page.ProjectsFolder = @"D:\StoryForge";
+
+        var flush = page.FlushAsync();
+        var finished = await Task.WhenAny(flush, Task.Delay(TimeSpan.FromSeconds(5)));
+
+        Assert.Same(flush, finished);
+        Assert.Equal(@"D:\StoryForge", _client.Settings.Paths.ProjectsFolder);
+    }
+
+    [Fact]
+    public async Task Flushing_the_main_view_model_writes_a_pending_settings_edit()
+    {
+        var main = new MainViewModel(_client, _board, TimeSpan.FromSeconds(30));
+        await main.LoadAsync();
+        var settings = (SettingsPageViewModel)main.NavItems.Single(item => item.Title == "Settings").Page;
+        settings.Ffmpeg.Executable = "ffmpeg7";
+
+        await main.FlushAsync();
+
+        Assert.Equal("ffmpeg7", _client.Settings.Ffmpeg.Executable);
+    }
+
+    [Fact]
+    public async Task Flushing_with_nothing_pending_saves_nothing()
+    {
+        var page = await LoadedPage(saveDelay: TimeSpan.FromSeconds(30));
+
+        await page.FlushAsync();
+
+        Assert.Equal(0, _client.Saves);
+    }
+
+    [Fact]
+    public async Task An_invalid_field_on_one_card_does_not_hold_back_edits_on_the_others()
+    {
+        var page = await LoadedPage();
+        page.ComfyUi.Port = 0;
+        await page.PendingSave;
+
+        page.Ffmpeg.Executable = @"C:\ffmpeg\bin\ffmpeg.exe";
+        page.ProjectsFolder = @"D:\StoryForge";
+        await page.PendingSave;
+
+        Assert.Equal(@"C:\ffmpeg\bin\ffmpeg.exe", _client.Settings.Ffmpeg.Executable);
+        Assert.Equal(@"D:\StoryForge", _client.Settings.Paths.ProjectsFolder);
+        Assert.Equal(8188, _client.Settings.ComfyUi.Port);
+    }
+
+    [Fact]
+    public async Task A_pasted_token_is_trimmed_and_a_blank_one_is_not_stored()
+    {
+        var page = await LoadedPage();
+
+        await page.LmStudio.SaveApiTokenAsync("   ");
+        Assert.Empty(_client.Secrets);
+        Assert.False(page.LmStudio.HasApiToken);
+
+        await page.LmStudio.SaveApiTokenAsync(" tok-123\r\n");
+        Assert.Equal("tok-123", _client.Secrets[SecretKey.LmStudioApiToken]);
+    }
+
+    [Fact]
     public async Task Each_card_shows_its_providers_status_and_reason()
     {
         _client.Providers.Add(new(ProviderId.ComfyUi, "ComfyUI", ProviderState.Off, "not reachable at 127.0.0.1:8190"));

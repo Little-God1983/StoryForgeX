@@ -17,7 +17,9 @@ public sealed partial class SettingsPageViewModel : PageViewModel
     private readonly IStoryForgeClient _client;
     private readonly ProviderStatusBoard _board;
     private readonly TimeSpan _saveDelay;
+    private readonly SemaphoreSlim _saveLock = new(1, 1);
     private CancellationTokenSource? _pendingDelay;
+    private bool _savePending;
     private bool _loading;
 
     public SettingsPageViewModel(IStoryForgeClient client, ProviderStatusBoard board, TimeSpan saveDelay)
@@ -84,6 +86,17 @@ public sealed partial class SettingsPageViewModel : PageViewModel
     /// <summary>The save scheduled by the last edit; completes once it is written (or skipped).</summary>
     public Task PendingSave { get; private set; } = Task.CompletedTask;
 
+    /// <summary>
+    /// Writes an edit that is still waiting for its delay, now. The window calls this on close, so
+    /// a change typed just before closing is not lost.
+    /// </summary>
+    public async Task FlushAsync()
+    {
+        _pendingDelay?.Cancel();
+        await SaveNowAsync();
+        await PendingSave;
+    }
+
     public async Task LoadAsync()
     {
         _loading = true;
@@ -123,6 +136,7 @@ public sealed partial class SettingsPageViewModel : PageViewModel
         {
             return;
         }
+        _savePending = true;
         _pendingDelay?.Cancel();
         _pendingDelay = new CancellationTokenSource();
         PendingSave = SaveAfterDelayAsync(_pendingDelay.Token);
@@ -138,27 +152,54 @@ public sealed partial class SettingsPageViewModel : PageViewModel
             }
             catch (OperationCanceledException)
             {
-                return;   // A newer edit scheduled its own save.
+                return;   // A newer edit, or a flush, takes over.
             }
         }
-        if (Cards.Any(card => card.HasErrors))
-        {
-            return;   // The field shows its error; nothing invalid is written.
-        }
+        await SaveNowAsync();
+    }
 
-        var settings = Cards.Aggregate(await _client.GetSettingsAsync(), (current, card) => card.ApplyTo(current))
-            with { Paths = new PathSettings(ProjectsFolder.Trim()) };
+    /// <summary>
+    /// Writes the current fields, one save at a time. A card with an invalid field keeps its last
+    /// saved values (its field shows the error); every other card's edits are written.
+    /// </summary>
+    private async Task SaveNowAsync()
+    {
+        await _saveLock.WaitAsync();
         try
         {
+            if (!_savePending)
+            {
+                return;
+            }
+            _savePending = false;
+
+            var saved = await _client.GetSettingsAsync();
+            var settings = Cards.Where(card => !card.HasErrors)
+                .Aggregate(saved, (current, card) => card.ApplyTo(current))
+                with { Paths = new PathSettings(ProjectsFolder.Trim()) };
+            if (settings == saved)
+            {
+                return;   // Only invalid fields changed: nothing valid to write.
+            }
+
             await _client.SaveSettingsAsync(settings);
             SaveError = null;
+            EffectiveProjectsFolder = await _client.GetEffectiveProjectsFolderAsync();
         }
         catch (ArgumentException ex)
         {
             SaveError = ex.Message;
             return;
         }
-        EffectiveProjectsFolder = await _client.GetEffectiveProjectsFolderAsync();
+        catch (Exception ex)
+        {
+            SaveError = $"Could not save: {ex.Message}";
+            return;
+        }
+        finally
+        {
+            _saveLock.Release();
+        }
         await _board.RefreshAsync();
     }
 }

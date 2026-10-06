@@ -97,6 +97,44 @@ public sealed class ProviderCheckTests : IDisposable
     }
 
     [Fact]
+    public async Task A_file_that_cannot_be_run_is_an_error_and_every_other_provider_still_reports()
+    {
+        // e.g. the claude.ps1 that PowerShell's Get-Command prints: it exists, but is no program.
+        _processes.Answer("claude", _ => throw new System.ComponentModel.Win32Exception(193, "%1 is not a valid Win32 application."));
+        var client = await ClientAsync();
+
+        var statuses = await client.GetProviderStatusesAsync();
+
+        Assert.Equal(6, statuses.Count);
+        var claude = statuses.Single(s => s.Id == ProviderId.ClaudeCli);
+        Assert.Equal(ProviderState.Error, claude.State);
+        Assert.Equal("cannot run claude: not a program Windows can start (a .ps1 script or a document?)", claude.Detail);
+    }
+
+    [Fact]
+    public async Task A_real_ps1_file_is_reported_as_an_error_not_thrown()
+    {
+        var folder = Directory.CreateTempSubdirectory("StoryForgeX.Tests.").FullName;
+        try
+        {
+            var script = Path.Combine(folder, "claude.ps1");
+            await File.WriteAllTextAsync(script, "Write-Output 'hi'");
+            var client = await _engine.StartClientAsync(services => services.AddSingleton<HttpMessageHandler>(_http));
+            var defaults = EngineSettings.Defaults;
+            await client.SaveSettingsAsync(defaults with { ClaudeCli = defaults.ClaudeCli with { Executable = script } });
+
+            var status = (await client.GetProviderStatusesAsync()).Single(s => s.Id == ProviderId.ClaudeCli);
+
+            Assert.Equal(ProviderState.Error, status.State);
+            Assert.StartsWith("cannot run ", status.Detail);
+        }
+        finally
+        {
+            Directory.Delete(folder, recursive: true);
+        }
+    }
+
+    [Fact]
     public async Task An_empty_executable_means_not_set_up_and_nothing_is_run()
     {
         var client = await ClientAsync();
@@ -148,6 +186,29 @@ public sealed class ProviderCheckTests : IDisposable
 
         Assert.Equal(ProviderState.Off, status.State);
         Assert.Equal($"not reachable at 127.0.0.1:{port}", status.Detail);
+    }
+
+    [Fact]
+    public async Task Something_else_answering_on_the_comfyui_port_with_other_json_is_still_reported()
+    {
+        _http.Answer("http://127.0.0.1:8188/system_stats", HttpStatusCode.OK, """{"system":"not comfy","comfyui_version":3}""");
+        var client = await ClientAsync();
+
+        var status = await StatusOf(client, ProviderId.ComfyUi);
+
+        Assert.Equal(ProviderState.Ok, status.State);
+        Assert.Equal("reachable", status.Detail);
+    }
+
+    [Fact]
+    public async Task Lm_studio_answering_with_an_unexpected_model_list_is_still_reported()
+    {
+        _http.Answer("http://localhost:1234/v1/models", HttpStatusCode.OK, """{"data":["a","b"]}""");
+        var client = await ClientAsync();
+
+        var status = await StatusOf(client, ProviderId.LmStudio);
+
+        Assert.Equal(ProviderState.Ok, status.State);
     }
 
     [Fact]

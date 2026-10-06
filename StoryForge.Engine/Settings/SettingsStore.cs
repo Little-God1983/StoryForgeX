@@ -37,6 +37,7 @@ internal sealed class SettingsStore(IDbContextFactory<StoryForgeDbContext> conte
     public async Task SaveAsync(EngineSettings settings, CancellationToken cancellationToken)
     {
         Validate(settings);
+        settings = Normalize(settings);
         await using var db = await contextFactory.CreateDbContextAsync(cancellationToken);
         Upsert(db, ClaudeCliKey, settings.ClaudeCli);
         Upsert(db, LmStudioKey, settings.LmStudio);
@@ -52,6 +53,21 @@ internal sealed class SettingsStore(IDbContextFactory<StoryForgeDbContext> conte
         Require(settings.ClaudeCli.MaxParallel >= 1, "Claude CLI max parallel must be at least 1.");
         Require(settings.ComfyUi.Port is >= 1 and <= 65535, "ComfyUI port must be between 1 and 65535.");
         Require(settings.ComfyUi.GpuSlots >= 1, "ComfyUI GPU slots must be at least 1.");
+    }
+
+    // Explorer's "Copy as path" wraps paths in quotes; a quoted path is never a file that exists.
+    private static EngineSettings Normalize(EngineSettings s) => s with
+    {
+        ClaudeCli = s.ClaudeCli with { Executable = Unquote(s.ClaudeCli.Executable) },
+        ComfyUi = s.ComfyUi with { WorkflowTemplatesFolder = Unquote(s.ComfyUi.WorkflowTemplatesFolder) },
+        Ffmpeg = s.Ffmpeg with { Executable = Unquote(s.Ffmpeg.Executable) },
+        Paths = s.Paths with { ProjectsFolder = Unquote(s.Paths.ProjectsFolder) },
+    };
+
+    private static string Unquote(string path)
+    {
+        var trimmed = path.Trim();
+        return trimmed.Length >= 2 && trimmed[0] == '"' && trimmed[^1] == '"' ? trimmed[1..^1].Trim() : trimmed;
     }
 
     private static void Require(bool condition, string message)

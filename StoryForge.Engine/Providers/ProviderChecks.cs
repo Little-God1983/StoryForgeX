@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Text.Json;
@@ -24,10 +25,12 @@ internal sealed class ProviderChecks(
     {
         var settings = await settingsStore.LoadAsync(cancellationToken);
         var checks = await Task.WhenAll(
-            CheckCliAsync(ProviderId.ClaudeCli, "Claude CLI", settings.ClaudeCli.Executable, "--version", cancellationToken),
-            CheckLmStudioAsync(settings.LmStudio, cancellationToken),
-            CheckComfyUiAsync(settings.ComfyUi, cancellationToken),
-            CheckCliAsync(ProviderId.Ffmpeg, "FFmpeg", settings.Ffmpeg.Executable, "-version", cancellationToken));
+            Isolated(ProviderId.ClaudeCli, "Claude CLI",
+                () => CheckCliAsync(ProviderId.ClaudeCli, "Claude CLI", settings.ClaudeCli.Executable, "--version", cancellationToken)),
+            Isolated(ProviderId.LmStudio, "LM Studio", () => CheckLmStudioAsync(settings.LmStudio, cancellationToken)),
+            Isolated(ProviderId.ComfyUi, "ComfyUI", () => CheckComfyUiAsync(settings.ComfyUi, cancellationToken)),
+            Isolated(ProviderId.Ffmpeg, "FFmpeg",
+                () => CheckCliAsync(ProviderId.Ffmpeg, "FFmpeg", settings.Ffmpeg.Executable, "-version", cancellationToken)));
 
         return
         [
@@ -60,6 +63,32 @@ internal sealed class ProviderChecks(
         catch (TimeoutException)
         {
             return Status(ProviderState.Error, $"no answer within {ProcessTimeout.TotalSeconds:0} s");
+        }
+        catch (Win32Exception ex)
+        {
+            // The file exists but Windows can't start it, e.g. the claude.ps1 PowerShell points at.
+            var reason = ex.NativeErrorCode == BadExeFormat
+                ? "not a program Windows can start (a .ps1 script or a document?)"
+                : new Win32Exception(ex.NativeErrorCode).Message;
+            return Status(ProviderState.Error, $"cannot run {executable.Trim()}: {reason}");
+        }
+    }
+
+    private const int BadExeFormat = 193;   // ERROR_BAD_EXE_FORMAT
+
+    /// <summary>
+    /// One provider's surprise never costs the others their status: anything a check did not
+    /// expect becomes that provider's error.
+    /// </summary>
+    private static async Task<ProviderStatus> Isolated(ProviderId id, string name, Func<Task<ProviderStatus>> check)
+    {
+        try
+        {
+            return await check();
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            return new ProviderStatus(id, name, ProviderState.Error, $"check failed: {ex.Message}");
         }
     }
 
@@ -178,8 +207,10 @@ internal sealed class ProviderChecks(
             using var json = await JsonDocument.ParseAsync(await response.Content.ReadAsStreamAsync(cancellationToken), cancellationToken: cancellationToken);
             return json.RootElement.ValueKind == JsonValueKind.Object ? read(json.RootElement) : default;
         }
-        catch (JsonException)
+        catch (Exception ex) when (ex is JsonException or InvalidOperationException)
         {
+            // Not the JSON we expected, e.g. another service on the port: the answer still counts as
+            // "reachable", it just carries no details.
             return default;
         }
     }
