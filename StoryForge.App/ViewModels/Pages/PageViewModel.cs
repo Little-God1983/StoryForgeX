@@ -7,9 +7,15 @@ namespace StoryForge.App.ViewModels.Pages;
 /// <param name="placeholder">What the screen says until its issue builds it.</param>
 public abstract class PageViewModel(string title, string breadcrumb, string placeholder) : ObservableObject
 {
+    private string _breadcrumb = breadcrumb;
+
     public string Title { get; } = title;
 
-    public string Breadcrumb { get; } = breadcrumb;
+    public string Breadcrumb
+    {
+        get => _breadcrumb;
+        protected set => SetProperty(ref _breadcrumb, value);
+    }
 
     public string Placeholder { get; } = placeholder;
 }
@@ -22,6 +28,3 @@ public sealed class ResultMatrixPageViewModel()
 
 public sealed class ProfilesPageViewModel()
     : PageViewModel("Profiles", "Settings / Profiles", "Profiles for every stage come with issue #3.");
-
-public sealed class SettingsPageViewModel()
-    : PageViewModel("Settings", "Settings / Providers", "Provider setup comes with issue #2.");

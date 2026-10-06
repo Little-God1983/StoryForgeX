@@ -1,0 +1,279 @@
+<UserControl x:Class="StoryForge.App.Views.SettingsView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:pages="clr-namespace:StoryForge.App.ViewModels.Pages"
+             xmlns:settings="clr-namespace:StoryForge.App.ViewModels.Settings"
+             mc:Ignorable="d"
+             d:DataContext="{d:DesignInstance Type=pages:SettingsPageViewModel}">
+
+  <UserControl.Resources>
+    <!-- Card chrome shared by every provider: name, kind tag, status with its reason. -->
+    <Style x:Key="CardStyle" TargetType="Border">
+      <Setter Property="Background" Value="{StaticResource CardBrush}" />
+      <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="CornerRadius" Value="12" />
+      <Setter Property="Padding" Value="18" />
+      <Setter Property="Margin" Value="0,0,16,16" />
+    </Style>
+
+    <DataTemplate x:Key="CardHeaderTemplate" DataType="{x:Type settings:ProviderCardViewModel}">
+      <StackPanel Margin="0,0,0,14">
+        <DockPanel>
+          <TextBlock DockPanel.Dock="Right" FontSize="12" VerticalAlignment="Center" Margin="10,0,0,0"
+                     Style="{StaticResource StateTextStyle}" Tag="{Binding State}"
+                     AutomationProperties.Name="{Binding Title, StringFormat='{}{0} status'}">
+            <Run Text="●" /> <Run Text="{Binding StateText, Mode=OneWay}" />
+          </TextBlock>
+          <Border DockPanel.Dock="Right" Background="{StaticResource FieldBrush}" CornerRadius="6" Padding="8,3" VerticalAlignment="Center">
+            <TextBlock Text="{Binding Kind}" FontSize="12" Foreground="{StaticResource LabelBrush}" />
+          </Border>
+          <TextBlock Text="{Binding Title}" FontSize="16" FontWeight="Bold" VerticalAlignment="Center" />
+        </DockPanel>
+        <TextBlock Text="{Binding Detail}" FontSize="12" Margin="0,4,0,0" TextTrimming="CharacterEllipsis"
+                   Style="{StaticResource StateTextStyle}" Tag="{Binding State}" ToolTip="{Binding Detail}" />
+      </StackPanel>
+    </DataTemplate>
+
+    <!-- A label above its field; Tag carries the label text. -->
+    <Style x:Key="FieldCellStyle" TargetType="StackPanel">
+      <Setter Property="Margin" Value="0,0,10,20" />
+    </Style>
+
+    <DataTemplate DataType="{x:Type settings:ClaudeCliCardViewModel}">
+      <Border Style="{StaticResource CardStyle}">
+        <StackPanel>
+          <ContentPresenter Content="{Binding ValidatesOnNotifyDataErrors=False}" ContentTemplate="{StaticResource CardHeaderTemplate}" />
+          <UniformGrid Columns="2">
+            <StackPanel Style="{StaticResource FieldCellStyle}">
+              <TextBlock Text="Executable" Style="{StaticResource FieldLabelStyle}" />
+              <TextBox Text="{Binding Executable, UpdateSourceTrigger=PropertyChanged}" AutomationProperties.Name="Claude CLI executable" />
+            </StackPanel>
+            <StackPanel Style="{StaticResource FieldCellStyle}">
+              <TextBlock Text="Arguments" Style="{StaticResource FieldLabelStyle}" />
+              <TextBox Text="{Binding Arguments, UpdateSourceTrigger=PropertyChanged}" AutomationProperties.Name="Claude CLI arguments" />
+            </StackPanel>
+            <StackPanel Style="{StaticResource FieldCellStyle}">
+              <TextBlock Text="Timeout (s)" Style="{StaticResource FieldLabelStyle}" />
+              <TextBox Text="{Binding TimeoutSeconds, UpdateSourceTrigger=PropertyChanged}" AutomationProperties.Name="Claude CLI timeout in seconds" />
+            </StackPanel>
+            <StackPanel Style="{StaticResource FieldCellStyle}">
+              <TextBlock Text="Max parallel" Style="{StaticResource FieldLabelStyle}" />
+              <TextBox Text="{Binding MaxParallel, UpdateSourceTrigger=PropertyChanged}" AutomationProperties.Name="Claude CLI max parallel" />
+            </StackPanel>
+          </UniformGrid>
+        </StackPanel>
+      </Border>
+    </DataTemplate>
+
+    <DataTemplate DataType="{x:Type settings:LmStudioCardViewModel}">
+      <Border Style="{StaticResource CardStyle}">
+        <StackPanel>
+          <ContentPresenter Content="{Binding ValidatesOnNotifyDataErrors=False}" ContentTemplate="{StaticResource CardHeaderTemplate}" />
+          <UniformGrid Columns="2">
+            <StackPanel Style="{StaticResource FieldCellStyle}">
+              <TextBlock Text="Base URL" Style="{StaticResource FieldLabelStyle}" />
+              <TextBox Text="{Binding BaseUrl, UpdateSourceTrigger=PropertyChanged}" AutomationProperties.Name="LM Studio base URL" />
+            </StackPanel>
+            <StackPanel Style="{StaticResource FieldCellStyle}">
+              <TextBlock Text="Model (empty: the loaded one)" Style="{StaticResource FieldLabelStyle}" />
+              <TextBox Text="{Binding Model, UpdateSourceTrigger=PropertyChanged}" AutomationProperties.Name="LM Studio model" />
+            </StackPanel>
+            <StackPanel Style="{StaticResource FieldCellStyle}">
+              <TextBlock Text="Structured output" Style="{StaticResource FieldLabelStyle}" />
+              <ComboBox ItemsSource="{x:Static settings:LmStudioCardViewModel.StructuredOutputChoices}"
+                        SelectedValuePath="Value" DisplayMemberPath="Label" SelectedValue="{Binding StructuredOutput}"
+                        AutomationProperties.Name="LM Studio structured output" />
+            </StackPanel>
+            <StackPanel Style="{StaticResource FieldCellStyle}">
+              <TextBlock Text="Web research" Style="{StaticResource FieldLabelStyle}" />
+              <ComboBox ItemsSource="{x:Static settings:LmStudioCardViewModel.WebResearchChoices}"
+                        SelectedValuePath="Value" DisplayMemberPath="Label" SelectedValue="{Binding WebResearch}"
+                        AutomationProperties.Name="LM Studio web research" />
+            </StackPanel>
+          </UniformGrid>
+          <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
+            <TextBlock Text="API token (only if LM Studio requires one) · " FontSize="12" Foreground="{StaticResource LabelBrush}" />
+            <TextBlock FontSize="12" AutomationProperties.Name="LM Studio API token state">
+              <TextBlock.Style>
+                <Style TargetType="TextBlock">
+                  <Setter Property="Text" Value="none stored" />
+                  <Setter Property="Foreground" Value="{StaticResource TextMutedBrush}" />
+                  <Style.Triggers>
+                    <DataTrigger Binding="{Binding HasApiToken}" Value="True">
+                      <Setter Property="Text" Value="stored in Windows Credential Manager" />
+                      <Setter Property="Foreground" Value="{StaticResource PillOkTextBrush}" />
+                    </DataTrigger>
+                  </Style.Triggers>
+                </Style>
+              </TextBlock.Style>
+            </TextBlock>
+          </StackPanel>
+          <DockPanel>
+            <Button DockPanel.Dock="Right" Content="Remove" Style="{StaticResource SecondaryButtonStyle}" Margin="8,0,0,0"
+                    Click="RemoveToken_Click" IsEnabled="{Binding HasApiToken}" />
+            <Button DockPanel.Dock="Right" Content="Save token" Style="{StaticResource SecondaryButtonStyle}" Margin="8,0,0,0"
+                    Click="SaveToken_Click" />
+            <PasswordBox x:Name="TokenBox" AutomationProperties.Name="LM Studio API token" />
+          </DockPanel>
+        </StackPanel>
+      </Border>
+    </DataTemplate>
+
+    <DataTemplate DataType="{x:Type settings:ComfyUiCardViewModel}">
+      <Border Style="{StaticResource CardStyle}">
+        <StackPanel>
+          <ContentPresenter Content="{Binding ValidatesOnNotifyDataErrors=False}" ContentTemplate="{StaticResource CardHeaderTemplate}" />
+          <UniformGrid Columns="2">
+            <StackPanel Style="{StaticResource FieldCellStyle}">
+              <TextBlock Text="Host" Style="{StaticResource FieldLabelStyle}" />
+              <TextBox Text="{Binding Host, UpdateSourceTrigger=PropertyChanged}" AutomationProperties.Name="ComfyUI host" />
+            </StackPanel>
+            <StackPanel Style="{StaticResource FieldCellStyle}">
+              <TextBlock Text="Port" Style="{StaticResource FieldLabelStyle}" />
+              <TextBox Text="{Binding Port, UpdateSourceTrigger=PropertyChanged}" AutomationProperties.Name="ComfyUI port" />
+            </StackPanel>
+            <StackPanel Style="{StaticResource FieldCellStyle}">
+              <TextBlock Text="Workflow templates" Style="{StaticResource FieldLabelStyle}" />
+              <TextBox Text="{Binding WorkflowTemplatesFolder, UpdateSourceTrigger=PropertyChanged}" AutomationProperties.Name="ComfyUI workflow templates folder" />
+            </StackPanel>
+            <StackPanel Style="{StaticResource FieldCellStyle}">
+              <TextBlock Text="GPU slots" Style="{StaticResource FieldLabelStyle}" />
+              <TextBox Text="{Binding GpuSlots, UpdateSourceTrigger=PropertyChanged}" AutomationProperties.Name="ComfyUI GPU slots" />
+            </StackPanel>
+          </UniformGrid>
+          <CheckBox IsChecked="{Binding FreeVramBetweenStages}" Content="Free VRAM between stages (batch all stills, then all clips)" />
+        </StackPanel>
+      </Border>
+    </DataTemplate>
+
+    <DataTemplate DataType="{x:Type settings:FfmpegCardViewModel}">
+      <Border Style="{StaticResource CardStyle}">
+        <StackPanel>
+          <ContentPresenter Content="{Binding ValidatesOnNotifyDataErrors=False}" ContentTemplate="{StaticResource CardHeaderTemplate}" />
+          <UniformGrid Columns="2">
+            <StackPanel Style="{StaticResource FieldCellStyle}">
+              <TextBlock Text="Executable" Style="{StaticResource FieldLabelStyle}" />
+              <TextBox Text="{Binding Executable, UpdateSourceTrigger=PropertyChanged}" AutomationProperties.Name="FFmpeg executable" />
+            </StackPanel>
+            <StackPanel Style="{StaticResource FieldCellStyle}">
+              <TextBlock Text="Also export timeline" Style="{StaticResource FieldLabelStyle}" />
+              <ComboBox ItemsSource="{x:Static settings:FfmpegCardViewModel.TimelineExportChoices}"
+                        SelectedValuePath="Value" DisplayMemberPath="Label" SelectedValue="{Binding TimelineExport}"
+                        AutomationProperties.Name="FFmpeg timeline export" />
+            </StackPanel>
+          </UniformGrid>
+        </StackPanel>
+      </Border>
+    </DataTemplate>
+  </UserControl.Resources>
+
+  <Grid>
+    <Grid.ColumnDefinitions>
+      <ColumnDefinition Width="240" />
+      <ColumnDefinition Width="*" />
+    </Grid.ColumnDefinitions>
+
+    <!-- Settings side menu. -->
+    <Border Grid.Column="0" Background="{StaticResource NavBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,1,0" Padding="14,20">
+      <DockPanel>
+        <TextBlock DockPanel.Dock="Bottom" Text="Secrets live in the OS credential store, never in settings files."
+                   TextWrapping="Wrap" FontSize="12" Foreground="{StaticResource TextMutedBrush}" Margin="12,0" />
+        <ListBox ItemsSource="{Binding Sections}" SelectedItem="{Binding SelectedSection}" DisplayMemberPath="Title"
+                 ItemContainerStyle="{StaticResource NavItemStyle}" Background="Transparent" BorderThickness="0" Padding="0"
+                 SelectionChanged="Sections_SelectionChanged" AutomationProperties.Name="Settings sections" />
+      </DockPanel>
+    </Border>
+
+    <ScrollViewer Grid.Column="1" VerticalScrollBarVisibility="Auto">
+      <StackPanel Margin="32,28,16,28">
+        <TextBlock Text="{Binding SelectedSection.Title}" FontSize="26" FontWeight="Bold" Margin="0,0,0,20" />
+
+        <!-- Why the last save was refused. -->
+        <Border Background="{StaticResource PillErrorBackBrush}" CornerRadius="8" Padding="12,8" Margin="0,0,16,16">
+          <Border.Style>
+            <Style TargetType="Border">
+              <Style.Triggers>
+                <DataTrigger Binding="{Binding SaveError}" Value="{x:Null}">
+                  <Setter Property="Visibility" Value="Collapsed" />
+                </DataTrigger>
+              </Style.Triggers>
+            </Style>
+          </Border.Style>
+          <TextBlock Text="{Binding SaveError}" Foreground="{StaticResource PillErrorTextBrush}" FontSize="13" TextWrapping="Wrap" />
+        </Border>
+
+        <!-- The card objects are bound whole here; their field errors belong on the fields only, so
+             whole-object validation is off for these bindings. -->
+    <!-- Providers: a card per provider, two per row. A fixed grid rather than an ItemsControl:
+             UI Automation exposed only the first row of an ItemsControl's cards to screen readers. -->
+        <Grid>
+          <Grid.Style>
+            <Style TargetType="Grid">
+              <Setter Property="Visibility" Value="Collapsed" />
+              <Style.Triggers>
+                <DataTrigger Binding="{Binding SelectedSection.Title}" Value="Providers">
+                  <Setter Property="Visibility" Value="Visible" />
+                </DataTrigger>
+              </Style.Triggers>
+            </Style>
+          </Grid.Style>
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*" />
+            <ColumnDefinition Width="*" />
+          </Grid.ColumnDefinitions>
+          <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+          </Grid.RowDefinitions>
+          <ContentControl Grid.Row="0" Grid.Column="0" Content="{Binding ClaudeCli, ValidatesOnNotifyDataErrors=False}" Focusable="False" />
+          <ContentControl Grid.Row="0" Grid.Column="1" Content="{Binding LmStudio, ValidatesOnNotifyDataErrors=False}" Focusable="False" />
+          <ContentControl Grid.Row="1" Grid.Column="0" Content="{Binding ComfyUi, ValidatesOnNotifyDataErrors=False}" Focusable="False" />
+          <ContentControl Grid.Row="1" Grid.Column="1" Content="{Binding Ffmpeg, ValidatesOnNotifyDataErrors=False}" Focusable="False" />
+        </Grid>
+
+        <!-- Paths & cache: where project media goes. -->
+        <Border MaxWidth="720" HorizontalAlignment="Left">
+          <Border.Style>
+            <Style TargetType="Border" BasedOn="{StaticResource CardStyle}">
+              <Setter Property="Visibility" Value="Collapsed" />
+              <Style.Triggers>
+                <DataTrigger Binding="{Binding SelectedSection.Title}" Value="Paths &amp; cache">
+                  <Setter Property="Visibility" Value="Visible" />
+                </DataTrigger>
+              </Style.Triggers>
+            </Style>
+          </Border.Style>
+          <StackPanel>
+            <TextBlock Text="Projects folder" FontSize="16" FontWeight="Bold" />
+            <TextBlock Text="Voice, stills, clips and renders of every project are stored here. Leave empty to use the default."
+                       FontSize="12" Foreground="{StaticResource TextMutedBrush}" TextWrapping="Wrap" Margin="0,4,0,14" />
+            <DockPanel>
+              <Button DockPanel.Dock="Right" Content="Browse…" Style="{StaticResource SecondaryButtonStyle}" Margin="8,0,0,0"
+                      Click="BrowseProjectsFolder_Click" />
+              <TextBox Text="{Binding ProjectsFolder, UpdateSourceTrigger=PropertyChanged}" AutomationProperties.Name="Projects folder" />
+            </DockPanel>
+            <TextBlock FontSize="12" Foreground="{StaticResource TextMutedBrush}" Margin="0,8,0,0" TextWrapping="Wrap">
+              <Run Text="In use:" /> <Run Text="{Binding EffectiveProjectsFolder, Mode=OneWay}" FontFamily="{StaticResource MonoFont}" />
+            </TextBlock>
+          </StackPanel>
+        </Border>
+
+        <!-- Sections that later issues build. -->
+        <TextBlock Text="{Binding SelectedSection.Placeholder}" FontSize="13" Foreground="{StaticResource TextMutedBrush}">
+          <TextBlock.Style>
+            <Style TargetType="TextBlock">
+              <Style.Triggers>
+                <DataTrigger Binding="{Binding SelectedSection.Placeholder}" Value="{x:Null}">
+                  <Setter Property="Visibility" Value="Collapsed" />
+                </DataTrigger>
+              </Style.Triggers>
+            </Style>
+          </TextBlock.Style>
+        </TextBlock>
+      </StackPanel>
+    </ScrollViewer>
+  </Grid>
+</UserControl>

@@ -8,9 +8,64 @@ internal sealed class FakeStoryForgeClient : IStoryForgeClient
 
     public List<ProjectSummary> RecentProjects { get; } = [];
 
-    public Task<IReadOnlyList<ProviderStatus>> GetProviderStatusesAsync(CancellationToken cancellationToken = default) =>
-        Task.FromResult<IReadOnlyList<ProviderStatus>>(Providers);
+    public EngineSettings Settings { get; set; } = EngineSettings.Defaults;
+
+    public Dictionary<SecretKey, string> Secrets { get; } = [];
+
+    public int StatusChecks { get; private set; }
+
+    public int Saves { get; private set; }
+
+    public string DefaultProjectsFolder { get; set; } = @"C:\Data\projects";
+
+    /// <summary>When set, SaveSettingsAsync throws it instead of saving.</summary>
+    public Exception? SaveFailure { get; set; }
+
+    /// <summary>When set, provider checks wait for it, like slow real checks.</summary>
+    public Task? StatusGate { get; set; }
+
+    public async Task<IReadOnlyList<ProviderStatus>> GetProviderStatusesAsync(CancellationToken cancellationToken = default)
+    {
+        StatusChecks++;
+        if (StatusGate is not null)
+        {
+            await StatusGate;
+        }
+        return [.. Providers];
+    }
 
     public Task<IReadOnlyList<ProjectSummary>> GetRecentProjectsAsync(CancellationToken cancellationToken = default) =>
         Task.FromResult<IReadOnlyList<ProjectSummary>>(RecentProjects);
+
+    public Task<EngineSettings> GetSettingsAsync(CancellationToken cancellationToken = default) => Task.FromResult(Settings);
+
+    public Task SaveSettingsAsync(EngineSettings settings, CancellationToken cancellationToken = default)
+    {
+        if (SaveFailure is not null)
+        {
+            throw SaveFailure;
+        }
+        Saves++;
+        Settings = settings;
+        return Task.CompletedTask;
+    }
+
+    public Task<string> GetEffectiveProjectsFolderAsync(CancellationToken cancellationToken = default) =>
+        Task.FromResult(Settings.Paths.ProjectsFolder is { Length: > 0 } folder ? folder : DefaultProjectsFolder);
+
+    public Task<bool> HasSecretAsync(SecretKey key, CancellationToken cancellationToken = default) =>
+        Task.FromResult(Secrets.ContainsKey(key));
+
+    public Task SetSecretAsync(SecretKey key, string? value, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrEmpty(value))
+        {
+            Secrets.Remove(key);
+        }
+        else
+        {
+            Secrets[key] = value;
+        }
+        return Task.CompletedTask;
+    }
 }

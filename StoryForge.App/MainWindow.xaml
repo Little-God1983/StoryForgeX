@@ -5,6 +5,7 @@
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:vm="clr-namespace:StoryForge.App.ViewModels"
         xmlns:pages="clr-namespace:StoryForge.App.ViewModels.Pages"
+        xmlns:views="clr-namespace:StoryForge.App.Views"
         mc:Ignorable="d"
         d:DataContext="{d:DesignInstance Type=vm:MainViewModel}"
         Title="StoryForge X"
@@ -24,6 +25,10 @@
         <TextBlock Text="{Binding Title}" FontSize="26" FontWeight="Bold" />
         <TextBlock Text="{Binding Placeholder}" Margin="0,8,0,0" FontSize="13" Foreground="{StaticResource TextMutedBrush}" />
       </StackPanel>
+    </DataTemplate>
+
+    <DataTemplate DataType="{x:Type pages:SettingsPageViewModel}">
+      <views:SettingsView />
     </DataTemplate>
   </Window.Resources>
 

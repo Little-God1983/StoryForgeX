@@ -4,6 +4,9 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using StoryForge.Client;
 using StoryForge.Engine.Data;
+using StoryForge.Engine.Providers;
+using StoryForge.Engine.Secrets;
+using StoryForge.Engine.Settings;
 
 namespace StoryForge.Engine;
 
@@ -29,13 +32,30 @@ public static class ServiceCollectionExtensions
         // initializer and the connection string read the folder from there. So the folder the
         // initializer creates is always the folder the database opens in, whatever else
         // configures the options later.
-        services.AddOptions<StoryForgeEngineOptions>().Configure(o => o.DataDirectory = options.DataDirectory);
+        services.AddOptions<StoryForgeEngineOptions>().Configure(o =>
+        {
+            o.DataDirectory = options.DataDirectory;
+            o.DefaultProjectsFolder = options.DefaultProjectsFolder;
+            o.CredentialTargetPrefix = options.CredentialTargetPrefix;
+        });
         services.AddDbContextFactory<StoryForgeDbContext>((provider, db) =>
         {
             var path = provider.GetRequiredService<IOptions<StoryForgeEngineOptions>>().Value.DatabasePath;
             db.UseSqlite(new SqliteConnectionStringBuilder { DataSource = path }.ToString());
         });
         services.AddHostedService<DatabaseInitializer>();
+        services.AddSingleton<SettingsStore>();
+        services.AddSingleton<IProcessRunner, ProcessRunner>();
+        services.AddSingleton<HttpMessageHandler>(_ => new SocketsHttpHandler { ConnectTimeout = TimeSpan.FromSeconds(3) });
+        services.AddSingleton<ProviderChecks>();
+        if (OperatingSystem.IsWindows())
+        {
+            services.AddSingleton<ISecretStore, WindowsCredentialStore>();
+        }
+        else
+        {
+            services.AddSingleton<ISecretStore, UnsupportedSecretStore>();
+        }
         services.AddSingleton<IStoryForgeClient, InProcessStoryForgeClient>();
         return services;
     }
