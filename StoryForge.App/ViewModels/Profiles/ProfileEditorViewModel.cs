@@ -163,6 +163,7 @@ public sealed partial class ProfileEditorViewModel : ObservableObject
     public async Task AddReferenceFilesAsync(IEnumerable<string> paths)
     {
         Error = null;
+        var failures = new List<string>();
         foreach (var path in paths)
         {
             try
@@ -175,8 +176,12 @@ public sealed partial class ProfileEditorViewModel : ObservableObject
             }
             catch (Exception ex)
             {
-                Error = $"Could not add {Path.GetFileName(path)}: {ex.Message}";
+                failures.Add($"{Path.GetFileName(path)} ({ex.Message})");
             }
+        }
+        if (failures.Count > 0)
+        {
+            Error = $"Could not add {string.Join(", ", failures)}.";
         }
     }
 

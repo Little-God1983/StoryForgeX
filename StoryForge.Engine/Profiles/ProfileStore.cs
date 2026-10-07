@@ -149,14 +149,19 @@ internal sealed class ProfileStore(
         {
             // Copied under a temporary name first, so a copy cut short never looks like the real file.
             var partial = target + "." + Guid.NewGuid().ToString("N") + ".partial";
-            File.Copy(sourcePath, partial);
             try
             {
+                File.Copy(sourcePath, partial);
                 File.Move(partial, target);
             }
             catch (IOException) when (File.Exists(target))
             {
-                File.Delete(partial);   // the same file imported at the same moment
+                // The same file imported at the same moment; that copy is as good as this one.
+            }
+            finally
+            {
+                // A copy cut short (disk full) or a move refused never leaves its half behind.
+                File.Delete(partial);
             }
         }
         return target;
@@ -165,19 +170,26 @@ internal sealed class ProfileStore(
     public async Task<IReadOnlyList<string>> GetWorkflowTemplatesAsync(CancellationToken cancellationToken)
     {
         var folder = (await settingsStore.LoadAsync(cancellationToken)).ComfyUi.WorkflowTemplatesFolder;
-        if (string.IsNullOrWhiteSpace(folder) || !Directory.Exists(folder))
+        if (string.IsNullOrWhiteSpace(folder))
         {
             return [];
         }
-        return
-        [
-            .. Directory.EnumerateFiles(folder, "*.json")
-                .Where(f => Path.GetExtension(f).Equals(".json", StringComparison.OrdinalIgnoreCase))
-                .Select(Path.GetFileName)
-                .OfType<string>()
-                .Order(StringComparer.OrdinalIgnoreCase),
-        ];
+        // Off the caller's thread: a folder on an unreachable network share takes the SMB timeout
+        // to answer, and the in-process client is called from the UI thread.
+        return await Task.Run(() => ListTemplates(folder), cancellationToken);
     }
+
+    private static IReadOnlyList<string> ListTemplates(string folder) =>
+        !Directory.Exists(folder)
+            ? []
+            :
+            [
+                .. Directory.EnumerateFiles(folder, "*.json")
+                    .Where(f => Path.GetExtension(f).Equals(".json", StringComparison.OrdinalIgnoreCase))
+                    .Select(Path.GetFileName)
+                    .OfType<string>()
+                    .Order(StringComparer.OrdinalIgnoreCase),
+            ];
 
     private static void Validate(ProfileContent content)
     {

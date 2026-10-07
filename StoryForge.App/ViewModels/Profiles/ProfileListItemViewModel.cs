@@ -18,15 +18,16 @@ public sealed partial class ProfileListItemViewModel(ProfileSummary summary) : O
     public string GroupTitle => KindLabel.ToUpperInvariant();
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(Label))]
+    [NotifyPropertyChangedFor(nameof(Label), nameof(AccessibleName))]
     private int _latestVersion = summary.LatestVersion;
 
     /// <summary>Edits not saved as a version yet; the list marks the entry.</summary>
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(AccessibleName))]
     private bool _hasUnsavedChanges;
 
     public string Label => $"{Name} · v{LatestVersion}";
 
-    // What screen readers announce for the list item.
-    public override string ToString() => HasUnsavedChanges ? $"{Label}, unsaved changes" : Label;
+    /// <summary>What screen readers announce: the label, plus the unsaved state the dot shows.</summary>
+    public string AccessibleName => HasUnsavedChanges ? $"{Label}, unsaved changes" : Label;
 }

@@ -514,6 +514,70 @@ public sealed class ProfilesPageTests
     }
 
     [Fact]
+    public async Task Every_failed_import_is_reported_not_just_the_last()
+    {
+        _client.AddProfile(ProfileKind.Image, "Painted", Image());
+        var page = await LoadedPage();
+        await Open(page, "Painted");
+        _client.FailingImports.UnionWith(["a.png", "c.png"]);
+
+        await page.Editor!.AddReferenceFilesAsync([@"D:\a.png", @"D:\b.png", @"D:\c.png"]);
+
+        Assert.Contains("a.png", page.Editor.Error);
+        Assert.Contains("c.png", page.Editor.Error);
+        Assert.Equal([@"C:\Data\references\b.png"], page.Editor.Draft.ReferenceFiles);
+    }
+
+    [Fact]
+    public async Task Screen_readers_hear_when_a_profile_has_unsaved_changes()
+    {
+        _client.AddProfile(ProfileKind.Image, "Painted", Image());
+        var page = await LoadedPage();
+        await Open(page, "Painted");
+        var item = page.Profiles.Single();
+        var changed = new List<string?>();
+        item.PropertyChanged += (_, e) => changed.Add(e.PropertyName);
+
+        page.Editor!.Draft.NegativePrompt = "logo";
+
+        Assert.Equal("Painted · v1, unsaved changes", item.AccessibleName);
+        Assert.Contains(nameof(item.AccessibleName), changed);
+    }
+
+    [Fact]
+    public async Task A_templates_folder_changed_just_before_opening_the_screen_is_used()
+    {
+        // Settings saves a moment after the last keystroke; opening Profiles must not read the
+        // templates before that save.
+        var main = new MainViewModel(_client, new ProviderStatusBoard(_client), TimeSpan.FromHours(1));
+        await main.LoadAsync();
+        var settings = (SettingsPageViewModel)main.NavItems.Single(item => item.Title == "Settings").Page;
+        settings.ComfyUi.WorkflowTemplatesFolder = @"D:\workflows";
+
+        main.SelectedNavItem = main.NavItems.Single(item => item.Title == "Profiles");
+        await main.PageShowing;
+
+        Assert.Equal(@"D:\workflows", _client.TemplateReadFolders[^1]);
+    }
+
+    [Fact]
+    public async Task A_profile_list_that_failed_to_load_is_tried_again_when_the_screen_opens()
+    {
+        _client.ProfileListFailure = new InvalidOperationException("database is locked");
+        var main = new MainViewModel(_client, new ProviderStatusBoard(_client), TimeSpan.Zero);
+        await main.LoadAsync();
+        _client.ProfileListFailure = null;
+        _client.AddProfile(ProfileKind.Image, "Painted", Image());
+
+        main.SelectedNavItem = main.NavItems.Single(item => item.Title == "Profiles");
+        await main.PageShowing;
+
+        var page = (ProfilesPageViewModel)main.CurrentPage;
+        Assert.Equal(["Painted"], page.Profiles.Select(p => p.Name));
+        Assert.Null(page.LoadError);
+    }
+
+    [Fact]
     public async Task Opening_the_screen_reads_the_workflow_templates_again()
     {
         var main = new MainViewModel(_client, new ProviderStatusBoard(_client), TimeSpan.Zero);

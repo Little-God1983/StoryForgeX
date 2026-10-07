@@ -19,7 +19,7 @@
     </CollectionViewSource>
 
     <Style x:Key="ProfileItemStyle" TargetType="ListBoxItem" BasedOn="{StaticResource NavItemStyle}">
-      <Setter Property="AutomationProperties.Name" Value="{Binding Label}" />
+      <Setter Property="AutomationProperties.Name" Value="{Binding AccessibleName}" />
     </Style>
 
     <Style x:Key="CardStyle" TargetType="Border">

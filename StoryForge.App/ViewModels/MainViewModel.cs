@@ -61,6 +61,9 @@ public sealed partial class MainViewModel : ObservableObject
 
     public bool HasRecentProjects => RecentProjects.Count > 0;
 
+    /// <summary>What opening the current screen started (Profiles reads its lists); tests await it.</summary>
+    public Task PageShowing { get; private set; } = Task.CompletedTask;
+
     /// <summary>
     /// Loads the settings, the profiles and the recent projects, then checks the providers. The checks come last
     /// because they take seconds (a CLI starting, a port timing out); the screens are filled first.
@@ -124,9 +127,26 @@ public sealed partial class MainViewModel : ObservableObject
         newValue.PropertyChanged += OnPagePropertyChanged;
         if (newValue == _profiles)
         {
-            // Workflow files may have been added, or the folder changed in Settings, since.
-            _ = _profiles.RefreshTemplatesAsync();
+            PageShowing = ShowProfilesAsync();
         }
+    }
+
+    /// <summary>
+    /// Workflow files may have been added, or the folder changed in Settings, since the screen was
+    /// last open. A folder typed a moment ago may still be waiting to be saved, so that goes first.
+    /// </summary>
+    private async Task ShowProfilesAsync()
+    {
+        try
+        {
+            await _settings.SavePendingAsync();
+        }
+        catch (Exception ex)
+        {
+            // Settings shows its own save error; Profiles still opens with what is saved.
+            Debug.WriteLine($"Saving settings before opening Profiles failed: {ex}");
+        }
+        await _profiles.ShowAsync();
     }
 
     // A page can change its own breadcrumb (Settings: "Settings / Paths & cache").

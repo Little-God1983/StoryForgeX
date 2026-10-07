@@ -103,6 +103,21 @@ public sealed partial class SettingsPageViewModel : PageViewModel
         await PendingSave;
     }
 
+    /// <summary>
+    /// Writes an edit that is still waiting for its delay, now, with the usual provider re-check.
+    /// Another screen calls this before it reads settings (Profiles reads the templates folder).
+    /// </summary>
+    public async Task SavePendingAsync()
+    {
+        if (!HasPendingSave)
+        {
+            return;
+        }
+        _pendingDelay?.Cancel();
+        await SaveNowAsync();
+        await PendingSave;
+    }
+
     /// <summary>An edit has been made that is not written yet (including one whose write failed).</summary>
     public bool HasPendingSave => _editVersion != _savedVersion;
 

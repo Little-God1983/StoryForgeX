@@ -203,8 +203,15 @@ internal sealed class FakeStoryForgeClient : IStoryForgeClient
         return saved;
     }
 
+    /// <summary>File names whose import fails.</summary>
+    public HashSet<string> FailingImports { get; } = [];
+
     public Task<string> ImportReferenceFileAsync(string sourcePath, CancellationToken cancellationToken = default)
     {
+        if (FailingImports.Contains(Path.GetFileName(sourcePath)))
+        {
+            return Task.FromException<string>(new IOException("access denied"));
+        }
         ImportedFiles.Add(sourcePath);
         return Task.FromResult(@"C:\Data\references\" + Path.GetFileName(sourcePath));
     }
@@ -214,9 +221,13 @@ internal sealed class FakeStoryForgeClient : IStoryForgeClient
 
     public Queue<TaskCompletionSource<IReadOnlyList<string>>> PendingTemplateReads { get; } = [];
 
+    /// <summary>The templates folder in the saved settings at each template read.</summary>
+    public List<string> TemplateReadFolders { get; } = [];
+
     public Task<IReadOnlyList<string>> GetWorkflowTemplatesAsync(CancellationToken cancellationToken = default)
     {
         TemplateReads++;
+        TemplateReadFolders.Add(Settings.ComfyUi.WorkflowTemplatesFolder);
         if (HoldTemplateReads)
         {
             var read = new TaskCompletionSource<IReadOnlyList<string>>();

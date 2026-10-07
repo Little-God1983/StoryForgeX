@@ -19,6 +19,7 @@ public sealed partial class ProfilesPageViewModel : PageViewModel
     private readonly Dictionary<Guid, ProfileEditorViewModel> _editors = [];
     private IReadOnlyList<string> _templates = [];
     private int _templateReads;
+    private bool _listLoaded;
 
     public ProfilesPageViewModel(IStoryForgeClient client)
         : base("Profiles", BaseBreadcrumb, "")
@@ -65,6 +66,22 @@ public sealed partial class ProfilesPageViewModel : PageViewModel
 
     public async Task LoadAsync()
     {
+        await LoadListAsync();
+        await RefreshTemplatesAsync();
+    }
+
+    /// <summary>Called whenever the screen opens: reads the workflow files again, and the list if it failed before.</summary>
+    public async Task ShowAsync()
+    {
+        if (!_listLoaded)
+        {
+            await LoadListAsync();
+        }
+        await RefreshTemplatesAsync();
+    }
+
+    private async Task LoadListAsync()
+    {
         try
         {
             var profiles = await _client.GetProfilesAsync();
@@ -75,13 +92,13 @@ public sealed partial class ProfilesPageViewModel : PageViewModel
             }
             OnPropertyChanged(nameof(HasProfiles));
             LoadError = null;
+            _listLoaded = true;
         }
         catch (Exception ex)
         {
             Debug.WriteLine($"Loading profiles failed: {ex}");
             LoadError = $"Could not load the profiles: {ex.Message}";
         }
-        await RefreshTemplatesAsync();
     }
 
     /// <summary>Reads the workflow files again; the folder may have changed in Settings.</summary>
