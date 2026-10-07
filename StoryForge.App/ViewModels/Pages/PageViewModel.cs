@@ -19,9 +19,3 @@ public abstract class PageViewModel(string title, string breadcrumb, string plac
 
     public string Placeholder { get; } = placeholder;
 }
-
-public sealed class NewProjectPageViewModel()
-    : PageViewModel("New project", "Projects / New project", "Brief, providers, output and run plan come with issue #4.");
-
-public sealed class ResultMatrixPageViewModel()
-    : PageViewModel("Result matrix", "Projects / Result matrix", "No project open. Start one from New project.");

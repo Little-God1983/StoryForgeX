@@ -353,6 +353,67 @@
     </Setter>
   </Style>
 
+  <!-- Radio button: a dark ring with an amber dot, as the canvas's Mode choice. -->
+  <Style TargetType="RadioButton">
+    <Setter Property="Foreground" Value="{StaticResource TextBrush}" />
+    <Setter Property="FontSize" Value="13" />
+    <Setter Property="Cursor" Value="Hand" />
+    <Setter Property="Template">
+      <Setter.Value>
+        <ControlTemplate TargetType="RadioButton">
+          <StackPanel Orientation="Horizontal" Background="Transparent">
+            <Grid Width="18" Height="18" VerticalAlignment="Center">
+              <Ellipse x:Name="Ring" Stroke="{StaticResource FieldBorderBrush}" StrokeThickness="1.5" Fill="{StaticResource FieldBrush}" />
+              <Ellipse x:Name="Dot" Width="8" Height="8" Fill="{StaticResource AccentBrush}" Visibility="Collapsed" />
+            </Grid>
+            <ContentPresenter Margin="10,0,0,0" VerticalAlignment="Center" />
+          </StackPanel>
+          <ControlTemplate.Triggers>
+            <Trigger Property="IsChecked" Value="True">
+              <Setter TargetName="Ring" Property="Stroke" Value="{StaticResource AccentBrush}" />
+              <Setter TargetName="Dot" Property="Visibility" Value="Visible" />
+            </Trigger>
+            <Trigger Property="IsKeyboardFocused" Value="True">
+              <Setter TargetName="Ring" Property="Stroke" Value="{StaticResource AccentTextBrush}" />
+            </Trigger>
+          </ControlTemplate.Triggers>
+        </ControlTemplate>
+      </Setter.Value>
+    </Setter>
+  </Style>
+
+  <!-- One button of a segmented choice ("16:9 | 9:16 | 1:1"): amber when picked. -->
+  <Style x:Key="SegmentStyle" TargetType="RadioButton">
+    <Setter Property="Foreground" Value="{StaticResource TextSoftBrush}" />
+    <Setter Property="Background" Value="{StaticResource FieldBrush}" />
+    <Setter Property="FontSize" Value="13" />
+    <Setter Property="Padding" Value="16,8" />
+    <Setter Property="Cursor" Value="Hand" />
+    <Setter Property="Template">
+      <Setter.Value>
+        <ControlTemplate TargetType="RadioButton">
+          <Border x:Name="Chrome" Background="{TemplateBinding Background}" Padding="{TemplateBinding Padding}">
+            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+          </Border>
+          <ControlTemplate.Triggers>
+            <Trigger Property="IsMouseOver" Value="True">
+              <Setter TargetName="Chrome" Property="Background" Value="{StaticResource NavHoverBrush}" />
+            </Trigger>
+            <Trigger Property="IsChecked" Value="True">
+              <Setter TargetName="Chrome" Property="Background" Value="{StaticResource AccentBrush}" />
+              <Setter Property="Foreground" Value="#1A1206" />
+              <Setter Property="FontWeight" Value="SemiBold" />
+            </Trigger>
+            <Trigger Property="IsKeyboardFocused" Value="True">
+              <Setter TargetName="Chrome" Property="BorderBrush" Value="{StaticResource TextBrush}" />
+              <Setter TargetName="Chrome" Property="BorderThickness" Value="0,0,0,2" />
+            </Trigger>
+          </ControlTemplate.Triggers>
+        </ControlTemplate>
+      </Setter.Value>
+    </Setter>
+  </Style>
+
   <!-- Field label above its control, as on the canvas ("Executable", "Port", …). -->
   <Style x:Key="FieldLabelStyle" TargetType="TextBlock">
     <Setter Property="FontSize" Value="12" />

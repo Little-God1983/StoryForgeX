@@ -71,3 +71,30 @@ public sealed class ThumbnailConverter : MarkupExtension, IValueConverter
 
     public override object ProvideValue(IServiceProvider serviceProvider) => this;
 }
+
+/// <summary>
+/// Checks a radio button when the bound value equals ConverterParameter; checking it writes the
+/// parameter back. Unchecking writes nothing (the newly checked button writes its own value).
+/// </summary>
+public sealed class ValueEqualsConverter : MarkupExtension, IValueConverter
+{
+    public object Convert(object? value, Type targetType, object? parameter, CultureInfo culture) =>
+        Equals(value?.ToString(), parameter?.ToString());
+
+    public object? ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture) =>
+        value is true ? parameter : Binding.DoNothing;
+
+    public override object ProvideValue(IServiceProvider serviceProvider) => this;
+}
+
+/// <summary>"Still images" → "STILL IMAGES", for card and section labels (WPF has no text-transform).</summary>
+public sealed class UpperCaseConverter : MarkupExtension, IValueConverter
+{
+    public object Convert(object? value, Type targetType, object? parameter, CultureInfo culture) =>
+        value?.ToString()?.ToUpper(culture) ?? "";
+
+    public object ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture) =>
+        throw new NotSupportedException();
+
+    public override object ProvideValue(IServiceProvider serviceProvider) => this;
+}

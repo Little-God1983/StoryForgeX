@@ -44,9 +44,15 @@ internal sealed class FakeStoryForgeClient : IStoryForgeClient
     }
 
     public Task<IReadOnlyList<ProjectSummary>> GetRecentProjectsAsync(CancellationToken cancellationToken = default) =>
-        Task.FromResult<IReadOnlyList<ProjectSummary>>(RecentProjects);
+        RecentProjectsFailure is not null
+            ? Task.FromException<IReadOnlyList<ProjectSummary>>(RecentProjectsFailure)
+            : Task.FromResult<IReadOnlyList<ProjectSummary>>([.. RecentProjects]);
 
-    public Task<EngineSettings> GetSettingsAsync(CancellationToken cancellationToken = default) => Task.FromResult(Settings);
+    /// <summary>When set, reading the settings throws it.</summary>
+    public Exception? SettingsLoadFailure { get; set; }
+
+    public Task<EngineSettings> GetSettingsAsync(CancellationToken cancellationToken = default) =>
+        SettingsLoadFailure is not null ? Task.FromException<EngineSettings>(SettingsLoadFailure) : Task.FromResult(Settings);
 
     /// <summary>When set, saves wait for it, so tests can see whether two overlap.</summary>
     public Task? SaveGate { get; set; }
@@ -77,8 +83,11 @@ internal sealed class FakeStoryForgeClient : IStoryForgeClient
         }
     }
 
+    /// <summary>When set, asking for the projects folder in use throws it.</summary>
+    public Exception? EffectiveFolderFailure { get; set; }
+
     public Task<string> GetEffectiveProjectsFolderAsync(CancellationToken cancellationToken = default) =>
-        Task.FromResult(Settings.Paths.ProjectsFolder is { Length: > 0 } folder ? folder : DefaultProjectsFolder);
+        EffectiveFolderFailure is not null ? Task.FromException<string>(EffectiveFolderFailure) : Task.FromResult(Settings.Paths.ProjectsFolder is { Length: > 0 } folder ? folder : DefaultProjectsFolder);
 
     /// <summary>When set, reading whether a secret exists throws it.</summary>
     public Exception? SecretFailure { get; set; }
@@ -236,4 +245,29 @@ internal sealed class FakeStoryForgeClient : IStoryForgeClient
         }
         return Task.FromResult<IReadOnlyList<string>>([.. WorkflowTemplates]);
     }
+    public List<Project> Projects { get; } = [];
+
+    /// <summary>When set, creating a project throws it.</summary>
+    public Exception? ProjectCreateFailure { get; set; }
+
+    /// <summary>When set, reading the recent projects throws it.</summary>
+    public Exception? RecentProjectsFailure { get; set; }
+
+    public Task<Project> CreateProjectAsync(ProjectSetup setup, CancellationToken cancellationToken = default)
+    {
+        if (ProjectCreateFailure is not null)
+        {
+            return Task.FromException<Project>(ProjectCreateFailure);
+        }
+        var project = new Project(Guid.NewGuid(), DateTimeOffset.UtcNow, setup,
+            [.. Enum.GetValues<PipelineStage>().Select(stage => new StageStatus(stage, StageState.NotStarted))]);
+        Projects.Add(project);
+        RecentProjects.Insert(0, new ProjectSummary(project.Id, setup.Name, "Not started"));
+        return Task.FromResult(project);
+    }
+
+    public Task<Project> GetProjectAsync(Guid projectId, CancellationToken cancellationToken = default) =>
+        Projects.FirstOrDefault(p => p.Id == projectId) is { } project
+            ? Task.FromResult(project)
+            : Task.FromException<Project>(new KeyNotFoundException($"There is no project {projectId}."));
 }

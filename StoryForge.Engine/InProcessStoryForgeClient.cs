@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Options;
 using StoryForge.Client;
 using StoryForge.Engine.Profiles;
+using StoryForge.Engine.Projects;
 using StoryForge.Engine.Providers;
 using StoryForge.Engine.Secrets;
 using StoryForge.Engine.Settings;
@@ -13,13 +14,14 @@ internal sealed class InProcessStoryForgeClient(
     ISecretStore secrets,
     ProviderChecks checks,
     ProfileStore profiles,
+    ProjectStore projects,
     IOptions<StoryForgeEngineOptions> options) : IStoryForgeClient
 {
     public Task<IReadOnlyList<ProviderStatus>> GetProviderStatusesAsync(CancellationToken cancellationToken = default) =>
         checks.CheckAllAsync(cancellationToken);
 
     public Task<IReadOnlyList<ProjectSummary>> GetRecentProjectsAsync(CancellationToken cancellationToken = default) =>
-        Task.FromResult<IReadOnlyList<ProjectSummary>>([]);
+        projects.ListRecentAsync(cancellationToken);
 
     public Task<EngineSettings> GetSettingsAsync(CancellationToken cancellationToken = default) =>
         settings.LoadAsync(cancellationToken);
@@ -59,6 +61,12 @@ internal sealed class InProcessStoryForgeClient(
 
     public Task<IReadOnlyList<string>> GetWorkflowTemplatesAsync(CancellationToken cancellationToken = default) =>
         profiles.GetWorkflowTemplatesAsync(cancellationToken);
+
+    public Task<Project> CreateProjectAsync(ProjectSetup setup, CancellationToken cancellationToken = default) =>
+        projects.CreateAsync(setup, cancellationToken);
+
+    public Task<Project> GetProjectAsync(Guid projectId, CancellationToken cancellationToken = default) =>
+        projects.GetAsync(projectId, cancellationToken);
 
     internal static string SecretName(SecretKey key) => key switch
     {

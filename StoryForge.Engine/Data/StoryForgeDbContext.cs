@@ -11,6 +11,8 @@ public sealed class StoryForgeDbContext(DbContextOptions<StoryForgeDbContext> op
 
     public DbSet<ProfileVersionEntry> ProfileVersions => Set<ProfileVersionEntry>();
 
+    public DbSet<ProjectEntry> Projects => Set<ProjectEntry>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.Entity<SettingsEntry>(entry =>
@@ -34,6 +36,12 @@ public sealed class StoryForgeDbContext(DbContextOptions<StoryForgeDbContext> op
         {
             version.ToTable("ProfileVersions");
             version.HasKey(v => new { v.ProfileId, v.Version });
+        });
+
+        modelBuilder.Entity<ProjectEntry>(project =>
+        {
+            project.ToTable("Projects");
+            project.HasKey(p => p.Id);
         });
     }
 }

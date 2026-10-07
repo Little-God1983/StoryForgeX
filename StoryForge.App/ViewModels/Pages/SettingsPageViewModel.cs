@@ -24,6 +24,7 @@ public sealed partial class SettingsPageViewModel : PageViewModel
     private int _savedVersion;
     private bool _flushing;
     private bool _loading;
+    private bool _loaded;
 
     public SettingsPageViewModel(IStoryForgeClient client, ProviderStatusBoard board, TimeSpan saveDelay)
         : base("Settings", "Settings / Providers", "")
@@ -136,6 +137,9 @@ public sealed partial class SettingsPageViewModel : PageViewModel
                 card.Load(settings);
             }
             ProjectsFolder = settings.Paths.ProjectsFolder;
+            // The cards hold the saved settings now, so writing them is safe from here on,
+            // whatever happens to the extras below.
+            _loaded = true;
             EffectiveProjectsFolder = await _client.GetEffectiveProjectsFolderAsync();
             await LmStudio.LoadApiTokenStateAsync();
             ShowStatuses();
@@ -216,6 +220,13 @@ public sealed partial class SettingsPageViewModel : PageViewModel
             var version = _editVersion;
             if (version == _savedVersion)
             {
+                return false;
+            }
+            // The cards hold blanks until the settings are read; writing them would replace the
+            // real settings as soon as the database answers again.
+            if (!_loaded)
+            {
+                SaveError = "The settings could not be read, so nothing is saved. Restart StoryForge X to try again.";
                 return false;
             }
 

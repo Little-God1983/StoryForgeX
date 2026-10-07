@@ -63,15 +63,28 @@ public partial class App : Application
             var window = _host.Services.GetRequiredService<MainWindow>();
             MainWindow = window;
             window.Show();
-            await window.ViewModel.LoadAsync();
-            StartStatusRefresh(_host.Services.GetRequiredService<ProviderStatusBoard>());
         }
         catch (Exception ex)
         {
             MessageBox.Show($"StoryForge X could not start.\n\n{ex.Message}", "StoryForge X",
                 MessageBoxButton.OK, MessageBoxImage.Error);
             Shutdown(1);
+            return;
         }
+
+        // Once the window is open, a failed load is not a failed start: the app stays open and
+        // says what is missing. The screens show their own errors where they can.
+        var main = (MainWindow)MainWindow;
+        try
+        {
+            await main.ViewModel.LoadAsync();
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show(main, $"Some data could not be loaded.\n\n{ex.Message}", "StoryForge X",
+                MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
+        StartStatusRefresh(_host.Services.GetRequiredService<ProviderStatusBoard>());
     }
 
     protected override void OnExit(ExitEventArgs e)

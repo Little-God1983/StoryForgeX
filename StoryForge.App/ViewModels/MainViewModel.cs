@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.ComponentModel;
 using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
 using StoryForge.App.ViewModels.Pages;
 using StoryForge.Client;
 
@@ -22,6 +23,8 @@ public sealed partial class MainViewModel : ObservableObject
     private readonly ProviderStatusBoard _board;
     private readonly SettingsPageViewModel _settings;
     private readonly ProfilesPageViewModel _profiles;
+    private readonly NewProjectPageViewModel _newProject;
+    private readonly ResultMatrixPageViewModel _matrix;
 
     /// <param name="saveDelay">How long Settings waits after the last edit before saving.</param>
     public MainViewModel(IStoryForgeClient client, ProviderStatusBoard board, TimeSpan saveDelay)
@@ -30,10 +33,13 @@ public sealed partial class MainViewModel : ObservableObject
         _board = board;
         _settings = new SettingsPageViewModel(client, board, saveDelay);
         _profiles = new ProfilesPageViewModel(client);
+        _newProject = new NewProjectPageViewModel(client);
+        _matrix = new ResultMatrixPageViewModel(client);
+        _newProject.ProjectStarted += (_, project) => PageShowing = OnProjectStartedAsync(project);
         NavItems =
         [
-            new("New project", "M12 5v14M5 12h14", new NewProjectPageViewModel()),
-            new("Result matrix", "M3 3h7v7H3zM14 3h7v7h-7zM3 14h7v7H3zM14 14h7v7h-7z", new ResultMatrixPageViewModel()),
+            new("New project", "M12 5v14M5 12h14", _newProject),
+            new("Result matrix", "M3 3h7v7H3zM14 3h7v7h-7zM3 14h7v7H3zM14 14h7v7h-7z", _matrix),
             new("Profiles", "M4 6h16M4 12h10M4 18h16", _profiles),
             new("Settings", "M12 9a3 3 0 1 0 0 6a3 3 0 1 0 0-6M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1L7 17M17 7l2.1-2.1", _settings),
         ];
@@ -61,6 +67,10 @@ public sealed partial class MainViewModel : ObservableObject
 
     public bool HasRecentProjects => RecentProjects.Count > 0;
 
+    /// <summary>Why the recent projects could not be read; shown in their place. Null when all is well.</summary>
+    [ObservableProperty]
+    private string? _recentProjectsError;
+
     /// <summary>What opening the current screen started (Profiles reads its lists); tests await it.</summary>
     public Task PageShowing { get; private set; } = Task.CompletedTask;
 
@@ -70,18 +80,23 @@ public sealed partial class MainViewModel : ObservableObject
     /// </summary>
     public async Task LoadAsync()
     {
-        await _settings.LoadAsync();
+        // Each step on its own: settings that cannot be read must not cost the recent projects
+        // and the checks. What failed is reported once everything else has loaded.
+        Exception? settingsFailure = null;
+        try
+        {
+            await _settings.LoadAsync();
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"Loading settings failed: {ex}");
+            settingsFailure = ex;
+        }
         // Not awaited yet: the workflow templates folder may be on a network share that takes
         // its timeout to answer, and the home screen and the checks should not wait for that.
         var profiles = _profiles.LoadAsync();
-
-        var projects = await _client.GetRecentProjectsAsync();
-        RecentProjects.Clear();
-        foreach (var project in projects)
-        {
-            RecentProjects.Add(project);
-        }
-        OnPropertyChanged(nameof(HasRecentProjects));
+        await _newProject.ShowAsync();
+        await LoadRecentProjectsAsync();
 
         try
         {
@@ -93,6 +108,49 @@ public sealed partial class MainViewModel : ObservableObject
             Debug.WriteLine($"First provider check failed: {ex}");
         }
         await profiles;
+        if (settingsFailure is not null)
+        {
+            throw new InvalidOperationException($"The settings could not be read: {settingsFailure.Message}", settingsFailure);
+        }
+    }
+
+    /// <summary>Opens a project from Recent projects in the result matrix.</summary>
+    [RelayCommand]
+    private async Task OpenRecentProjectAsync(ProjectSummary project)
+    {
+        await _matrix.OpenAsync(project.Id);
+        SelectedNavItem = NavItems.Single(item => item.Page == _matrix);
+    }
+
+    private async Task OnProjectStartedAsync(Project project)
+    {
+        _matrix.Show(project);
+        SelectedNavItem = NavItems.Single(item => item.Page == _matrix);
+        await LoadRecentProjectsAsync();
+    }
+
+    /// <summary>
+    /// A failure stays in the list's place: the app works without it, and closing the app over a
+    /// locked database would be worse than a line of red text.
+    /// </summary>
+    private async Task LoadRecentProjectsAsync()
+    {
+        try
+        {
+            var projects = await _client.GetRecentProjectsAsync();
+            RecentProjects.Clear();
+            foreach (var project in projects)
+            {
+                RecentProjects.Add(project);
+            }
+            RecentProjectsError = null;
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"Loading the recent projects failed: {ex}");
+            RecentProjectsError = $"Could not load the projects: {ex.Message}";
+        }
+        OnPropertyChanged(nameof(HasRecentProjects));
     }
 
     /// <summary>Writes anything still waiting to be saved; called when the window closes.</summary>
@@ -131,6 +189,11 @@ public sealed partial class MainViewModel : ObservableObject
         if (newValue == _profiles)
         {
             PageShowing = ShowProfilesAsync();
+        }
+        else if (newValue == _newProject)
+        {
+            // Profiles made or saved since the screen was last open show up in its pickers.
+            PageShowing = _newProject.ShowAsync();
         }
     }
 

@@ -19,6 +19,37 @@ public sealed class SettingsPageTests
     }
 
     [Fact]
+    public async Task Settings_that_could_not_be_read_are_never_overwritten()
+    {
+        // The cards still hold blanks; saving them would replace the real settings once readable.
+        _client.SettingsLoadFailure = new InvalidOperationException("database is locked");
+        var page = new SettingsPageViewModel(_client, _board, TimeSpan.Zero);
+        await Assert.ThrowsAnyAsync<Exception>(page.LoadAsync);
+        _client.SettingsLoadFailure = null;
+
+        page.ComfyUi.Host = "10.0.0.5";
+        await page.PendingSave;
+        await page.FlushAsync();
+
+        Assert.Equal(0, _client.Saves);
+        Assert.Contains("could not be read", page.SaveError);
+    }
+
+    [Fact]
+    public async Task Settings_that_were_read_can_be_saved_even_if_the_folder_in_use_could_not_be_found()
+    {
+        _client.EffectiveFolderFailure = new InvalidOperationException("database is locked");
+        var page = new SettingsPageViewModel(_client, _board, TimeSpan.Zero);
+        await Assert.ThrowsAnyAsync<Exception>(page.LoadAsync);
+        _client.EffectiveFolderFailure = null;
+
+        page.ComfyUi.Host = "10.0.0.5";
+        await page.PendingSave;
+
+        Assert.Equal("10.0.0.5", _client.Settings.ComfyUi.Host);
+    }
+
+    [Fact]
     public async Task Loading_fills_every_card_from_the_saved_settings()
     {
         _client.Settings = EngineSettings.Defaults with

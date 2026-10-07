@@ -120,6 +120,34 @@ public sealed class StartupLoadTests
     }
 
     [Fact]
+    public async Task Recent_projects_that_cannot_be_read_show_the_error_in_their_place()
+    {
+        // Loading runs after the window is open; a locked database must not end the app.
+        _client.RecentProjectsFailure = new InvalidOperationException("database is locked");
+        AllProviders(ProviderState.Ok);
+        var main = Main();
+
+        await main.LoadAsync();
+
+        Assert.Contains("database is locked", main.RecentProjectsError);
+        Assert.Equal(1, _client.StatusChecks);   // the rest of the loading still ran
+    }
+
+    [Fact]
+    public async Task Settings_that_cannot_be_read_do_not_stop_the_rest_of_loading()
+    {
+        _client.SettingsLoadFailure = new InvalidOperationException("database is locked");
+        _client.RecentProjects.Add(new(Guid.NewGuid(), "Soul Coins", "Not started"));
+        var main = Main();
+
+        var failure = await Assert.ThrowsAnyAsync<Exception>(main.LoadAsync);
+
+        Assert.Contains("database is locked", failure.Message);
+        Assert.Single(main.RecentProjects);
+        Assert.Equal(1, _client.StatusChecks);
+    }
+
+    [Fact]
     public async Task Loading_twice_does_not_duplicate_projects_and_keeps_the_four_pills()
     {
         _client.Providers.Add(new(ProviderId.ComfyUi, "ComfyUI", ProviderState.NotSetUp));
