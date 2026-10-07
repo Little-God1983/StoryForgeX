@@ -19,6 +19,7 @@ public sealed partial class ProfileEditorViewModel : ObservableObject
     private IReadOnlyList<string> _templates = [];
     private ProfileContent _baseline;
     private bool _choosingVersion;
+    private int _shownVersion;
 
     public ProfileEditorViewModel(IStoryForgeClient client, ProfileSummary summary, ProfileVersion latest)
     {
@@ -34,6 +35,7 @@ public sealed partial class ProfileEditorViewModel : ObservableObject
         _shown = Draft;
         Versions = [.. Enumerable.Range(1, latest.Version).Reverse()];
         _selectedVersion = latest.Version;
+        _shownVersion = latest.Version;
     }
 
     public Guid Id { get; }
@@ -83,7 +85,7 @@ public sealed partial class ProfileEditorViewModel : ObservableObject
     public string SaveNote => $"Saving creates v{LatestVersion + 1}. v{LatestVersion} and older stay as they are.";
 
     public string StateText =>
-        IsViewingOlderVersion ? $"v{SelectedVersion} · read only"
+        IsViewingOlderVersion ? $"v{_shownVersion} · read only"
         : IsDirty ? $"v{LatestVersion} · unsaved changes"
         : $"v{LatestVersion} · saved";
 
@@ -120,7 +122,12 @@ public sealed partial class ProfileEditorViewModel : ObservableObject
             {
                 LatestVersion = saved.Version;
                 Versions.Insert(0, saved.Version);
-                ChooseVersion(saved.Version);
+                // An older version picked while the save ran stays on screen; otherwise the
+                // draft is now the new latest version.
+                if (!IsViewingOlderVersion)
+                {
+                    ShowDraft();
+                }
                 Saved?.Invoke(this, EventArgs.Empty);
             }
         }
@@ -142,17 +149,12 @@ public sealed partial class ProfileEditorViewModel : ObservableObject
         if (IsViewingOlderVersion)
         {
             Draft.Load(Shown.ToContent());
-            ChooseVersion(LatestVersion);
-            Shown = Draft;
+            ShowDraft();
         }
     }
 
     [RelayCommand]
-    private void ShowLatest()
-    {
-        ChooseVersion(LatestVersion);
-        Shown = Draft;
-    }
+    private void ShowLatest() => ShowDraft();
 
     [RelayCommand]
     private void RemoveReferenceFile(string path) => Draft.ReferenceFiles.Remove(path);
@@ -191,7 +193,7 @@ public sealed partial class ProfileEditorViewModel : ObservableObject
     {
         if (version == LatestVersion)
         {
-            Shown = Draft;
+            ShowDraft();
             return;
         }
         Error = null;
@@ -207,14 +209,29 @@ public sealed partial class ProfileEditorViewModel : ObservableObject
             // Another version may have been picked while this one loaded.
             if (SelectedVersion == version)
             {
+                _shownVersion = version;
                 Shown = form;
+                OnPropertyChanged(nameof(StateText));
             }
         }
         catch (Exception ex)
         {
             Debug.WriteLine($"Loading v{version} of profile {Id} failed: {ex}");
             Error = $"Could not load v{version}: {ex.Message}";
+            // The picker goes back to what is on screen, so it never names a version not shown.
+            if (SelectedVersion == version)
+            {
+                ChooseVersion(_shownVersion);
+            }
         }
+    }
+
+    private void ShowDraft()
+    {
+        _shownVersion = LatestVersion;
+        ChooseVersion(LatestVersion);
+        Shown = Draft;
+        OnPropertyChanged(nameof(StateText));
     }
 
     private void ChooseVersion(int version)

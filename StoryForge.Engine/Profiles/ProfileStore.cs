@@ -21,7 +21,7 @@ internal sealed class ProfileStore(
 {
     private static readonly JsonSerializerOptions Json = new();
 
-    private static readonly ProfileContent Empty = new("", [], "", "", "", "", [], null, [], [], null, "");
+    private static readonly ProfileContent Empty = ProfileContent.Empty;
 
     // Numbering a version reads the latest and writes the next; one writer at a time keeps two
     // saves from both picking the same number.
@@ -124,7 +124,12 @@ internal sealed class ProfileStore(
     /// Stored by content, so importing the same picture twice keeps one copy, and a profile never
     /// points at a file the user later moves or deletes.
     /// </summary>
-    public async Task<string> ImportReferenceFileAsync(string sourcePath, CancellationToken cancellationToken)
+    public Task<string> ImportReferenceFileAsync(string sourcePath, CancellationToken cancellationToken) =>
+        // Off the caller's thread: the in-process client is called from the UI thread, and hashing
+        // and copying a long WAV there would freeze the window.
+        Task.Run(() => ImportAsync(sourcePath, cancellationToken), cancellationToken);
+
+    private async Task<string> ImportAsync(string sourcePath, CancellationToken cancellationToken)
     {
         if (!File.Exists(sourcePath))
         {

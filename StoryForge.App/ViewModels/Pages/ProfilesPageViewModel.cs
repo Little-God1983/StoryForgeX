@@ -18,6 +18,7 @@ public sealed partial class ProfilesPageViewModel : PageViewModel
     private readonly IStoryForgeClient _client;
     private readonly Dictionary<Guid, ProfileEditorViewModel> _editors = [];
     private IReadOnlyList<string> _templates = [];
+    private int _templateReads;
 
     public ProfilesPageViewModel(IStoryForgeClient client)
         : base("Profiles", BaseBreadcrumb, "")
@@ -86,15 +87,24 @@ public sealed partial class ProfilesPageViewModel : PageViewModel
     /// <summary>Reads the workflow files again; the folder may have changed in Settings.</summary>
     public async Task RefreshTemplatesAsync()
     {
+        // Reads can overlap (startup and opening the screen); one that started earlier but
+        // finishes later may hold an old folder's files, so only the newest read counts.
+        var read = ++_templateReads;
+        IReadOnlyList<string> templates;
         try
         {
-            _templates = await _client.GetWorkflowTemplatesAsync();
+            templates = await _client.GetWorkflowTemplatesAsync();
         }
         catch (Exception ex)
         {
             Debug.WriteLine($"Reading the workflow templates failed: {ex}");
-            _templates = [];
+            templates = [];
         }
+        if (read != _templateReads)
+        {
+            return;
+        }
+        _templates = templates;
         foreach (var editor in _editors.Values)
         {
             editor.SetTemplates(_templates);
@@ -167,6 +177,7 @@ public sealed partial class ProfilesPageViewModel : PageViewModel
                 {
                     Editor = null;
                     LoadError = $"Could not load {item.Name}: {ex.Message}";
+                    Breadcrumb = BaseBreadcrumb;
                 }
                 return;
             }

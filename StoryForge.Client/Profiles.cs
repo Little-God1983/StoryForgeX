@@ -48,4 +48,8 @@ public sealed record ProfileContent(
     IReadOnlyList<GenerationSize> Sizes,
     IReadOnlyList<string> ReferenceFiles,
     int? MaxClipSeconds,
-    string Voice);
+    string Voice)
+{
+    /// <summary>Every text empty, every list empty, no numbers set.</summary>
+    public static ProfileContent Empty { get; } = new("", [], "", "", "", "", [], null, [], [], null, "");
+}

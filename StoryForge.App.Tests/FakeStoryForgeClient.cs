@@ -98,7 +98,7 @@ internal sealed class FakeStoryForgeClient : IStoryForgeClient
         }
         return Task.CompletedTask;
     }
-    public static ProfileContent EmptyContent { get; } = new("", [], "", "", "", "", [], null, [], [], null, "");
+    public static ProfileContent EmptyContent => ProfileContent.Empty;
 
     /// <summary>What a new profile of each kind starts with; tests replace it to suit them.</summary>
     public Func<ProfileKind, ProfileContent> Starter { get; set; } = kind => kind switch
@@ -209,9 +209,20 @@ internal sealed class FakeStoryForgeClient : IStoryForgeClient
         return Task.FromResult(@"C:\Data\references\" + Path.GetFileName(sourcePath));
     }
 
+    /// <summary>When true, every template read waits until a test completes it from <see cref="PendingTemplateReads"/>.</summary>
+    public bool HoldTemplateReads { get; set; }
+
+    public Queue<TaskCompletionSource<IReadOnlyList<string>>> PendingTemplateReads { get; } = [];
+
     public Task<IReadOnlyList<string>> GetWorkflowTemplatesAsync(CancellationToken cancellationToken = default)
     {
         TemplateReads++;
+        if (HoldTemplateReads)
+        {
+            var read = new TaskCompletionSource<IReadOnlyList<string>>();
+            PendingTemplateReads.Enqueue(read);
+            return read.Task;
+        }
         return Task.FromResult<IReadOnlyList<string>>([.. WorkflowTemplates]);
     }
 }

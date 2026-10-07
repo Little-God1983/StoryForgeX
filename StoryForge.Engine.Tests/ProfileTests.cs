@@ -224,7 +224,7 @@ public sealed class ProfileTests : IDisposable
         await Assert.ThrowsAsync<KeyNotFoundException>(() => client.GetProfileVersionAsync(Guid.NewGuid()));
         await Assert.ThrowsAsync<KeyNotFoundException>(() => client.GetProfileVersionAsync(created.Id, 2));
         await Assert.ThrowsAsync<KeyNotFoundException>(() =>
-            client.SaveProfileVersionAsync(Guid.NewGuid(), new ProfileContent("", [], "", "", "", "", [], null, [], [], null, "")));
+            client.SaveProfileVersionAsync(Guid.NewGuid(), ProfileContent.Empty));
     }
 
     [Fact]

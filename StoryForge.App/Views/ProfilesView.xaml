@@ -181,12 +181,12 @@
             <UniformGrid Columns="3" Margin="0,0,-12,0" HorizontalAlignment="Stretch">
               <StackPanel Style="{StaticResource FieldBlockStyle}" Margin="0,0,12,16" Visibility="{Binding Shown.HasSteps, Converter={StaticResource Visible}}">
                 <TextBlock Text="Steps (empty: the workflow's own)" Style="{StaticResource FieldLabelStyle}" />
-                <TextBox Text="{Binding Shown.Steps, UpdateSourceTrigger=PropertyChanged, TargetNullValue=''}"
+                <TextBox Text="{Binding Shown.Steps, UpdateSourceTrigger=PropertyChanged}"
                          IsReadOnly="{Binding Shown.IsReadOnly}" AutomationProperties.Name="Steps" />
               </StackPanel>
               <StackPanel Style="{StaticResource FieldBlockStyle}" Margin="0,0,12,16" Visibility="{Binding Shown.IsVideo, Converter={StaticResource Visible}}">
                 <TextBlock Text="Max clip length (s)" Style="{StaticResource FieldLabelStyle}" />
-                <TextBox Text="{Binding Shown.MaxClipSeconds, UpdateSourceTrigger=PropertyChanged, TargetNullValue=''}"
+                <TextBox Text="{Binding Shown.MaxClipSeconds, UpdateSourceTrigger=PropertyChanged}"
                          IsReadOnly="{Binding Shown.IsReadOnly}" AutomationProperties.Name="Max clip length in seconds" />
               </StackPanel>
             </UniformGrid>

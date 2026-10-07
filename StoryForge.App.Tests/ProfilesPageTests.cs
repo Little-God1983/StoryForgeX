@@ -94,7 +94,7 @@ public sealed class ProfilesPageTests
         var editor = page.Editor!;
 
         editor.Draft.PromptTemplate = "{shot.visual}, oil paint";
-        editor.Draft.Sizes[0].Width = 1280;
+        editor.Draft.Sizes[0].Width = "1280";
         editor.Draft.Inputs[0].Node = "#9.text";
         await editor.SaveCommand.ExecuteAsync(null);
 
@@ -207,6 +207,113 @@ public sealed class ProfilesPageTests
     }
 
     [Fact]
+    public async Task A_profile_that_cannot_be_loaded_does_not_leave_the_previous_name_in_the_breadcrumb()
+    {
+        _client.AddProfile(ProfileKind.Image, "Painted", Image());
+        _client.AddProfile(ProfileKind.Image, "Noir", Image());
+        var page = await LoadedPage();
+        await Open(page, "Painted");
+        _client.ProfileLoadFailure = new InvalidOperationException("disk gone");
+
+        await Open(page, "Noir");
+
+        Assert.Equal("Settings / Profiles", page.Breadcrumb);
+    }
+
+    [Fact]
+    public async Task A_save_that_finishes_while_an_older_version_is_shown_leaves_that_version_on_screen()
+    {
+        _client.AddProfile(ProfileKind.Image, "Painted", Image("first"), Image("second"));
+        var page = await LoadedPage();
+        await Open(page, "Painted");
+        var editor = page.Editor!;
+        var gate = new TaskCompletionSource();
+        _client.ProfileSaveGate = gate.Task;
+        editor.Draft.PromptTemplate = "third";
+
+        var saving = editor.SaveCommand.ExecuteAsync(null);
+        editor.SelectedVersion = 1;
+        await editor.Loading;
+        gate.SetResult();
+        await saving;
+
+        Assert.Equal(3, editor.LatestVersion);
+        Assert.Equal([3, 2, 1], editor.Versions);
+        Assert.Equal(1, editor.SelectedVersion);
+        Assert.Equal("first", editor.Shown.PromptTemplate);
+        Assert.Equal("v1 · read only", editor.StateText);
+    }
+
+    [Fact]
+    public async Task A_version_that_cannot_be_loaded_puts_the_picker_back_on_what_is_shown()
+    {
+        _client.AddProfile(ProfileKind.Image, "Painted", Image("first"), Image("second"));
+        var page = await LoadedPage();
+        await Open(page, "Painted");
+        var editor = page.Editor!;
+        _client.ProfileLoadFailure = new InvalidOperationException("disk gone");
+
+        editor.SelectedVersion = 1;
+        await editor.Loading;
+
+        Assert.Equal(2, editor.SelectedVersion);
+        Assert.Same(editor.Draft, editor.Shown);
+        Assert.Equal("v2 · saved", editor.StateText);
+        Assert.Contains("disk gone", editor.Error);
+    }
+
+    [Fact]
+    public async Task A_dropdown_writing_null_changes_nothing()
+    {
+        // WPF's ComboBox writes null into SelectedItem when its list changes under it.
+        _client.AddProfile(ProfileKind.Image, "Painted", Image() with { WorkflowTemplate = "qwen-image.json" });
+        var page = await LoadedPage();
+        await Open(page, "Painted");
+        var form = page.Editor!.Draft;
+
+        form.WorkflowTemplate = null!;
+        form.Provider = null!;
+        form.SetTemplates(["krea-turbo.json"]);
+
+        Assert.Equal("qwen-image.json", form.WorkflowTemplate);
+        Assert.Equal("ComfyUI", form.Provider);
+        Assert.False(page.Editor.IsDirty);
+    }
+
+    [Fact]
+    public async Task Spaces_the_engine_trims_away_are_no_change()
+    {
+        _client.AddProfile(ProfileKind.Voice, "Narrator", FakeStoryForgeClient.EmptyContent with { Provider = "ComfyUI", Voice = "Anna" });
+        var page = await LoadedPage();
+        await Open(page, "Narrator");
+        var editor = page.Editor!;
+
+        editor.Draft.Voice = "Anna ";
+
+        Assert.False(editor.IsDirty);
+        Assert.False(editor.SaveCommand.CanExecute(null));
+    }
+
+    [Fact]
+    public async Task An_older_template_list_arriving_late_does_not_replace_a_newer_one()
+    {
+        _client.AddProfile(ProfileKind.Image, "Painted", Image());
+        var page = await LoadedPage();
+        await Open(page, "Painted");
+        _client.HoldTemplateReads = true;
+
+        var older = page.RefreshTemplatesAsync();
+        var newer = page.RefreshTemplatesAsync();
+        var olderRead = _client.PendingTemplateReads.Dequeue();
+        var newerRead = _client.PendingTemplateReads.Dequeue();
+        newerRead.SetResult(["new-folder.json"]);
+        olderRead.SetResult(["old-folder.json"]);
+        await Task.WhenAll(older, newer);
+
+        Assert.Equal(["new-folder.json"], page.Editor!.Draft.TemplateChoices);
+    }
+
+    [Fact]
     public async Task A_refused_save_says_why_and_keeps_the_edits()
     {
         _client.AddProfile(ProfileKind.Image, "Painted", Image());
@@ -252,13 +359,36 @@ public sealed class ProfilesPageTests
         await Open(page, "Painted");
         var editor = page.Editor!;
 
-        editor.Draft.Sizes[0].Width = 0;
+        editor.Draft.Sizes[0].Width = "0";
         Assert.False(editor.SaveCommand.CanExecute(null));
-        editor.Draft.Sizes[0].Width = 1344;
-        editor.Draft.Steps = 0;
+        // Text that is not a number at all must block saving too, not keep the old value quietly.
+        editor.Draft.Sizes[0].Width = "13a4";
         Assert.False(editor.SaveCommand.CanExecute(null));
-        editor.Draft.Steps = 30;
+        editor.Draft.Sizes[0].Width = "";
+        Assert.False(editor.SaveCommand.CanExecute(null));
+        editor.Draft.Sizes[0].Width = "1344";
+        editor.Draft.Steps = "0";
+        Assert.False(editor.SaveCommand.CanExecute(null));
+        editor.Draft.Steps = "abc";
+        Assert.False(editor.SaveCommand.CanExecute(null));
+        editor.Draft.Steps = "30";
         Assert.True(editor.SaveCommand.CanExecute(null));
+        await editor.SaveCommand.ExecuteAsync(null);
+        Assert.Equal(30, (await _client.GetProfileVersionAsync(editor.Id)).Content.Steps);
+    }
+
+    [Fact]
+    public async Task Empty_steps_means_the_workflows_own_value()
+    {
+        _client.AddProfile(ProfileKind.Image, "Painted", Image() with { Steps = 30 });
+        var page = await LoadedPage();
+        await Open(page, "Painted");
+        var editor = page.Editor!;
+
+        editor.Draft.Steps = "";
+        await editor.SaveCommand.ExecuteAsync(null);
+
+        Assert.Null((await _client.GetProfileVersionAsync(editor.Id)).Content.Steps);
     }
 
     [Fact]

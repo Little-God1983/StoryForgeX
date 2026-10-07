@@ -75,11 +75,36 @@ public sealed partial class ProfileFormViewModel : ObservableValidator
     [ObservableProperty]
     private string _researchSources = "";
 
-    [ObservableProperty]
     private string _provider = "";
 
-    [ObservableProperty]
+    // The two dropdowns: WPF's ComboBox writes null into SelectedItem when its list changes under
+    // it (switching between the draft and an older version, new template files). Null is never a
+    // choice the user made, so it is ignored.
+    public string Provider
+    {
+        get => _provider;
+        set
+        {
+            if (value is not null)
+            {
+                SetProperty(ref _provider, value);
+            }
+        }
+    }
+
     private string _workflowTemplate = "";
+
+    public string WorkflowTemplate
+    {
+        get => _workflowTemplate;
+        set
+        {
+            if (value is not null)
+            {
+                SetProperty(ref _workflowTemplate, value);
+            }
+        }
+    }
 
     [ObservableProperty]
     private string _promptTemplate = "";
@@ -87,16 +112,19 @@ public sealed partial class ProfileFormViewModel : ObservableValidator
     [ObservableProperty]
     private string _negativePrompt = "";
 
+    // Numbers are kept as typed: text that is not a number must block saving, and an int
+    // property never even sees it (WPF's conversion fails before the view model is set).
+
     /// <summary>Empty: the workflow's own value.</summary>
     [ObservableProperty]
     [NotifyDataErrorInfo]
-    [Range(1, 1000, ErrorMessage = "Between 1 and 1000, or empty.")]
-    private int? _steps;
+    [CustomValidation(typeof(ProfileFormViewModel), nameof(ValidateSteps))]
+    private string _steps = "";
 
     [ObservableProperty]
     [NotifyDataErrorInfo]
-    [Range(1, 600, ErrorMessage = "Between 1 and 600 seconds.")]
-    private int? _maxClipSeconds;
+    [CustomValidation(typeof(ProfileFormViewModel), nameof(ValidateMaxClipSeconds))]
+    private string _maxClipSeconds = "";
 
     [ObservableProperty]
     private string _voice = "";
@@ -142,8 +170,8 @@ public sealed partial class ProfileFormViewModel : ObservableValidator
             WorkflowTemplate = content.WorkflowTemplate;
             PromptTemplate = content.PromptTemplate;
             NegativePrompt = content.NegativePrompt;
-            Steps = content.Steps;
-            MaxClipSeconds = content.MaxClipSeconds;
+            Steps = NumberText.Format(content.Steps);
+            MaxClipSeconds = NumberText.Format(content.MaxClipSeconds);
             Voice = content.Voice;
             Replace(Inputs, content.Inputs.Select(i => new WorkflowInputRowViewModel(i.Key, i.Node, IsReadOnly)));
             Replace(Sizes, content.Sizes.Select(s => new SizeRowViewModel(s.Aspect, s.Width, s.Height, IsReadOnly)));
@@ -162,17 +190,24 @@ public sealed partial class ProfileFormViewModel : ObservableValidator
     {
         Instructions = Instructions,
         ResearchSources = [.. ResearchSources.Split('\n', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries)],
-        Provider = Provider,
-        WorkflowTemplate = WorkflowTemplate,
+        // Trimmed as the engine stores them, so spaces alone never count as a change.
+        Provider = Provider.Trim(),
+        WorkflowTemplate = WorkflowTemplate.Trim(),
         PromptTemplate = PromptTemplate,
         NegativePrompt = NegativePrompt,
         Inputs = [.. Inputs.Select(i => new WorkflowInput(i.Key, i.Node.Trim()))],
-        Steps = Steps,
-        Sizes = [.. Sizes.Select(s => new GenerationSize(s.Aspect, s.Width, s.Height))],
+        Steps = NumberText.Parse(Steps),
+        Sizes = [.. Sizes.Select(s => new GenerationSize(s.Aspect, NumberText.Parse(s.Width) ?? 0, NumberText.Parse(s.Height) ?? 0))],
         ReferenceFiles = [.. ReferenceFiles],
-        MaxClipSeconds = MaxClipSeconds,
-        Voice = Voice,
+        MaxClipSeconds = NumberText.Parse(MaxClipSeconds),
+        Voice = Voice.Trim(),
     };
+
+    public static ValidationResult? ValidateSteps(string text, ValidationContext context) =>
+        NumberText.Check(text, 1, 1000, optional: true, "Between 1 and 1000, or empty.");
+
+    public static ValidationResult? ValidateMaxClipSeconds(string text, ValidationContext context) =>
+        NumberText.Check(text, 1, 600, optional: true, "Between 1 and 600 seconds, or empty.");
 
     /// <summary>Records compare lists by reference; two contents are the same when they serialize the same.</summary>
     public static bool SameContent(ProfileContent a, ProfileContent b) =>
@@ -232,8 +267,8 @@ public sealed partial class SizeRowViewModel : ObservableValidator
     {
         Aspect = aspect;
         IsReadOnly = isReadOnly;
-        _width = width;
-        _height = height;
+        _width = NumberText.Format(width);
+        _height = NumberText.Format(height);
         ValidateAllProperties();
     }
 
@@ -241,13 +276,37 @@ public sealed partial class SizeRowViewModel : ObservableValidator
 
     public bool IsReadOnly { get; }
 
+    /// <summary>As typed; see the note on <see cref="ProfileFormViewModel.Steps"/>.</summary>
     [ObservableProperty]
     [NotifyDataErrorInfo]
-    [Range(1, 16384, ErrorMessage = "1 to 16384.")]
-    private int _width;
+    [CustomValidation(typeof(SizeRowViewModel), nameof(ValidatePixels))]
+    private string _width;
 
     [ObservableProperty]
     [NotifyDataErrorInfo]
-    [Range(1, 16384, ErrorMessage = "1 to 16384.")]
-    private int _height;
+    [CustomValidation(typeof(SizeRowViewModel), nameof(ValidatePixels))]
+    private string _height;
+
+    public static ValidationResult? ValidatePixels(string text, ValidationContext context) =>
+        NumberText.Check(text, 1, 16384, optional: false, "1 to 16384.");
+}
+
+/// <summary>Whole numbers typed into a text box: "" is "not set", anything else must parse.</summary>
+internal static class NumberText
+{
+    public static string Format(int? value) => value?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "";
+
+    public static int? Parse(string text) =>
+        int.TryParse(text.Trim(), System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var value)
+            ? value
+            : null;
+
+    public static ValidationResult? Check(string text, int min, int max, bool optional, string message)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return optional ? ValidationResult.Success : new ValidationResult(message);
+        }
+        return Parse(text) is { } value && value >= min && value <= max ? ValidationResult.Success : new ValidationResult(message);
+    }
 }
