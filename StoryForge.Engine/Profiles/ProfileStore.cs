@@ -21,8 +21,6 @@ internal sealed class ProfileStore(
 {
     private static readonly JsonSerializerOptions Json = new();
 
-    private static readonly ProfileContent Empty = ProfileContent.Empty;
-
     // Numbering a version reads the latest and writes the next; one writer at a time keeps two
     // saves from both picking the same number.
     private readonly SemaphoreSlim _writeLock = new(1, 1);
@@ -231,10 +229,10 @@ internal sealed class ProfileStore(
 
     private static string Serialize(ProfileContent content) => JsonSerializer.Serialize(content, Json);
 
-    /// <summary>The saved fields laid over <see cref="Empty"/>, so a field added later reads as empty, not null.</summary>
+    /// <summary>The saved fields laid over <see cref="ProfileContent.Empty"/>, so a field added later reads as empty, not null.</summary>
     private static ProfileContent Read(string json)
     {
-        var merged = JsonSerializer.SerializeToNode(Empty, Json)!.AsObject();
+        var merged = JsonSerializer.SerializeToNode(ProfileContent.Empty, Json)!.AsObject();
         if (JsonNode.Parse(json) is JsonObject stored)
         {
             foreach (var (name, value) in stored)
@@ -245,7 +243,7 @@ internal sealed class ProfileStore(
                 }
             }
         }
-        return merged.Deserialize<ProfileContent>(Json) ?? Empty;
+        return merged.Deserialize<ProfileContent>(Json) ?? ProfileContent.Empty;
     }
 
     private static ProfileVersion ToVersion(ProfileVersionEntry entry) =>
@@ -254,22 +252,22 @@ internal sealed class ProfileStore(
     /// <summary>What a new profile starts with: enough to show what goes where, nothing model-specific.</summary>
     internal static ProfileContent Starter(ProfileKind kind) => kind switch
     {
-        ProfileKind.Research => Empty with
+        ProfileKind.Research => ProfileContent.Empty with
         {
             Provider = "Claude CLI",
             Instructions = "Collect the facts the script needs: names, dates, places and numbers. Give the source for every fact.",
         },
-        ProfileKind.Script => Empty with
+        ProfileKind.Script => ProfileContent.Empty with
         {
             Provider = "Claude CLI",
             Instructions = "Write the narration for the brief. Short sentences, written to be heard, not read.",
         },
-        ProfileKind.Storyboard => Empty with
+        ProfileKind.Storyboard => ProfileContent.Empty with
         {
             Provider = "Claude CLI",
             Instructions = "Split the script into shots. For every shot give what is seen, the camera, and the line of narration it covers.",
         },
-        ProfileKind.Image => Empty with
+        ProfileKind.Image => ProfileContent.Empty with
         {
             Provider = "ComfyUI",
             Instructions = "Write one image prompt per shot for this model: subject first, then setting, light and style. No text in the image.",
@@ -277,7 +275,7 @@ internal sealed class ProfileStore(
             Inputs = MediaInputs,
             Sizes = [new("16:9", 1344, 768), new("9:16", 768, 1344)],
         },
-        ProfileKind.Video => Empty with
+        ProfileKind.Video => ProfileContent.Empty with
         {
             Provider = "ComfyUI",
             Instructions = "Write one motion prompt per shot: what moves and how the camera moves. The still already sets the look.",
@@ -286,7 +284,7 @@ internal sealed class ProfileStore(
             Sizes = [new("16:9", 1280, 720), new("9:16", 720, 1280)],
             MaxClipSeconds = 20,
         },
-        ProfileKind.Voice => Empty with
+        ProfileKind.Voice => ProfileContent.Empty with
         {
             Provider = "ComfyUI",
             Instructions = "Prepare the narration for speech: write numbers, units and abbreviations out in full.",

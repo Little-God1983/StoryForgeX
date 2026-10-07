@@ -57,9 +57,12 @@ public sealed class ThumbnailConverter : MarkupExtension, IValueConverter
             image.Freeze();
             return image;
         }
-        catch (Exception ex) when (ex is IOException or NotSupportedException or UnauthorizedAccessException or InvalidOperationException)
+        catch (Exception)
         {
-            return null;   // not decodable: the tile shows the file name instead
+            // Anything a broken file throws (FileFormatException, COMException, IOException …):
+            // a converter that throws ends up in the app-wide error box on every render, so the
+            // tile shows the file name instead.
+            return null;
         }
     }
 

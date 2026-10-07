@@ -62,8 +62,28 @@ public sealed partial class ProfileEditorViewModel : ObservableObject
     /// <summary>Newest first, for the version picker.</summary>
     public ObservableCollection<int> Versions { get; }
 
-    [ObservableProperty]
     private int? _selectedVersion;
+
+    /// <summary>
+    /// The version picked in the picker. Null is ignored: the one version dropdown is reused for
+    /// every editor, and WPF writes null into the editor it leaves when that editor's version is
+    /// not in the next one's list.
+    /// </summary>
+    public int? SelectedVersion
+    {
+        get => _selectedVersion;
+        set
+        {
+            if (value is not { } version || !SetProperty(ref _selectedVersion, value))
+            {
+                return;
+            }
+            if (!_choosingVersion)
+            {
+                Loading = ShowVersionAsync(version);
+            }
+        }
+    }
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(StateText))]
@@ -112,6 +132,7 @@ public sealed partial class ProfileEditorViewModel : ObservableObject
     {
         IsSaving = true;
         Error = null;
+        var draftVersion = LatestVersion;
         try
         {
             var content = Draft.ToContent();
@@ -122,9 +143,9 @@ public sealed partial class ProfileEditorViewModel : ObservableObject
             {
                 LatestVersion = saved.Version;
                 Versions.Insert(0, saved.Version);
-                // An older version picked while the save ran stays on screen; otherwise the
-                // draft is now the new latest version.
-                if (!IsViewingOlderVersion)
+                // An older version picked while the save ran (shown already, or still loading)
+                // stays; otherwise the draft is now the new latest version.
+                if (SelectedVersion == draftVersion)
                 {
                     ShowDraft();
                 }
@@ -182,15 +203,6 @@ public sealed partial class ProfileEditorViewModel : ObservableObject
         if (failures.Count > 0)
         {
             Error = $"Could not add {string.Join(", ", failures)}.";
-        }
-    }
-
-    partial void OnSelectedVersionChanged(int? value)
-    {
-        // Null comes from the picker while its list changes; the shown version stays.
-        if (value is { } version && !_choosingVersion)
-        {
-            Loading = ShowVersionAsync(version);
         }
     }
 

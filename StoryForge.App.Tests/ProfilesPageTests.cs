@@ -578,6 +578,98 @@ public sealed class ProfilesPageTests
     }
 
     [Fact]
+    public async Task The_version_picker_ignores_the_null_a_reused_dropdown_writes()
+    {
+        // One version dropdown serves every editor; switching editors makes WPF write null into
+        // the editor it leaves when its version is not in the new list.
+        _client.AddProfile(ProfileKind.Image, "Painted", Image("first"), Image("second"));
+        var page = await LoadedPage();
+        await Open(page, "Painted");
+
+        page.Editor!.SelectedVersion = null;
+
+        Assert.Equal(2, page.Editor.SelectedVersion);
+    }
+
+    [Fact]
+    public async Task Reloading_the_list_keeps_the_entries_the_editors_are_tied_to()
+    {
+        _client.ProfileListFailure = new InvalidOperationException("database is locked");
+        var page = await LoadedPage();
+        _client.ProfileListFailure = null;
+        page.StartCreateCommand.Execute(null);
+        page.NewName = "Painted";
+        await page.CreateCommand.ExecuteAsync(null);
+        var item = page.SelectedProfile!;
+        page.Editor!.Draft.NegativePrompt = "logo";
+
+        await page.ShowAsync();   // the list failed before, so opening the screen loads it again
+        await page.Editor.SaveCommand.ExecuteAsync(null);
+
+        Assert.Same(item, page.Profiles.Single());
+        Assert.Same(item, page.SelectedProfile);
+        Assert.Equal("Painted · v2", page.Profiles.Single().Label);
+    }
+
+    [Fact]
+    public async Task A_save_that_finishes_while_an_older_version_is_still_loading_keeps_that_pick()
+    {
+        _client.AddProfile(ProfileKind.Image, "Painted", Image("first"), Image("second"));
+        var page = await LoadedPage();
+        await Open(page, "Painted");
+        var editor = page.Editor!;
+        var saveGate = new TaskCompletionSource();
+        var loadGate = new TaskCompletionSource();
+        editor.Draft.PromptTemplate = "third";
+
+        _client.ProfileSaveGate = saveGate.Task;
+        var saving = editor.SaveCommand.ExecuteAsync(null);
+        _client.ProfileLoadGate = loadGate.Task;
+        editor.SelectedVersion = 1;
+        saveGate.SetResult();
+        await saving;
+        loadGate.SetResult();
+        await editor.Loading;
+
+        Assert.Equal(1, editor.SelectedVersion);
+        Assert.Equal("first", editor.Shown.PromptTemplate);
+        Assert.Equal("v1 · read only", editor.StateText);
+        Assert.Equal(3, editor.LatestVersion);
+    }
+
+    [Fact]
+    public async Task Opening_the_screen_does_not_wait_for_the_provider_checks_after_a_settings_save()
+    {
+        var main = new MainViewModel(_client, new ProviderStatusBoard(_client), TimeSpan.FromHours(1));
+        await main.LoadAsync();
+        var checks = new TaskCompletionSource();
+        _client.StatusGate = checks.Task;   // the re-check after the save hangs, like an unreachable host
+        var settings = (SettingsPageViewModel)main.NavItems.Single(item => item.Title == "Settings").Page;
+        settings.ComfyUi.WorkflowTemplatesFolder = @"D:\workflows";
+
+        main.SelectedNavItem = main.NavItems.Single(item => item.Title == "Profiles");
+        await main.PageShowing.WaitAsync(TimeSpan.FromSeconds(5));
+
+        Assert.Equal(@"D:\workflows", _client.TemplateReadFolders[^1]);
+        checks.SetResult();
+    }
+
+    [Fact]
+    public async Task A_slow_templates_folder_does_not_hold_up_startup()
+    {
+        _client.RecentProjects.Add(new ProjectSummary(Guid.NewGuid(), "Lore of the Rings", "storyboard ready"));
+        _client.HoldTemplateReads = true;   // a folder on a network share that is offline
+        var main = new MainViewModel(_client, new ProviderStatusBoard(_client), TimeSpan.Zero);
+
+        var loading = main.LoadAsync();
+
+        Assert.Single(main.RecentProjects);
+        Assert.Equal(1, _client.StatusChecks);
+        _client.PendingTemplateReads.Dequeue().SetResult([]);
+        await loading;
+    }
+
+    [Fact]
     public async Task Opening_the_screen_reads_the_workflow_templates_again()
     {
         var main = new MainViewModel(_client, new ProviderStatusBoard(_client), TimeSpan.Zero);

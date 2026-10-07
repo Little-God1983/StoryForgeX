@@ -64,6 +64,7 @@ public sealed partial class ProfilesPageViewModel : PageViewModel
     [ObservableProperty]
     private string? _createError;
 
+    /// <summary>Loads the list, then reads the workflow files (which can be slow: a network share).</summary>
     public async Task LoadAsync()
     {
         await LoadListAsync();
@@ -84,11 +85,20 @@ public sealed partial class ProfilesPageViewModel : PageViewModel
     {
         try
         {
-            var profiles = await _client.GetProfilesAsync();
-            Profiles.Clear();
-            foreach (var summary in profiles)
+            // Merged, not replaced: open editors are tied to their entries (unsaved dot, version
+            // label), and a profile created before this load is already in the list. Profiles
+            // are never deleted, so merging only ever adds.
+            foreach (var summary in await _client.GetProfilesAsync())
             {
-                Profiles.Add(new ProfileListItemViewModel(summary));
+                if (Profiles.FirstOrDefault(p => p.Id == summary.Id) is { } existing)
+                {
+                    existing.LatestVersion = Math.Max(existing.LatestVersion, summary.LatestVersion);
+                }
+                else
+                {
+                    var item = new ProfileListItemViewModel(summary);
+                    Profiles.Insert(InsertIndex(item), item);
+                }
             }
             OnPropertyChanged(nameof(HasProfiles));
             LoadError = null;

@@ -71,7 +71,9 @@ public sealed partial class MainViewModel : ObservableObject
     public async Task LoadAsync()
     {
         await _settings.LoadAsync();
-        await _profiles.LoadAsync();
+        // Not awaited yet: the workflow templates folder may be on a network share that takes
+        // its timeout to answer, and the home screen and the checks should not wait for that.
+        var profiles = _profiles.LoadAsync();
 
         var projects = await _client.GetRecentProjectsAsync();
         RecentProjects.Clear();
@@ -90,6 +92,7 @@ public sealed partial class MainViewModel : ObservableObject
             // The app works without statuses; the pills keep saying "checking…" until a later check.
             Debug.WriteLine($"First provider check failed: {ex}");
         }
+        await profiles;
     }
 
     /// <summary>Writes anything still waiting to be saved; called when the window closes.</summary>

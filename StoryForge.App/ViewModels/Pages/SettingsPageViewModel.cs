@@ -114,8 +114,12 @@ public sealed partial class SettingsPageViewModel : PageViewModel
             return;
         }
         _pendingDelay?.Cancel();
-        await SaveNowAsync();
-        await PendingSave;
+        // The caller waits for the write only; the re-check takes seconds (CLIs starting, HTTP
+        // timeouts) and its result goes to the status board on its own.
+        if (await WriteAsync() && !_flushing)
+        {
+            _ = RecheckAsync();
+        }
     }
 
     /// <summary>An edit has been made that is not written yet (including one whose write failed).</summary>
@@ -197,13 +201,22 @@ public sealed partial class SettingsPageViewModel : PageViewModel
     /// </summary>
     private async Task SaveNowAsync()
     {
+        if (await WriteAsync() && !_flushing)
+        {
+            await RecheckAsync();
+        }
+    }
+
+    /// <summary>The write half of <see cref="SaveNowAsync"/>; true when it wrote (or had nothing valid to write).</summary>
+    private async Task<bool> WriteAsync()
+    {
         await _saveLock.WaitAsync();
         try
         {
             var version = _editVersion;
             if (version == _savedVersion)
             {
-                return;
+                return false;
             }
 
             var saved = await _client.GetSettingsAsync();
@@ -218,33 +231,34 @@ public sealed partial class SettingsPageViewModel : PageViewModel
             // Equal: only invalid fields changed, nothing valid to write; that counts as done.
             _savedVersion = version;
             SaveError = null;
+            return true;
         }
         catch (ArgumentException ex)
         {
             SaveError = ex.Message;
-            return;
+            return false;
         }
         catch (Exception ex)
         {
             SaveError = $"Could not save: {ex.Message}";
-            return;
+            return false;
         }
         finally
         {
             _saveLock.Release();
         }
+    }
 
-        if (!_flushing)
+    private async Task RecheckAsync()
+    {
+        try
         {
-            try
-            {
-                await _board.RefreshAsync();
-            }
-            catch (Exception ex)
-            {
-                // The save itself worked; the cards keep their last status until the next check.
-                Debug.WriteLine($"Provider check after save failed: {ex}");
-            }
+            await _board.RefreshAsync();
+        }
+        catch (Exception ex)
+        {
+            // The save itself worked; the cards keep their last status until the next check.
+            Debug.WriteLine($"Provider check after save failed: {ex}");
         }
     }
 }
