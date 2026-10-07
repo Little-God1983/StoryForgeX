@@ -48,6 +48,14 @@ public sealed partial class MainViewModel : ObservableObject
         _currentPage.PropertyChanged += OnPagePropertyChanged;
         ProviderPills = [.. TopBarProviders.Select(p => new ProviderPillViewModel(p.Id, p.Name))];
         board.StatusesChanged += (_, _) => ShowPills();
+        // "Research: needs review" under Recent projects follows the run. Lines of activity change no state.
+        client.StageUpdated += (_, update) =>
+        {
+            if (update.Activity is null)
+            {
+                UiThread.Run(() => _ = LoadRecentProjectsAsync());
+            }
+        };
     }
 
     public IReadOnlyList<NavItemViewModel> NavItems { get; }
@@ -124,8 +132,8 @@ public sealed partial class MainViewModel : ObservableObject
 
     private async Task OnProjectStartedAsync(Project project)
     {
-        _matrix.Show(project);
         SelectedNavItem = NavItems.Single(item => item.Page == _matrix);
+        await _matrix.StartRunAsync(project);
         await LoadRecentProjectsAsync();
     }
 

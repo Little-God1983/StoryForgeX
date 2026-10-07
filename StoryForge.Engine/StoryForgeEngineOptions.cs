@@ -14,7 +14,15 @@ public sealed class StoryForgeEngineOptions
     /// <summary>Prefix for the engine's entries in the OS credential store (tests use their own).</summary>
     public string CredentialTargetPrefix { get; set; } = "StoryForgeX";
 
+    /// <summary>The research MCP server's exe; empty means the one next to the app.</summary>
+    public string ResearchServerPath { get; set; } = "";
+
     internal string DatabasePath => Path.Combine(DataDirectory, "storyforge.db");
+
+    internal string EffectiveResearchServerPath =>
+        string.IsNullOrWhiteSpace(ResearchServerPath)
+            ? Path.Combine(AppContext.BaseDirectory, OperatingSystem.IsWindows() ? "StoryForge.ResearchServer.exe" : "StoryForge.ResearchServer")
+            : ResearchServerPath;
 
     internal string EffectiveDefaultProjectsFolder =>
         string.IsNullOrWhiteSpace(DefaultProjectsFolder) ? Path.Combine(DataDirectory, "projects") : DefaultProjectsFolder;

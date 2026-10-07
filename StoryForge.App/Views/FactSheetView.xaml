@@ -1,0 +1,402 @@
+<UserControl x:Class="StoryForge.App.Views.FactSheetView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:client="clr-namespace:StoryForge.Client;assembly=StoryForge.Client"
+             xmlns:research="clr-namespace:StoryForge.App.ViewModels.Research"
+             xmlns:views="clr-namespace:StoryForge.App.Views"
+             mc:Ignorable="d"
+             d:DataContext="{d:DesignInstance Type=research:FactSheetViewModel}">
+
+  <UserControl.Resources>
+    <BooleanToVisibilityConverter x:Key="Visible" />
+
+    <Style x:Key="SmallButtonStyle" TargetType="Button" BasedOn="{StaticResource SecondaryButtonStyle}">
+      <Setter Property="FontSize" Value="12" />
+      <Setter Property="Padding" Value="10,5" />
+    </Style>
+
+    <!-- A bar across the top that says where the stage stands, e.g. "Gate: Research". -->
+    <Style x:Key="BarStyle" TargetType="Border">
+      <Setter Property="CornerRadius" Value="10" />
+      <Setter Property="Padding" Value="16,10" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="Margin" Value="0,0,0,14" />
+    </Style>
+
+    <!-- −  5  + -->
+    <Style x:Key="StepButtonStyle" TargetType="Button" BasedOn="{StaticResource SecondaryButtonStyle}">
+      <Setter Property="Width" Value="30" />
+      <Setter Property="Height" Value="30" />
+      <Setter Property="Padding" Value="0" />
+      <Setter Property="FontSize" Value="15" />
+    </Style>
+
+    <!-- The weight number: amber for a must, grey for "only if there is time". -->
+    <Style x:Key="WeightTextStyle" TargetType="TextBlock">
+      <Setter Property="Width" Value="30" />
+      <Setter Property="TextAlignment" Value="Center" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+      <Setter Property="FontFamily" Value="{StaticResource MonoFont}" />
+      <Setter Property="FontSize" Value="15" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+      <Setter Property="Foreground" Value="{StaticResource TextBrush}" />
+      <Style.Triggers>
+        <DataTrigger Binding="{Binding IsLow}" Value="True">
+          <Setter Property="Foreground" Value="{StaticResource TextDimBrush}" />
+        </DataTrigger>
+        <DataTrigger Binding="{Binding IsMust}" Value="True">
+          <Setter Property="Foreground" Value="{StaticResource AccentTextBrush}" />
+        </DataTrigger>
+      </Style.Triggers>
+    </Style>
+
+    <!-- A fact row: the selected one has a light border. -->
+    <Style x:Key="FactRowStyle" TargetType="Border">
+      <Setter Property="Background" Value="{StaticResource CardBrush}" />
+      <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="CornerRadius" Value="8" />
+      <Setter Property="Margin" Value="0,0,0,6" />
+      <Style.Triggers>
+        <DataTrigger Binding="{Binding IsSelected}" Value="True">
+          <Setter Property="Background" Value="#22252B" />
+          <Setter Property="BorderBrush" Value="{StaticResource TextBrush}" />
+        </DataTrigger>
+      </Style.Triggers>
+    </Style>
+
+    <!-- The clickable part of a row: number, statement, source. -->
+    <Style x:Key="RowButtonStyle" TargetType="Button">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="Foreground" Value="{StaticResource TextBrush}" />
+      <Setter Property="Cursor" Value="Hand" />
+      <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+      <Setter Property="FocusVisualStyle" Value="{StaticResource RoundedFocusVisual}" />
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="Button">
+            <Border Background="{TemplateBinding Background}" Padding="14,9,8,9">
+              <ContentPresenter />
+            </Border>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+
+    <!-- The kind of an activity line, coloured as on the canvas. -->
+    <Style x:Key="ActivityKindStyle" TargetType="TextBlock">
+      <Setter Property="Width" Value="76" />
+      <Setter Property="Foreground" Value="{StaticResource TextSoftBrush}" />
+      <Style.Triggers>
+        <DataTrigger Binding="{Binding Kind}" Value="{x:Static client:ActivityKind.Search}">
+          <Setter Property="Foreground" Value="#6FB3EE" />
+        </DataTrigger>
+        <DataTrigger Binding="{Binding Kind}" Value="{x:Static client:ActivityKind.Fetch}">
+          <Setter Property="Foreground" Value="{StaticResource PillOkTextBrush}" />
+        </DataTrigger>
+        <DataTrigger Binding="{Binding Kind}" Value="{x:Static client:ActivityKind.Refused}">
+          <Setter Property="Foreground" Value="{StaticResource ErrorTextBrush}" />
+        </DataTrigger>
+        <DataTrigger Binding="{Binding Kind}" Value="{x:Static client:ActivityKind.Failed}">
+          <Setter Property="Foreground" Value="{StaticResource ErrorTextBrush}" />
+        </DataTrigger>
+        <DataTrigger Binding="{Binding Kind}" Value="{x:Static client:ActivityKind.Model}">
+          <Setter Property="Foreground" Value="#B4A8F5" />
+        </DataTrigger>
+        <DataTrigger Binding="{Binding Kind}" Value="{x:Static client:ActivityKind.Check}">
+          <Setter Property="Foreground" Value="{StaticResource AccentTextBrush}" />
+        </DataTrigger>
+      </Style.Triggers>
+    </Style>
+
+    <DataTemplate x:Key="ActivityLineTemplate" DataType="{x:Type client:ActivityLine}">
+      <DockPanel Margin="0,1">
+        <TextBlock DockPanel.Dock="Left" Width="72" Foreground="{StaticResource TextDimBrush}"
+                   Text="{Binding At, Converter={views:LocalTimeConverter}}" />
+        <TextBlock DockPanel.Dock="Left" Text="{Binding Kind}" Style="{StaticResource ActivityKindStyle}" />
+        <TextBlock Text="{Binding Text}" Foreground="{StaticResource TextSoftBrush}" TextWrapping="Wrap" />
+      </DockPanel>
+    </DataTemplate>
+
+    <!-- One fact in use: the row opens it in the panel; weight and Leave out sit on the right. -->
+    <DataTemplate x:Key="FactTemplate" DataType="{x:Type research:FactRowViewModel}">
+      <Border Style="{StaticResource FactRowStyle}">
+        <DockPanel>
+          <Button DockPanel.Dock="Right" Content="Leave out" Style="{StaticResource SmallButtonStyle}" Margin="6,0,12,0" VerticalAlignment="Center"
+                  Command="{Binding LeaveOutCommand}" AutomationProperties.Name="{Binding Id, StringFormat='Leave out {0}'}" />
+          <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center" Margin="6,0">
+            <Button Content="−" Style="{StaticResource StepButtonStyle}" Command="{Binding LowerWeightCommand}"
+                    AutomationProperties.Name="{Binding Id, StringFormat='Lower the weight of {0}'}" />
+            <TextBlock Text="{Binding Weight}" Style="{StaticResource WeightTextStyle}" Margin="4,0"
+                       AutomationProperties.Name="{Binding Id, StringFormat='Weight of {0}'}" />
+            <Button Content="+" Style="{StaticResource StepButtonStyle}" Command="{Binding RaiseWeightCommand}"
+                    AutomationProperties.Name="{Binding Id, StringFormat='Raise the weight of {0}'}" />
+          </StackPanel>
+          <Button Style="{StaticResource RowButtonStyle}" Command="{Binding SelectCommand}" AutomationProperties.Name="{Binding Statement}">
+            <Grid>
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="52" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="220" />
+              </Grid.ColumnDefinitions>
+              <TextBlock Grid.Column="0" Text="{Binding Id}" FontFamily="{StaticResource MonoFont}" FontSize="13" Foreground="{StaticResource TextSoftBrush}" VerticalAlignment="Center" />
+              <TextBlock Grid.Column="1" Text="{Binding Statement}" FontSize="14" TextWrapping="Wrap" VerticalAlignment="Center" Margin="0,0,12,0" />
+              <TextBlock Grid.Column="2" Text="{Binding SourceDisplay}" FontFamily="{StaticResource MonoFont}" FontSize="12"
+                         Foreground="{StaticResource TextMutedBrush}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" ToolTip="{Binding SourceUrl}" />
+            </Grid>
+          </Button>
+        </DockPanel>
+      </Border>
+    </DataTemplate>
+
+    <!-- A left-out fact: dimmed, with Put back. -->
+    <DataTemplate x:Key="LeftOutTemplate" DataType="{x:Type research:FactRowViewModel}">
+      <Border Style="{StaticResource FactRowStyle}">
+        <DockPanel>
+          <Button DockPanel.Dock="Right" Content="Put back" Style="{StaticResource SmallButtonStyle}" Margin="6,0,12,0" VerticalAlignment="Center"
+                  Command="{Binding PutBackCommand}" AutomationProperties.Name="{Binding Id, StringFormat='Put back {0}'}" />
+          <Button Style="{StaticResource RowButtonStyle}" Command="{Binding SelectCommand}" Foreground="{StaticResource TextMutedBrush}"
+                  AutomationProperties.Name="{Binding Statement}">
+            <Grid>
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="52" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="220" />
+              </Grid.ColumnDefinitions>
+              <TextBlock Grid.Column="0" Text="{Binding Id}" FontFamily="{StaticResource MonoFont}" FontSize="13" VerticalAlignment="Center" />
+              <TextBlock Grid.Column="1" Text="{Binding Statement}" FontSize="14" TextWrapping="Wrap" VerticalAlignment="Center" Margin="0,0,12,0" />
+              <TextBlock Grid.Column="2" Text="{Binding SourceDisplay}" FontFamily="{StaticResource MonoFont}" FontSize="12"
+                         TextTrimming="CharacterEllipsis" VerticalAlignment="Center" ToolTip="{Binding SourceUrl}" />
+            </Grid>
+          </Button>
+        </DockPanel>
+      </Border>
+    </DataTemplate>
+  </UserControl.Resources>
+
+  <DockPanel>
+    <!-- Where the stage stands: one bar per state. -->
+    <StackPanel DockPanel.Dock="Top">
+      <Border Style="{StaticResource BarStyle}" Background="{StaticResource AccentSoftBrush}" BorderBrush="#5A4520"
+              Visibility="{Binding IsReview, Converter={StaticResource Visible}}">
+        <DockPanel>
+          <Button DockPanel.Dock="Right" Content="Approve and continue" Style="{StaticResource PrimaryButtonStyle}" MinHeight="36" FontSize="13"
+                  Margin="8,0,0,0" Command="{Binding ApproveCommand}" />
+          <Button DockPanel.Dock="Right" Content="Regenerate" Style="{StaticResource SecondaryButtonStyle}" Command="{Binding RegenerateCommand}" />
+          <TextBlock Text="Gate: Research" FontSize="14" FontWeight="SemiBold" Foreground="{StaticResource AccentTextBrush}" VerticalAlignment="Center" Margin="0,0,14,0" />
+          <TextBlock VerticalAlignment="Center" FontSize="13" Foreground="#D9C9A8" TextWrapping="Wrap">
+            <Run Text="{Binding Summary, Mode=OneWay}" /> The script may use these facts and nothing else; higher weights get airtime first.
+          </TextBlock>
+        </DockPanel>
+      </Border>
+
+      <Border Style="{StaticResource BarStyle}" Background="{StaticResource PillOkBackBrush}" BorderBrush="#2F5A50"
+              Visibility="{Binding IsApproved, Converter={StaticResource Visible}}">
+        <DockPanel>
+          <Button DockPanel.Dock="Right" Content="Regenerate" Style="{StaticResource SecondaryButtonStyle}" Command="{Binding RegenerateCommand}" />
+          <TextBlock Text="Research approved" FontSize="14" FontWeight="SemiBold" Foreground="{StaticResource PillOkTextBrush}" VerticalAlignment="Center" Margin="0,0,14,0" />
+          <TextBlock VerticalAlignment="Center" FontSize="13" Foreground="{StaticResource TextSoftBrush}" TextWrapping="Wrap">
+            <Run Text="{Binding Summary, Mode=OneWay}" /> A change makes a new version that needs approving again.
+          </TextBlock>
+        </DockPanel>
+      </Border>
+
+      <Border Style="{StaticResource BarStyle}" Background="#172536" BorderBrush="#2B4A6B"
+              Visibility="{Binding IsRunning, Converter={StaticResource Visible}}">
+        <DockPanel>
+          <Button DockPanel.Dock="Right" Content="Cancel" Style="{StaticResource SecondaryButtonStyle}" Command="{Binding CancelCommand}" />
+          <TextBlock Text="Researching" FontSize="14" FontWeight="SemiBold" Foreground="#6FB3EE" VerticalAlignment="Center" Margin="0,0,14,0" />
+          <TextBlock VerticalAlignment="Center" FontSize="13" Foreground="#BCD3EA" TextWrapping="Wrap">
+            Only <Run Text="{Binding SourcesText, Mode=OneWay}" /> can be reached. The fact sheet appears here when it is done.
+          </TextBlock>
+        </DockPanel>
+      </Border>
+
+      <Border Style="{StaticResource BarStyle}" Background="{StaticResource PillErrorBackBrush}" BorderBrush="#6B3A33"
+              Visibility="{Binding IsFailed, Converter={StaticResource Visible}}">
+        <DockPanel>
+          <Button DockPanel.Dock="Right" Content="Retry" Style="{StaticResource PrimaryButtonStyle}" MinHeight="36" FontSize="13"
+                  Background="{StaticResource ErrorTextBrush}" Command="{Binding RegenerateCommand}" />
+          <StackPanel VerticalAlignment="Center" Margin="0,0,14,0">
+            <TextBlock Text="Research failed" FontSize="14" FontWeight="SemiBold" Foreground="{StaticResource PillErrorTextBrush}" />
+            <TextBlock Text="{Binding Error}" FontSize="13" Foreground="#E2C1BB" TextWrapping="Wrap" Margin="0,2,0,0"
+                       AutomationProperties.AutomationId="ResearchError" />
+          </StackPanel>
+        </DockPanel>
+      </Border>
+
+      <Border Style="{StaticResource BarStyle}" Background="{StaticResource CardBrush}" BorderBrush="{StaticResource BorderBrush}"
+              Visibility="{Binding IsNotStarted, Converter={StaticResource Visible}}">
+        <DockPanel>
+          <Button DockPanel.Dock="Right" Content="Run research" Style="{StaticResource PrimaryButtonStyle}" MinHeight="36" FontSize="13"
+                  Command="{Binding RegenerateCommand}" />
+          <TextBlock VerticalAlignment="Center" FontSize="13" Foreground="{StaticResource TextSoftBrush}" TextWrapping="Wrap">
+            Research has not run yet. It reads only <Run Text="{Binding SourcesText, Mode=OneWay}" />.
+          </TextBlock>
+        </DockPanel>
+      </Border>
+
+      <Border Background="{StaticResource PillErrorBackBrush}" CornerRadius="8" Padding="12,8" Margin="0,0,0,14"
+              Visibility="{Binding ActionError, Converter={views:NullToCollapsedConverter}}">
+        <TextBlock Text="{Binding ActionError}" Foreground="{StaticResource PillErrorTextBrush}" FontSize="13" TextWrapping="Wrap" />
+      </Border>
+    </StackPanel>
+
+    <Grid>
+      <!-- Running or failed: what the research did. -->
+      <DockPanel Visibility="{Binding ShowsLog, Converter={StaticResource Visible}}">
+        <TextBlock DockPanel.Dock="Top" Text="WHAT THE RESEARCH DID" Style="{StaticResource SectionLabelStyle}" Margin="0,0,0,8" />
+        <Border Background="{StaticResource CardBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="10" Padding="16,12">
+          <ScrollViewer VerticalScrollBarVisibility="Auto">
+            <ItemsControl ItemsSource="{Binding Activity}" ItemTemplate="{StaticResource ActivityLineTemplate}"
+                          FontFamily="{StaticResource MonoFont}" FontSize="13" Focusable="False" AutomationProperties.Name="Research activity" />
+          </ScrollViewer>
+        </Border>
+      </DockPanel>
+
+      <!-- The fact sheet, with the selected fact on the right. -->
+      <Grid Visibility="{Binding ShowsSheet, Converter={StaticResource Visible}}">
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="*" />
+          <ColumnDefinition Width="380" />
+        </Grid.ColumnDefinitions>
+
+        <DockPanel Grid.Column="0" Margin="0,0,20,0">
+          <!-- Versions. -->
+          <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,10">
+            <TextBlock Text="Fact sheet" FontSize="12" Foreground="{StaticResource LabelBrush}" VerticalAlignment="Center" Margin="0,0,10,0" />
+            <ItemsControl ItemsSource="{Binding Versions}" Focusable="False" AutomationProperties.Name="Versions">
+              <ItemsControl.ItemsPanel>
+                <ItemsPanelTemplate>
+                  <StackPanel Orientation="Horizontal" />
+                </ItemsPanelTemplate>
+              </ItemsControl.ItemsPanel>
+              <ItemsControl.ItemTemplate>
+                <DataTemplate DataType="{x:Type research:VersionChoice}">
+                  <Button Content="{Binding Label}" Margin="0,0,6,0" FontFamily="{StaticResource MonoFont}"
+                          Command="{Binding DataContext.ShowVersionCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                          CommandParameter="{Binding Version}">
+                    <Button.Style>
+                      <Style TargetType="Button" BasedOn="{StaticResource SmallButtonStyle}">
+                        <Style.Triggers>
+                          <DataTrigger Binding="{Binding IsShown}" Value="True">
+                            <Setter Property="Background" Value="{StaticResource AccentSoftBrush}" />
+                            <Setter Property="BorderBrush" Value="{StaticResource AccentBrush}" />
+                            <Setter Property="Foreground" Value="{StaticResource AccentTextBrush}" />
+                          </DataTrigger>
+                        </Style.Triggers>
+                      </Style>
+                    </Button.Style>
+                  </Button>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+            <TextBlock Text="{Binding VersionNote}" FontSize="12" Foreground="{StaticResource TextMutedBrush}" VerticalAlignment="Center" Margin="6,0,0,0" />
+          </StackPanel>
+
+          <!-- What the weights mean. -->
+          <TextBlock DockPanel.Dock="Top" FontSize="12" Foreground="{StaticResource LabelBrush}" Margin="0,0,0,10" TextWrapping="Wrap">
+            <Run Text="Weight" FontWeight="SemiBold" Foreground="{StaticResource TextSoftBrush}" />
+            <Run Text="   1" FontFamily="{StaticResource MonoFont}" Foreground="{StaticResource TextDimBrush}" /><Run Text=" only if there is time left" />
+            <Run Text="   5" FontFamily="{StaticResource MonoFont}" Foreground="{StaticResource TextSoftBrush}" /><Run Text=" normal (default)" />
+            <Run Text="   10" FontFamily="{StaticResource MonoFont}" Foreground="{StaticResource AccentTextBrush}" /><Run Text=" must be in the video" />
+          </TextBlock>
+
+          <!-- Per site, what the research did. -->
+          <WrapPanel DockPanel.Dock="Bottom" Margin="0,8,0,0">
+            <ItemsControl ItemsSource="{Binding SiteSummary}" Focusable="False">
+              <ItemsControl.ItemsPanel>
+                <ItemsPanelTemplate>
+                  <WrapPanel />
+                </ItemsPanelTemplate>
+              </ItemsControl.ItemsPanel>
+              <ItemsControl.ItemTemplate>
+                <DataTemplate>
+                  <TextBlock Text="{Binding}" FontFamily="{StaticResource MonoFont}" FontSize="12" Foreground="{StaticResource TextMutedBrush}" Margin="0,0,20,0" />
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+            <TextBlock Text="{Binding RefusedSummary}" FontFamily="{StaticResource MonoFont}" FontSize="12" Foreground="{StaticResource ErrorTextBrush}" />
+          </WrapPanel>
+
+          <ScrollViewer VerticalScrollBarVisibility="Auto">
+            <StackPanel>
+              <Grid Margin="15,0,0,6">
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition Width="52" />
+                  <ColumnDefinition Width="*" />
+                  <ColumnDefinition Width="220" />
+                  <ColumnDefinition Width="210" />
+                </Grid.ColumnDefinitions>
+                <TextBlock Grid.Column="0" Text="FACT" Style="{StaticResource SectionLabelStyle}" />
+                <TextBlock Grid.Column="1" Text="STATEMENT" Style="{StaticResource SectionLabelStyle}" />
+                <TextBlock Grid.Column="2" Text="SOURCE" Style="{StaticResource SectionLabelStyle}" />
+                <TextBlock Grid.Column="3" Text="WEIGHT" Style="{StaticResource SectionLabelStyle}" Margin="8,0,0,0" />
+              </Grid>
+              <ItemsControl ItemsSource="{Binding Facts}" ItemTemplate="{StaticResource FactTemplate}" Focusable="False"
+                            AutomationProperties.Name="Facts in use" />
+
+              <StackPanel Visibility="{Binding HasLeftOutFacts, Converter={StaticResource Visible}}">
+                <Border BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,1,0,0" Margin="0,8,0,8" />
+                <TextBlock Margin="15,0,0,8">
+                  <Run Text="LEFT OUT" FontSize="11" FontWeight="SemiBold" Foreground="{StaticResource TextMutedBrush}" />
+                  <Run Text="   The script never sees these. Put one back to use it again." FontSize="12" Foreground="{StaticResource TextDimBrush}" />
+                </TextBlock>
+                <ItemsControl ItemsSource="{Binding LeftOutFacts}" ItemTemplate="{StaticResource LeftOutTemplate}" Focusable="False"
+                              AutomationProperties.Name="Left-out facts" />
+              </StackPanel>
+            </StackPanel>
+          </ScrollViewer>
+        </DockPanel>
+
+        <!-- The selected fact. -->
+        <Border Grid.Column="1" Background="{StaticResource NavBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="10" Padding="20"
+                Visibility="{Binding HasSelectedFact, Converter={StaticResource Visible}}">
+          <ScrollViewer VerticalScrollBarVisibility="Auto">
+            <StackPanel>
+              <TextBlock Text="SELECTED FACT" Style="{StaticResource SectionLabelStyle}" />
+              <TextBlock Text="{Binding SelectedFact.Id}" FontFamily="{StaticResource MonoFont}" FontSize="18" FontWeight="Bold" Margin="0,2,0,12" />
+
+              <StackPanel Visibility="{Binding IsNotEditing, Converter={StaticResource Visible}}">
+                <TextBlock Text="{Binding SelectedFact.Statement}" FontSize="15" TextWrapping="Wrap" LineHeight="22" />
+                <TextBlock FontFamily="{StaticResource MonoFont}" FontSize="13" Foreground="{StaticResource TextSoftBrush}" Margin="0,8,0,0" TextWrapping="Wrap">
+                  <Run Text="Weight" /> <Run Text="{Binding SelectedFact.Weight, Mode=OneWay}" /> <Run Text="·" /> <Run Text="{Binding SelectedFact.WeightMeaning, Mode=OneWay}" />
+                </TextBlock>
+                <TextBlock Text="Left out: the script will not use it." FontSize="13" Foreground="{StaticResource TextMutedBrush}" Margin="0,4,0,0"
+                           Visibility="{Binding SelectedFact.LeftOut, Converter={StaticResource Visible}}" />
+
+                <TextBlock Text="Passage on the page" Style="{StaticResource FieldLabelStyle}" Margin="0,16,0,6" />
+                <Border Background="{StaticResource CardBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="8" Padding="12,10">
+                  <TextBlock Text="{Binding SelectedFact.Quote}" FontSize="13" FontStyle="Italic" Foreground="{StaticResource TextSoftBrush}" TextWrapping="Wrap" LineHeight="20" />
+                </Border>
+
+                <TextBlock Text="Source" Style="{StaticResource FieldLabelStyle}" Margin="0,16,0,4" />
+                <TextBlock TextWrapping="Wrap" FontFamily="{StaticResource MonoFont}" FontSize="13">
+                  <Hyperlink Command="{Binding OpenSourceCommand}" Foreground="{StaticResource AccentBrush}">
+                    <Run Text="{Binding SelectedFact.SourceUrl, Mode=OneWay}" />
+                  </Hyperlink>
+                </TextBlock>
+
+                <Button Content="Edit fact…" Style="{StaticResource SecondaryButtonStyle}" MinHeight="44" Margin="0,20,0,0" Command="{Binding StartEditCommand}" />
+              </StackPanel>
+
+              <StackPanel Visibility="{Binding IsEditing, Converter={StaticResource Visible}}">
+                <TextBlock Text="Statement" Style="{StaticResource FieldLabelStyle}" />
+                <TextBox Text="{Binding EditText, UpdateSourceTrigger=PropertyChanged}" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="110"
+                         VerticalContentAlignment="Top" FontSize="14" Padding="10,8" AutomationProperties.Name="Statement" />
+                <TextBlock FontSize="12" Foreground="{StaticResource TextMutedBrush}" TextWrapping="Wrap" Margin="0,8,0,12"
+                           Text="The source and the passage stay as they are. Your changes collect in one new version until you approve it." />
+                <UniformGrid Columns="2">
+                  <Button Content="Save" Style="{StaticResource PrimaryButtonStyle}" Margin="0,0,4,0" Command="{Binding SaveEditCommand}" />
+                  <Button Content="Cancel" Style="{StaticResource SecondaryButtonStyle}" MinHeight="44" Margin="4,0,0,0" Command="{Binding CancelEditCommand}" />
+                </UniformGrid>
+              </StackPanel>
+            </StackPanel>
+          </ScrollViewer>
+        </Border>
+      </Grid>
+    </Grid>
+  </DockPanel>
+</UserControl>

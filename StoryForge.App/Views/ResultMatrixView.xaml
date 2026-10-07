@@ -3,6 +3,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:client="clr-namespace:StoryForge.Client;assembly=StoryForge.Client"
              xmlns:pages="clr-namespace:StoryForge.App.ViewModels.Pages"
              xmlns:views="clr-namespace:StoryForge.App.Views"
              mc:Ignorable="d"
@@ -10,6 +11,57 @@
 
   <UserControl.Resources>
     <BooleanToVisibilityConverter x:Key="Visible" />
+
+    <!-- A stage chip: grey not started, blue running, amber review, teal approved, red failed, violet stale. -->
+    <Style x:Key="StageChipStyle" TargetType="Button">
+      <Setter Property="Background" Value="{StaticResource FieldBrush}" />
+      <Setter Property="Foreground" Value="{StaticResource LabelBrush}" />
+      <Setter Property="FontSize" Value="12" />
+      <Setter Property="Cursor" Value="Hand" />
+      <Setter Property="FocusVisualStyle" Value="{StaticResource RoundedFocusVisual}" />
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="Button">
+            <Border x:Name="Chrome" Background="{TemplateBinding Background}" CornerRadius="6" Padding="10,6" BorderThickness="1" BorderBrush="Transparent">
+              <ContentPresenter />
+            </Border>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsMouseOver" Value="True">
+                <Setter TargetName="Chrome" Property="BorderBrush" Value="{StaticResource FieldBorderBrush}" />
+              </Trigger>
+              <Trigger Property="IsEnabled" Value="False">
+                <Setter Property="Cursor" Value="Arrow" />
+                <Setter TargetName="Chrome" Property="BorderBrush" Value="Transparent" />
+              </Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+      <Style.Triggers>
+        <DataTrigger Binding="{Binding State}" Value="{x:Static client:StageState.Running}">
+          <Setter Property="Background" Value="#172536" />
+          <Setter Property="Foreground" Value="#6FB3EE" />
+        </DataTrigger>
+        <DataTrigger Binding="{Binding State}" Value="{x:Static client:StageState.NeedsReview}">
+          <Setter Property="Background" Value="{StaticResource PillOffBackBrush}" />
+          <Setter Property="Foreground" Value="{StaticResource PillOffTextBrush}" />
+          <Setter Property="FontWeight" Value="SemiBold" />
+        </DataTrigger>
+        <DataTrigger Binding="{Binding State}" Value="{x:Static client:StageState.Approved}">
+          <Setter Property="Background" Value="{StaticResource PillOkBackBrush}" />
+          <Setter Property="Foreground" Value="{StaticResource PillOkTextBrush}" />
+        </DataTrigger>
+        <DataTrigger Binding="{Binding State}" Value="{x:Static client:StageState.Failed}">
+          <Setter Property="Background" Value="{StaticResource PillErrorBackBrush}" />
+          <Setter Property="Foreground" Value="{StaticResource PillErrorTextBrush}" />
+          <Setter Property="FontWeight" Value="SemiBold" />
+        </DataTrigger>
+        <DataTrigger Binding="{Binding State}" Value="{x:Static client:StageState.Stale}">
+          <Setter Property="Background" Value="{StaticResource NoteBackBrush}" />
+          <Setter Property="Foreground" Value="#B4A8F5" />
+        </DataTrigger>
+      </Style.Triggers>
+    </Style>
   </UserControl.Resources>
 
   <Grid>
@@ -45,15 +97,18 @@
             </ItemsControl.ItemsPanel>
             <ItemsControl.ItemTemplate>
               <DataTemplate DataType="{x:Type pages:StageChip}">
-                <!-- Grey: not started, as in the canvas legend. -->
-                <Border Background="{StaticResource FieldBrush}" CornerRadius="6" Padding="10,6" Margin="6,3,0,3"
-                        ToolTip="{Binding StateText}" AutomationProperties.Name="{Binding}">
-                  <TextBlock Text="{Binding Name}" FontSize="12" Foreground="{StaticResource LabelBrush}" />
-                </Border>
+                <!-- Coloured by state as in the canvas legend; a stage with a screen opens it. -->
+                <Button Content="{Binding Label}" Style="{StaticResource StageChipStyle}" Margin="6,3,0,3"
+                        IsEnabled="{Binding CanOpen}" ToolTip="{Binding StateText}" AutomationProperties.Name="{Binding}"
+                        Command="{Binding DataContext.OpenStageCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                        CommandParameter="{Binding}" />
               </DataTemplate>
             </ItemsControl.ItemTemplate>
           </ItemsControl>
           <StackPanel VerticalAlignment="Center">
+            <TextBlock FontSize="13" Margin="0,0,0,2" Visibility="{Binding ShowsFactSheet, Converter={StaticResource Visible}}">
+              <Hyperlink Command="{Binding ShowMatrixCommand}" Foreground="{StaticResource AccentBrush}" TextDecorations="{x:Null}">← Result matrix</Hyperlink>
+            </TextBlock>
             <TextBlock Text="{Binding Name}" FontSize="22" FontWeight="Bold" TextTrimming="CharacterEllipsis" />
             <TextBlock Text="{Binding Summary}" FontFamily="{StaticResource MonoFont}" FontSize="13" Foreground="{StaticResource TextMutedBrush}"
                        Margin="0,2,0,0" AutomationProperties.AutomationId="ProjectSummary" />
@@ -61,11 +116,17 @@
         </DockPanel>
       </Border>
 
-      <StackPanel Margin="28,20">
-        <Border Background="{StaticResource PillErrorBackBrush}" CornerRadius="8" Padding="12,8" Margin="0,0,0,14"
-                Visibility="{Binding LoadError, Converter={views:NullToCollapsedConverter}}">
-          <TextBlock Text="{Binding LoadError}" Foreground="{StaticResource PillErrorTextBrush}" FontSize="13" TextWrapping="Wrap" />
-        </Border>
+      <Border DockPanel.Dock="Top" Background="{StaticResource PillErrorBackBrush}" CornerRadius="8" Padding="12,8" Margin="28,20,28,0"
+              Visibility="{Binding LoadError, Converter={views:NullToCollapsedConverter}}">
+        <TextBlock Text="{Binding LoadError}" Foreground="{StaticResource PillErrorTextBrush}" FontSize="13" TextWrapping="Wrap" />
+      </Border>
+
+      <!-- The last child fills the rest: the fact sheet, or in its place the matrix. -->
+      <Grid>
+      <views:FactSheetView DataContext="{Binding FactSheet}" Margin="28,20"
+                           Visibility="{Binding DataContext.ShowsFactSheet, RelativeSource={RelativeSource AncestorType=UserControl}, Converter={StaticResource Visible}}" />
+
+      <StackPanel Margin="28,20" Visibility="{Binding ShowsMatrix, Converter={StaticResource Visible}}">
         <!-- Column headers, as on the canvas. -->
         <Grid Margin="4,0,4,8">
           <Grid.ColumnDefinitions>
@@ -88,6 +149,7 @@
                      Text="No shots yet. The script and storyboard fill in this matrix once the run starts." />
         </Border>
       </StackPanel>
+      </Grid>
     </DockPanel>
   </Grid>
 </UserControl>

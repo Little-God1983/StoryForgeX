@@ -47,7 +47,9 @@ Set `STORYFORGEX_BUILD_PAUSE=never` for a caller that must never wait, or `=alwa
 Every folder the script publishes into gets a `storyforgex-install.json` marker. Nothing is ever
 deleted from a folder without one, so a mistyped `-InstallDir` cannot take out a neighbouring release.
 
-The published folder is framework-dependent: the machine needs the .NET 10 desktop runtime.
+The published folder is framework-dependent: the machine needs the .NET 10 desktop runtime. It
+holds `StoryForge.App.exe` and `StoryForge.ResearchServer.exe`, which the app starts for every
+Research run. A publish that lacks either one stops the build before anything is bumped.
 
 | Parameter | What it does |
 |---|---|

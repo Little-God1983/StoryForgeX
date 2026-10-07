@@ -22,8 +22,13 @@ internal sealed class ProjectStore(IDbContextFactory<StoryForgeDbContext> contex
         var projects = await db.Projects.AsNoTracking()
             .Select(p => new { p.Id, p.Name, p.UpdatedAt })
             .ToListAsync(cancellationToken);
+        var cells = (await db.Cells.AsNoTracking()
+                .Where(c => c.Key == "")
+                .Select(c => new { c.ProjectId, c.Stage, c.State })
+                .ToListAsync(cancellationToken))
+            .ToLookup(c => c.ProjectId, c => new StageStatus(c.Stage, c.State));
         // Sorted here: SQLite cannot order by a DateTimeOffset column.
-        return [.. projects.OrderByDescending(p => p.UpdatedAt).Select(p => new ProjectSummary(p.Id, p.Name, StatusLine()))];
+        return [.. projects.OrderByDescending(p => p.UpdatedAt).Select(p => new ProjectSummary(p.Id, p.Name, StatusLine(Stages(cells[p.Id]))))];
     }
 
     public async Task<Project> CreateAsync(ProjectSetup setup, CancellationToken cancellationToken)
@@ -46,7 +51,7 @@ internal sealed class ProjectStore(IDbContextFactory<StoryForgeDbContext> contex
         };
         db.Projects.Add(entry);
         await db.SaveChangesAsync(cancellationToken);
-        return ToProject(entry);
+        return ToProject(entry, []);
     }
 
     public async Task<Project> GetAsync(Guid projectId, CancellationToken cancellationToken)
@@ -54,18 +59,55 @@ internal sealed class ProjectStore(IDbContextFactory<StoryForgeDbContext> contex
         await using var db = await contextFactory.CreateDbContextAsync(cancellationToken);
         var entry = await db.Projects.AsNoTracking().FirstOrDefaultAsync(p => p.Id == projectId, cancellationToken)
             ?? throw new KeyNotFoundException($"There is no project {projectId}.");
-        return ToProject(entry);
+        var cells = await db.Cells.AsNoTracking()
+            .Where(c => c.ProjectId == projectId && c.Key == "")
+            .Select(c => new StageStatus(c.Stage, c.State))
+            .ToListAsync(cancellationToken);
+        return ToProject(entry, cells);
     }
 
-    // Nothing runs yet; the stages report their own states from #5 on.
-    private static string StatusLine() => "Not started";
+    /// <summary>
+    /// "Not started", or the first stage that is not approved yet and where it stands: "Research: needs
+    /// review". When that stage has not started, the last approved one: "Research: approved".
+    /// </summary>
+    internal static string StatusLine(IReadOnlyList<StageStatus> stages)
+    {
+        if (stages.All(s => s.State == StageState.NotStarted))
+        {
+            return "Not started";
+        }
+        var open = stages.FirstOrDefault(s => s.State != StageState.Approved);
+        if (open is null)
+        {
+            return "All stages approved";
+        }
+        if (open.State == StageState.NotStarted && stages.TakeWhile(s => s != open).LastOrDefault() is { } approved)
+        {
+            return $"{approved.Stage}: approved";
+        }
+        return $"{open.Stage}: {StateText(open.State)}";
+    }
 
-    private static Project ToProject(ProjectEntry entry) => new(
+    internal static string StateText(StageState state) => state switch
+    {
+        StageState.NotStarted => "not started",
+        StageState.NeedsReview => "needs review",
+        _ => state.ToString().ToLowerInvariant(),
+    };
+
+    /// <summary>Every stage in run order, with the state of its cell, or not started if it has none.</summary>
+    private static List<StageStatus> Stages(IEnumerable<StageStatus> cells)
+    {
+        var states = cells.ToDictionary(c => c.Stage, c => c.State);
+        return [.. Enum.GetValues<PipelineStage>().Select(stage => new StageStatus(stage, states.GetValueOrDefault(stage, StageState.NotStarted)))];
+    }
+
+    private static Project ToProject(ProjectEntry entry, IEnumerable<StageStatus> cells) => new(
         entry.Id,
         entry.CreatedAt,
         JsonSerializer.Deserialize<ProjectSetup>(entry.SetupJson, Json)
             ?? throw new InvalidOperationException($"Project {entry.Id} has no setup."),
-        [.. Enum.GetValues<PipelineStage>().Select(stage => new StageStatus(stage, StageState.NotStarted))]);
+        Stages(cells));
 
     private static ProjectSetup Normalize(ProjectSetup s) => s with
     {

@@ -1,8 +1,10 @@
 using Microsoft.Extensions.Options;
 using StoryForge.Client;
+using StoryForge.Engine.Pipeline;
 using StoryForge.Engine.Profiles;
 using StoryForge.Engine.Projects;
 using StoryForge.Engine.Providers;
+using StoryForge.Engine.Research;
 using StoryForge.Engine.Secrets;
 using StoryForge.Engine.Settings;
 
@@ -15,8 +17,16 @@ internal sealed class InProcessStoryForgeClient(
     ProviderChecks checks,
     ProfileStore profiles,
     ProjectStore projects,
+    PipelineRunner runner,
+    FactSheets factSheets,
     IOptions<StoryForgeEngineOptions> options) : IStoryForgeClient
 {
+    public event EventHandler<StageUpdate>? StageUpdated
+    {
+        add => runner.StageUpdated += value;
+        remove => runner.StageUpdated -= value;
+    }
+
     public Task<IReadOnlyList<ProviderStatus>> GetProviderStatusesAsync(CancellationToken cancellationToken = default) =>
         checks.CheckAllAsync(cancellationToken);
 
@@ -67,6 +77,24 @@ internal sealed class InProcessStoryForgeClient(
 
     public Task<Project> GetProjectAsync(Guid projectId, CancellationToken cancellationToken = default) =>
         projects.GetAsync(projectId, cancellationToken);
+
+    public Task StartRunAsync(Guid projectId, CancellationToken cancellationToken = default) =>
+        runner.StartRunAsync(projectId, cancellationToken);
+
+    public Task RegenerateAsync(Guid projectId, PipelineStage stage, CancellationToken cancellationToken = default) =>
+        runner.RegenerateAsync(projectId, stage, cancellationToken);
+
+    public Task CancelAsync(Guid projectId, PipelineStage stage, CancellationToken cancellationToken = default) =>
+        runner.CancelAsync(projectId, stage);
+
+    public Task ApproveAsync(Guid projectId, PipelineStage stage, int version, CancellationToken cancellationToken = default) =>
+        runner.ApproveAsync(projectId, stage, version, cancellationToken);
+
+    public Task<FactSheetView> GetFactSheetAsync(Guid projectId, int? version = null, CancellationToken cancellationToken = default) =>
+        factSheets.GetAsync(projectId, version, cancellationToken);
+
+    public Task<FactSheetView> ChangeFactAsync(Guid projectId, int version, string factId, FactChange change, CancellationToken cancellationToken = default) =>
+        factSheets.ChangeAsync(projectId, version, factId, change, cancellationToken);
 
     internal static string SecretName(SecretKey key) => key switch
     {

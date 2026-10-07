@@ -545,6 +545,21 @@ public sealed class BuildScriptTests
     }
 
     [Fact]
+    public void APublishWithoutTheResearchServer_FailsAndNothingIsBumped()
+    {
+        // The app starts StoryForge.ResearchServer.exe from its own folder for every Research run.
+        // A publish without it would install an app whose first stage cannot run.
+        using var repo = new FakeRepo("1.2.2.8");
+
+        var result = repo.Build(before: "$env:FAKE_PUBLISH_SKIPS = 'StoryForge.ResearchServer.exe'");
+
+        Assert.NotEqual(0, result.ExitCode);
+        Assert.Contains("StoryForge.ResearchServer.exe is missing", result.Output);
+        Assert.Equal("1.2.2.8", repo.Version);
+        Assert.DoesNotContain(repo.Calls, call => call.StartsWith("git push"));
+    }
+
+    [Fact]
     public void AOneOffBuildOfUncommittedChanges_SaysSoInItsStamp()
     {
         // The stamp names the commit the build came from. With edits on top, that commit does not
@@ -806,7 +821,9 @@ public sealed class BuildScriptTests
                 Write-FakeCall "dotnet $($args[0]) $(Split-Path -Leaf $args[1])"
                 if ($args[0] -ne 'publish') { return }
                 $out = $args[[array]::IndexOf($args, '--output') + 1]
-                New-Item -ItemType File -Path (Join-Path $out $AppExeName) -Force | Out-Null
+                foreach ($file in $RequiredFiles) {
+                    if ($file -ne $env:FAKE_PUBLISH_SKIPS) { New-Item -ItemType File -Path (Join-Path $out $file) -Force | Out-Null }
+                }
             }
             function Write-StartMenuShortcut {
                 param([string]$InstallDir)

@@ -10,7 +10,7 @@ public sealed class ProjectTests : IDisposable
     public void Dispose() => _engine.Dispose();
 
     /// <summary>A setup that passes every check, with one profile of each kind created for it.</summary>
-    private static async Task<ProjectSetup> ValidSetup(IStoryForgeClient client, string name = "Soul Coins – BG3 lore")
+    internal static async Task<ProjectSetup> ValidSetup(IStoryForgeClient client, string name = "Soul Coins – BG3 lore")
     {
         async Task<ProfileRef> Profile(ProfileKind kind)
         {

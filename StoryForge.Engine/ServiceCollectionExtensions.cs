@@ -5,9 +5,11 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 using StoryForge.Client;
 using StoryForge.Engine.Data;
+using StoryForge.Engine.Pipeline;
 using StoryForge.Engine.Profiles;
 using StoryForge.Engine.Projects;
 using StoryForge.Engine.Providers;
+using StoryForge.Engine.Research;
 using StoryForge.Engine.Secrets;
 using StoryForge.Engine.Settings;
 
@@ -40,6 +42,7 @@ public static class ServiceCollectionExtensions
             o.DataDirectory = options.DataDirectory;
             o.DefaultProjectsFolder = options.DefaultProjectsFolder;
             o.CredentialTargetPrefix = options.CredentialTargetPrefix;
+            o.ResearchServerPath = options.ResearchServerPath;
         });
         services.AddDbContextFactory<StoryForgeDbContext>((provider, db) =>
         {
@@ -54,6 +57,13 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IProcessRunner, ProcessRunner>();
         services.AddSingleton<HttpMessageHandler>(_ => new SocketsHttpHandler { ConnectTimeout = TimeSpan.FromSeconds(3) });
         services.AddSingleton<ProviderChecks>();
+        services.AddSingleton<IStreamingProcess, StreamingProcess>();
+        services.AddSingleton<IResearchAgent, ClaudeCliResearchAgent>();
+        services.AddSingleton<IStageWorker, ResearchStage>();
+        services.AddSingleton<FactSheets>();
+        // After DatabaseInitializer: hosted services start in order, and the runner reads the database.
+        services.AddSingleton<PipelineRunner>();
+        services.AddHostedService(provider => provider.GetRequiredService<PipelineRunner>());
         if (OperatingSystem.IsWindows())
         {
             services.AddSingleton<ISecretStore, WindowsCredentialStore>();

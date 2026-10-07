@@ -26,6 +26,8 @@ $script:DefaultInstallRoot = 'E:\StableVersion'
 $script:ReleaseBranch      = 'main'
 $script:PropsPath          = Join-Path $RepoRoot 'Directory.Build.props'
 $script:AppExeName         = 'StoryForge.App.exe'
+# What a publish must produce: the app, and the research server it starts for the Research stage.
+$script:RequiredFiles      = @($AppExeName, 'StoryForge.ResearchServer.exe')
 $script:ShortcutName       = 'StoryForge X.lnk'
 
 # build.ps1 drops this in the install folder. Nothing is ever deleted from a folder that does
