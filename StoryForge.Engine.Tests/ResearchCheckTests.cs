@@ -239,6 +239,57 @@ public sealed class ResearchCheckTests
     }
 
     [Fact]
+    public void Lines_of_an_unexpected_shape_are_passed_over_not_thrown_on()
+    {
+        var stream = new ClaudeStream(new ResearchPages(), new Collect([]), TimeProvider.System);
+
+        stream.Read("""{"type":"assistant","message":"text instead of an object"}""");
+        stream.Read("""{"type":"user","message":{"content":"not a list"}}""");
+        stream.Read("""{"type":"result","is_error":false,"total_cost_usd":"free","structured_output":{"facts":[]}}""");
+
+        Assert.Null(stream.CostUsd);
+        Assert.NotNull(stream.Output);
+    }
+
+    [Fact]
+    public async Task A_run_that_fails_while_reading_its_output_does_not_leave_the_process_running()
+    {
+        // claude.cmd runs node, and node the research server: an error must end the whole tree.
+        var folder = Path.Combine(Path.GetTempPath(), "StoryForgeX.Tests", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(folder);
+        var marker = $"127.0.0.{Random.Shared.Next(2, 250)}";
+        var script = Path.Combine(folder, "fake-claude.cmd");
+        await File.WriteAllTextAsync(script, $"@echo off\r\necho first line\r\nping -n 30 {marker} >nul\r\n");
+        try
+        {
+            await Assert.ThrowsAsync<InvalidOperationException>(() => new StreamingProcess().RunAsync(
+                script, [], folder, "", _ => throw new InvalidOperationException("bad line"), TimeSpan.FromMinutes(1), default));
+
+            await Task.Delay(500);
+            Assert.DoesNotContain(System.Diagnostics.Process.GetProcessesByName("PING"), p => PingTarget(p) == marker);
+        }
+        finally
+        {
+            Directory.Delete(folder, recursive: true);
+        }
+    }
+
+    /// <summary>The address a ping.exe pings, read from its command line through WMI.</summary>
+    private static string PingTarget(System.Diagnostics.Process process)
+    {
+        var start = new System.Diagnostics.ProcessStartInfo("powershell", $"-NoProfile -Command \"(Get-CimInstance Win32_Process -Filter 'ProcessId = {process.Id}').CommandLine\"")
+        {
+            RedirectStandardOutput = true,
+            UseShellExecute = false,
+            CreateNoWindow = true,
+        };
+        using var query = System.Diagnostics.Process.Start(start)!;
+        var line = query.StandardOutput.ReadToEnd();
+        query.WaitForExit();
+        return line.Split(' ', StringSplitOptions.RemoveEmptyEntries).FirstOrDefault(part => part.StartsWith("127.0.0.", StringComparison.Ordinal))?.Trim() ?? "";
+    }
+
+    [Fact]
     public void An_error_result_is_kept_as_the_reason()
     {
         var stream = new ClaudeStream(new ResearchPages(), new Collect([]), TimeProvider.System);
@@ -264,7 +315,7 @@ public sealed class ResearchCheckTests
         """{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"t2","is_error":true,"content":[{"type":"text","text":"Refused: https://www.reddit.com/r/BaldursGate3/ is not on the project's source list (bg3.wiki)."}]}]}}""",
         """{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"t1","content":[{"type":"text","text":"{\"source\":\"bg3.wiki\",\"results\":[{\"title\":\"Soul Coin\"},{\"title\":\"Nadira\"}]}"}]}]}}""",
         """{"type":"assistant","message":{"content":[{"type":"tool_use","id":"t3","name":"mcp__storyforge__fetch","input":{"url":"https://bg3.wiki/wiki/Soul_Coin"}},{"type":"tool_use","id":"t4","name":"mcp__storyforge__fetch","input":{"url":"https://bg3.wiki/wiki/Soul_Coins%3A_A_Treatise"}}]}}""",
-        """{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"t3","content":"Page: https://bg3.wiki/wiki/Soul_Coin\nTitle: Soul Coin\nCharacters 0–100 of 100.\n-----\nSoul Coins are small, coin-shaped objects forged of infernal iron into which a single mortal soul is bound."}]}}""",
+        """{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"t3","content":"Page: https://bg3.wiki/wiki/Soul_Coin\nTitle: Soul Coin\nCharacters 0 to 100 of 100.\n-----\nSoul Coins are small, coin-shaped objects forged of infernal iron into which a single mortal soul is bound."}]}}""",
         """{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"t4","is_error":true,"content":"bg3.wiki has no page \"Soul Coins: A Treatise\"."}]}}""",
         """{"type":"assistant","message":{"content":[{"type":"tool_use","id":"t5","name":"StructuredOutput","input":{}}]}}""",
         """{"type":"result","subtype":"success","is_error":false,"session_id":"s-1","total_cost_usd":0.04,"structured_output":{"facts":[{"statement":"Coins hold souls.","sourceUrl":"https://bg3.wiki/wiki/Soul_Coin","quote":"a single mortal soul is bound"}]}}""",

@@ -315,6 +315,36 @@ public sealed class ResearchRunTests : IDisposable
     }
 
     [Fact]
+    public async Task Changing_a_fact_moves_its_project_to_the_top_of_Recent_projects()
+    {
+        _agent.Answer(Good());
+        var client = await StartAsync();
+        var older = await NewProjectAsync(client);
+        await client.StartRunAsync(older.Id);
+        await WaitForAsync(client, older.Id, StageState.NeedsReview);
+        var newer = await NewProjectAsync(client);
+        Assert.Equal(newer.Id, (await client.GetRecentProjectsAsync())[0].Id);
+
+        await client.ChangeFactAsync(older.Id, 1, "F01", new FactChange(Weight: 8));
+
+        Assert.Equal(older.Id, (await client.GetRecentProjectsAsync())[0].Id);
+    }
+
+    [Fact]
+    public async Task A_failure_names_how_many_tries_there_really_were()
+    {
+        _agent.WithoutSession = true;   // nothing to send the problems back to
+        _agent.Answer(Invented());
+        var client = await StartAsync();
+        var project = await NewProjectAsync(client);
+
+        await client.StartRunAsync(project.Id);
+
+        Assert.Equal(StageState.Failed, await WaitForAsync(client, project.Id, StageState.Failed, StageState.NeedsReview));
+        Assert.StartsWith("The answer was not a valid fact sheet after 1 try.", (await client.GetFactSheetAsync(project.Id)).Error);
+    }
+
+    [Fact]
     public async Task A_change_that_changes_nothing_makes_no_version()
     {
         _agent.Answer(Good());
@@ -388,6 +418,9 @@ public sealed class ResearchRunTests : IDisposable
 
         public TaskCompletionSource Started { get; private set; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
+        /// <summary>Answers carry no session, as when Claude CLI does not say one.</summary>
+        public bool WithoutSession { get; set; }
+
         public FakeResearchAgent Answer(ResearchOutput output)
         {
             _answers.Enqueue(_ => Task.FromResult(output));
@@ -418,7 +451,7 @@ public sealed class ResearchRunTests : IDisposable
             var output = await _answers.Dequeue()(cancellationToken);
             var pages = new ResearchPages();
             pages.Add(Page, null, PageText);
-            return new ResearchAnswer("session-1", output, pages);
+            return new ResearchAnswer(WithoutSession ? null : "session-1", output, pages);
         }
     }
 }

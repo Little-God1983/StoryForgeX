@@ -79,17 +79,29 @@ internal sealed class StreamingProcess : IStreamingProcess
         }
         catch (OperationCanceledException)
         {
-            // The whole tree: claude.cmd runs node, and node the research server.
-            try
-            {
-                process.Kill(entireProcessTree: true);
-            }
-            catch (InvalidOperationException)
-            {
-                // Already gone.
-            }
+            KillTree(process);
             cancellationToken.ThrowIfCancellationRequested();
             throw new TimeoutException($"'{executable}' did not finish within {timeout.TotalMinutes:0.#} min.");
+        }
+        catch
+        {
+            // Whatever went wrong on our side (a line we could not read, a broken pipe), the job
+            // must not run on unseen, spending tokens.
+            KillTree(process);
+            throw;
+        }
+    }
+
+    /// <summary>The whole tree: claude.cmd runs node, and node the research server.</summary>
+    private static void KillTree(Process process)
+    {
+        try
+        {
+            process.Kill(entireProcessTree: true);
+        }
+        catch (InvalidOperationException)
+        {
+            // Already gone.
         }
     }
 }

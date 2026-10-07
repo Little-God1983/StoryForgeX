@@ -15,6 +15,7 @@ var builder = Host.CreateEmptyApplicationBuilder(new HostApplicationBuilderSetti
 builder.Services.AddSingleton(sources);
 builder.Services.AddSingleton(_ => new SiteWeb(SiteWeb.CreateHttp(), sources));
 builder.Services.AddSingleton<MediaWiki>();
+builder.Services.AddSingleton<PageCache>();
 builder.Services
     .AddMcpServer(options => options.ServerInfo = new() { Name = "storyforge", Version = "1" })
     .WithStdioServerTransport()

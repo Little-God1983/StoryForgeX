@@ -43,8 +43,10 @@ internal sealed class ResearchStage(IResearchAgent agent, ProfileStore profiles,
 
         ResearchAnswer? answer = null;
         IReadOnlyList<string> problems = [];
+        var tries = 0;
         for (var attempt = 1; attempt <= Tries; attempt++)
         {
+            tries = attempt;
             answer = await agent.AskAsync(request, answer, problems, context.Activity, cancellationToken);
             problems = FactSheetCheck.Problems(answer.Output, answer.Pages);
             if (problems.Count == 0)
@@ -54,14 +56,15 @@ internal sealed class ResearchStage(IResearchAgent agent, ProfileStore profiles,
                 return new StageResult(StoredJson.Write(sheet), FactSheet.SchemaVersion, Hash(setup));
             }
             var more = problems.Count > 1 ? $" (and {problems.Count - 1} more)" : "";
-            Report(context, $"try {attempt}: {problems[0]}{more} – {(attempt < Tries ? "sent back" : "stage failed")}");
-            if (answer.Session is null)
+            var last = attempt == Tries || answer.Session is null;   // without a session, nothing to send the problems back to
+            Report(context, $"try {attempt}: {problems[0]}{more} – {(last ? "stage failed" : "sent back")}");
+            if (last)
             {
-                break;   // nothing to send the problems back to
+                break;
             }
         }
         throw new StageFailedException(
-            $"The answer was not a valid fact sheet after {Tries} tries. Last problem: {problems[0]}");
+            $"The answer was not a valid fact sheet after {tries} {(tries == 1 ? "try" : "tries")}. Last problem: {problems[0]}");
     }
 
     /// <summary>Everything a fact sheet is made from; the same inputs give the same hash (#11 compares them).</summary>

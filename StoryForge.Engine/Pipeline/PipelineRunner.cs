@@ -104,6 +104,8 @@ internal sealed class PipelineRunner(
         }
         if (waiting)
         {
+            // After EnqueueAsync has written Running and kept the state before, so that is what comes back.
+            await job.Queued.Task;
             await RestoreAsync(job, Snapshot(job.Activity));
             return;
         }
@@ -193,10 +195,12 @@ internal sealed class PipelineRunner(
         catch
         {
             Forget(job);
+            job.Queued.TrySetResult();
             throw;
         }
         Publish(new StageUpdate(projectId, stage, StageState.Running));
         _queue.Writer.TryWrite(job);
+        job.Queued.TrySetResult();
     }
 
     private async Task LoopAsync(CancellationToken stoppingToken)
@@ -205,7 +209,17 @@ internal sealed class PipelineRunner(
         {
             await foreach (var job in _queue.Reader.ReadAllAsync(stoppingToken))
             {
-                await RunAsync(job);
+                try
+                {
+                    await RunAsync(job);
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException || !stoppingToken.IsCancellationRequested)
+                {
+                    // Recording the outcome failed (the database busy or the disk full). The cell may
+                    // say Running until the next start marks it; the next job must still run.
+                    Debug.WriteLine($"{job.Stage} of {job.ProjectId}: recording the outcome failed: {ex}");
+                    Forget(job);
+                }
             }
         }
         catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
@@ -415,6 +429,9 @@ internal sealed class PipelineRunner(
         public StageState PreviousState { get; set; }
 
         public string? PreviousError { get; set; }
+
+        /// <summary>Done once EnqueueAsync has marked the cell Running and queued the job.</summary>
+        public TaskCompletionSource Queued { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
         /// <summary>The loop has picked it up; set under the runner's lock.</summary>
         public bool Started { get; set; }

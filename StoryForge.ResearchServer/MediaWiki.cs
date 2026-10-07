@@ -27,7 +27,19 @@ internal sealed class MediaWiki(SiteWeb web)
     public async Task<WikiSite?> FindAsync(Source source, CancellationToken cancellationToken)
     {
         // Shared by every call, so no single call's token; each request has its own timeout.
-        var found = await _sites.GetOrAdd(source, s => DiscoverAsync(s, CancellationToken.None)).WaitAsync(cancellationToken);
+        var lookup = _sites.GetOrAdd(source, s => DiscoverAsync(s, CancellationToken.None));
+        Discovery found;
+        try
+        {
+            found = await lookup.WaitAsync(cancellationToken);
+        }
+        catch (Exception) when (lookup.IsFaulted)
+        {
+            // Not meant to happen (DiscoverAsync catches what it expects), but a lookup that broke
+            // must not stay cached and break every later call on this source.
+            _sites.TryRemove(source, out _);
+            throw;
+        }
         if (!found.Settled)
         {
             // The site did not answer: maybe it was down for a moment, so the next call asks again.
@@ -111,21 +123,26 @@ internal sealed class MediaWiki(SiteWeb web)
             }
             using (json)
             {
-                if (json.RootElement.TryGetProperty("query", out var query) && query.TryGetProperty("general", out var general)
-                    && general.TryGetProperty("server", out var server) && general.TryGetProperty("articlepath", out var articlePath))
+                if (SiteInfo(json.RootElement) is { } info)
                 {
                     // Fandom answers "server": "https://…", some wikis a protocol-relative "//…".
-                    var serverUrl = server.GetString() ?? "";
-                    if (serverUrl.StartsWith("//", StringComparison.Ordinal))
-                    {
-                        serverUrl = "https:" + serverUrl;
-                    }
-                    return new Discovery(new WikiSite(source, api, serverUrl.TrimEnd('/') + articlePath.GetString()), Settled: true);
+                    var serverUrl = info.Server.StartsWith("//", StringComparison.Ordinal) ? "https:" + info.Server : info.Server;
+                    return new Discovery(new WikiSite(source, api, serverUrl.TrimEnd('/') + info.ArticlePath), Settled: true);
                 }
             }
         }
         return new Discovery(null, settled);
     }
+
+    /// <summary>The server and article path from a siteinfo answer; null for any other shape of JSON.</summary>
+    private static (string Server, string ArticlePath)? SiteInfo(JsonElement root) =>
+        root.ValueKind == JsonValueKind.Object
+        && root.TryGetProperty("query", out var query) && query.ValueKind == JsonValueKind.Object
+        && query.TryGetProperty("general", out var general) && general.ValueKind == JsonValueKind.Object
+        && general.TryGetProperty("server", out var server) && server.ValueKind == JsonValueKind.String
+        && general.TryGetProperty("articlepath", out var path) && path.ValueKind == JsonValueKind.String
+            ? (server.GetString()!, path.GetString()!)
+            : null;
 
     private async Task<JsonDocument> ApiAsync(WikiSite wiki, string query, CancellationToken cancellationToken)
     {

@@ -83,7 +83,7 @@ internal sealed partial class ClaudeStream(ResearchPages pages, IProgress<Activi
                     break;
                 case "result":
                     Session = Text(root, "session_id") ?? Session;
-                    if (root.TryGetProperty("total_cost_usd", out var cost) && cost.TryGetDecimal(out var usd))
+                    if (root.TryGetProperty("total_cost_usd", out var cost) && cost.ValueKind == JsonValueKind.Number && cost.TryGetDecimal(out var usd))
                     {
                         CostUsd = usd;
                     }
@@ -202,7 +202,8 @@ internal sealed partial class ClaudeStream(ResearchPages pages, IProgress<Activi
         text.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).FirstOrDefault() ?? "";
 
     private static IEnumerable<JsonElement> Blocks(JsonElement root) =>
-        root.TryGetProperty("message", out var message) && message.TryGetProperty("content", out var content) && content.ValueKind == JsonValueKind.Array
+        root.TryGetProperty("message", out var message) && message.ValueKind == JsonValueKind.Object
+        && message.TryGetProperty("content", out var content) && content.ValueKind == JsonValueKind.Array
             ? content.EnumerateArray().ToList()
             : [];
 

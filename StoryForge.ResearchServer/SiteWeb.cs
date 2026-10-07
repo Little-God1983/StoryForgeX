@@ -85,7 +85,9 @@ internal sealed class SiteWeb(HttpMessageInvoker http, SourceList sources)
                 }
                 if (!response.IsSuccessStatusCode)
                 {
-                    throw new WebFailureException($"HTTP {(int)response.StatusCode} from {url}.");
+                    // Too many requests or a server error: busy now, likely fine in a moment.
+                    var busy = (int)response.StatusCode is 429 or >= 500;
+                    throw new WebFailureException($"HTTP {(int)response.StatusCode} from {url}.", unreachable: busy);
                 }
                 try
                 {

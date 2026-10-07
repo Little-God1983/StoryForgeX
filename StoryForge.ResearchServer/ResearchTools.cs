@@ -19,12 +19,22 @@ internal static class Answers
     public const string TextMarker = "-----";
 }
 
+/// <summary>The pages read in this run, so the later parts of a long page are not downloaded again.</summary>
+internal sealed class PageCache
+{
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, (string Url, string? Title, string Text)> _pages = new();
+
+    public bool TryGet(Uri address, out (string Url, string? Title, string Text) page) => _pages.TryGetValue(address.AbsoluteUri, out page);
+
+    public void Add(Uri address, (string Url, string? Title, string Text) page) => _pages[address.AbsoluteUri] = page;
+}
+
 /// <summary>
 /// The two tools Claude gets for the Research stage. Neither reaches anything that is not on the
 /// project's source list; every refusal says which sites are allowed.
 /// </summary>
 [McpServerToolType]
-internal sealed class ResearchTools(SourceList sources, SiteWeb web, MediaWiki wikis)
+internal sealed class ResearchTools(SourceList sources, SiteWeb web, MediaWiki wikis, PageCache cache)
 {
     /// <summary>How much page text one fetch returns; longer pages continue with a later start.</summary>
     public const int PageChunk = 12_000;
@@ -91,6 +101,18 @@ internal sealed class ResearchTools(SourceList sources, SiteWeb web, MediaWiki w
     }
 
     private async Task<(string Url, string? Title, string Text)> ReadAsync(Source site, Uri address, CancellationToken cancellationToken)
+    {
+        // A long page is read in parts: the later parts come from the page already read.
+        if (cache.TryGet(address, out var known))
+        {
+            return known;
+        }
+        var page = await DownloadAsync(site, address, cancellationToken);
+        cache.Add(address, page);
+        return page;
+    }
+
+    private async Task<(string Url, string? Title, string Text)> DownloadAsync(Source site, Uri address, CancellationToken cancellationToken)
     {
         // A wiki page is read through the API: clean text, and its redirects stay on the wiki.
         var wiki = await wikis.FindAsync(site, cancellationToken);

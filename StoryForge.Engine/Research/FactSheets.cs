@@ -93,6 +93,12 @@ internal sealed class FactSheets(IDbContextFactory<StoryForgeDbContext> contextF
             cell.Error = null;
         }
         cell.UpdatedAt = clock.GetUtcNow();
+        // Your edit is a change to the project too: it moves to the top of Recent projects.
+        var project = await db.Projects.FirstOrDefaultAsync(p => p.Id == projectId, cancellationToken);
+        if (project is not null)
+        {
+            project.UpdatedAt = cell.UpdatedAt;
+        }
         await db.SaveChangesAsync(cancellationToken);
         runner.Publish(new StageUpdate(projectId, Stage, cell.State));
         return await ViewAsync(db, projectId, target.Version, cancellationToken);

@@ -143,6 +143,93 @@ public sealed class ResearchServerTests
     }
 
     [Fact]
+    public async Task An_API_address_that_answers_odd_JSON_is_only_not_the_API()
+    {
+        var web = new Web()
+            .On("https://bg3.wiki/w/api.php", _ => Json("[]"))
+            .On("https://bg3.wiki/api.php?action=query&meta=siteinfo", _ => Json(
+                """{"query":{"general":{"server":"https://bg3.wiki","articlepath":"/wiki/$1"}}}"""))
+            .On("https://bg3.wiki/api.php?action=query&list=search", _ => Json("""{"query":{"search":[{"title":"Soul Coin","snippet":"x"}]}}"""));
+        var tools = Tools(web);
+
+        var first = await tools.SearchAsync("bg3.wiki", "soul coin", default);
+        var second = await tools.SearchAsync("bg3.wiki", "soul coin", default);
+
+        Assert.NotEqual(true, first.IsError);
+        Assert.Contains("https://bg3.wiki/wiki/Soul_Coin", Text(second));
+    }
+
+    [Fact]
+    public async Task A_wiki_that_is_busy_for_a_moment_is_asked_again_later()
+    {
+        var busy = true;
+        var web = new Web()
+            .On("https://bg3.wiki/w/api.php?action=query&meta=siteinfo", _ => busy
+                ? new HttpResponseMessage(HttpStatusCode.TooManyRequests)
+                : Json("""{"query":{"general":{"server":"https://bg3.wiki","articlepath":"/wiki/$1"}}}"""))
+            .On("https://bg3.wiki/api.php", _ => new HttpResponseMessage(HttpStatusCode.ServiceUnavailable))
+            .On("https://bg3.wiki/w/api.php?action=query&list=search", _ => Json("""{"query":{"search":[{"title":"Soul Coin","snippet":"x"}]}}"""));
+        var tools = Tools(web);
+
+        var whileBusy = await tools.SearchAsync("bg3.wiki", "soul coin", default);
+        busy = false;
+        var later = await tools.SearchAsync("bg3.wiki", "soul coin", default);
+
+        Assert.True(whileBusy.IsError);
+        Assert.NotEqual(true, later.IsError);
+        Assert.Contains("https://bg3.wiki/wiki/Soul_Coin", Text(later));
+    }
+
+    [Fact]
+    public async Task The_later_parts_of_a_long_page_come_from_the_page_already_read()
+    {
+        var text = string.Concat(Enumerable.Repeat("Soul coins hold souls. ", 1000));
+        var web = BgWiki().On("https://bg3.wiki/w/api.php?action=parse", _ => Json(
+            System.Text.Json.JsonSerializer.Serialize(new { parse = new { title = "Long", text = $"<p>{text}</p>" } })));
+        var tools = Tools(web);
+
+        await tools.FetchAsync("https://bg3.wiki/wiki/Long", 0, default);
+        var second = await tools.FetchAsync("https://bg3.wiki/wiki/Long", ResearchTools.PageChunk, default);
+
+        Assert.Contains($"Characters {ResearchTools.PageChunk} to", Text(second));
+        Assert.Single(web.Requests, r => r.Query.Contains("action=parse", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void The_engine_reads_back_where_each_part_of_a_long_page_starts()
+    {
+        // The server's own answers, cut in the middle of a word, through the engine's reader.
+        var text = new string('x', ResearchTools.PageChunk - 5) + "the infernal engine" + new string('y', 50);
+        var pages = new ResearchPages();
+        var stream = new ClaudeStream(pages, new NoActivity(), TimeProvider.System);
+        stream.Read(Call("a", "https://bg3.wiki/wiki/Long"));
+        stream.Read(Call("b", "https://bg3.wiki/wiki/Long"));
+        stream.Read(Result("b", ResearchTools.Format("https://bg3.wiki/wiki/Long", "Long", text, ResearchTools.PageChunk)));
+        stream.Read(Result("a", ResearchTools.Format("https://bg3.wiki/wiki/Long", "Long", text, 0)));
+
+        Assert.True(pages.Contains("https://bg3.wiki/wiki/Long", "the infernal engine"));
+    }
+
+    private static string Call(string id, string url) => System.Text.Json.JsonSerializer.Serialize(new
+    {
+        type = "assistant",
+        message = new { content = new[] { new { type = "tool_use", id, name = ClaudeStream.FetchTool, input = new { url } } } },
+    });
+
+    private static string Result(string id, string answer) => System.Text.Json.JsonSerializer.Serialize(new
+    {
+        type = "user",
+        message = new { content = new[] { new { type = "tool_result", tool_use_id = id, content = answer } } },
+    });
+
+    private sealed class NoActivity : IProgress<StoryForge.Client.ActivityLine>
+    {
+        public void Report(StoryForge.Client.ActivityLine value)
+        {
+        }
+    }
+
+    [Fact]
     public async Task A_site_that_is_not_a_wiki_is_asked_once_not_on_every_page()
     {
         var web = new Web()
@@ -218,7 +305,7 @@ public sealed class ResearchServerTests
     private static ResearchTools Tools(Web web)
     {
         var site = new SiteWeb(web.Invoker, Sources);
-        return new ResearchTools(Sources, site, new MediaWiki(site));
+        return new ResearchTools(Sources, site, new MediaWiki(site), new PageCache());
     }
 
     /// <summary>bg3.wiki as MediaWiki describes itself: API under /w/, pages under /wiki/.</summary>
