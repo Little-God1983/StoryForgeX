@@ -73,23 +73,44 @@ public sealed partial class GenerationSizeViewModel : ObservableValidator
     [CustomValidation(typeof(GenerationSizeViewModel), nameof(ValidatePixels))]
     private string _customHeight = "";
 
-    /// <summary>The size the project will use; null while a custom size is not a valid number.</summary>
-    public GenerationSize? Value => IsCustom
-        ? NumberText.Parse(CustomWidth) is { } w and >= 1 && NumberText.Parse(CustomHeight) is { } h and >= 1
-            ? new GenerationSize(_default.Aspect, w, h)
-            : null
-        : _default;
+    /// <summary>The size the project will use; null while a custom size is not valid or not in the video's shape.</summary>
+    public GenerationSize? Value => Problem is null ? IsCustom ? Custom() : _default : null;
 
-    /// <summary>Takes the profile's size for <paramref name="aspect"/> (or the built-in one) and drops a custom size.</summary>
-    public void UseDefaultFor(string aspect, ProfileContent? profile)
+    /// <summary>Why <see cref="Value"/> is null, e.g. "a size that fits 9:16"; null when it is not.</summary>
+    public string? Problem => !IsCustom ? null
+        : Custom() is not { } custom ? "a valid size"
+        : !FitsAspect(custom) ? $"a size that fits {_default.Aspect}"
+        : null;
+
+    private GenerationSize? Custom() =>
+        NumberText.Parse(CustomWidth) is { } w and >= 1 and <= 16384 && NumberText.Parse(CustomHeight) is { } h and >= 1 and <= 16384
+            ? new GenerationSize(_default.Aspect, w, h)
+            : null;
+
+    /// <summary>Landscape for 16:9, portrait for 9:16, square for 1:1. Models' sizes are not exact ratios (1344 × 768).</summary>
+    public static bool FitsAspect(GenerationSize size) => size.Aspect switch
+    {
+        "16:9" => size.Width > size.Height,
+        "9:16" => size.Width < size.Height,
+        _ => size.Width == size.Height,
+    };
+
+    /// <summary>
+    /// Takes the profile's size for <paramref name="aspect"/> (or the built-in one). A custom size
+    /// is dropped, unless <paramref name="keepCustom"/> (a new version of the same profile).
+    /// </summary>
+    public void UseDefaultFor(string aspect, ProfileContent? profile, bool keepCustom = false)
     {
         var fromProfile = profile?.Sizes.FirstOrDefault(s => s.Aspect == aspect);
         _defaultFromProfile = fromProfile is not null;
         _default = fromProfile ?? BuiltIn[aspect];
-        // A custom size was typed for the old aspect; the next "Custom…" starts from the new default.
-        CustomWidth = "";
-        CustomHeight = "";
-        SelectedIndex = ProfileDefaultIndex;
+        if (!keepCustom || !IsCustom || aspect != (Value ?? Custom())?.Aspect)
+        {
+            // A custom size typed for another aspect or profile; the next "Custom…" starts from the new default.
+            CustomWidth = "";
+            CustomHeight = "";
+            SelectedIndex = ProfileDefaultIndex;
+        }
         Options[ProfileDefaultIndex].Label = DefaultLabel();
         OnPropertyChanged(nameof(Value));
     }
@@ -159,10 +180,19 @@ public sealed partial class MaxClipViewModel : ObservableValidator
 
     public int? Value => IsCustom ? NumberText.Parse(CustomSeconds) is { } s and >= 1 and <= 600 ? s : null : _default;
 
-    public void UseDefault(ProfileContent? profile)
+    /// <summary>
+    /// Takes the profile's clip length. A custom one is dropped, as the size's is, unless
+    /// <paramref name="keepCustom"/>: a length typed for one model may be too long for another.
+    /// </summary>
+    public void UseDefault(ProfileContent? profile, bool keepCustom = false)
     {
         _defaultFromProfile = profile?.MaxClipSeconds is not null;
         _default = profile?.MaxClipSeconds ?? BuiltInSeconds;
+        if (!keepCustom)
+        {
+            CustomSeconds = "";
+            SelectedIndex = GenerationSizeViewModel.ProfileDefaultIndex;
+        }
         Options[GenerationSizeViewModel.ProfileDefaultIndex].Label = DefaultLabel();
         OnPropertyChanged(nameof(Value));
     }

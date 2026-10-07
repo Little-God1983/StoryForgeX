@@ -62,11 +62,12 @@ public sealed partial class NewProjectPageViewModel : PageViewModel
         Cards = [Writing, Voice, Stills, Clips];
 
         ResearchSlot.PropertyChanged += (_, e) => OnSlotChanged(e, ResearchSlot, ApplyResearchProfile);
-        ImageSlot.PropertyChanged += (_, e) => OnSlotChanged(e, ImageSlot, content => StillSize.UseDefaultFor(Aspect, content));
-        VideoSlot.PropertyChanged += (_, e) => OnSlotChanged(e, VideoSlot, content =>
+        ImageSlot.PropertyChanged += (_, e) => OnSlotChanged(e, ImageSlot,
+            (content, _, sameProfile) => StillSize.UseDefaultFor(Aspect, content, keepCustom: sameProfile));
+        VideoSlot.PropertyChanged += (_, e) => OnSlotChanged(e, VideoSlot, (content, _, sameProfile) =>
         {
-            ClipSize.UseDefaultFor(Aspect, content);
-            MaxClip.UseDefault(content);
+            ClipSize.UseDefaultFor(Aspect, content, keepCustom: sameProfile);
+            MaxClip.UseDefault(content, keepCustom: sameProfile);
         });
         foreach (var slot in Cards.SelectMany(c => c.Slots))
         {
@@ -339,17 +340,24 @@ public sealed partial class NewProjectPageViewModel : PageViewModel
 
     partial void OnCustomTargetMinutesChanged(string value) => UpdateMissing();
 
-    private void ApplyResearchProfile(ProfileContent? content)
+    /// <summary>
+    /// The research profile's sources. A new version of the same profile keeps the sources the
+    /// user added; another profile starts from its own list.
+    /// </summary>
+    private void ApplyResearchProfile(ProfileContent? content, ProfileContent? previous, bool sameProfile)
     {
+        var added = sameProfile
+            ? ResearchSources.Except(previous?.ResearchSources ?? [], StringComparer.OrdinalIgnoreCase).ToList()
+            : [];
         ResearchSources.Clear();
-        foreach (var source in content?.ResearchSources ?? [])
+        foreach (var source in (content?.ResearchSources ?? []).Concat(added).Distinct(StringComparer.OrdinalIgnoreCase))
         {
             ResearchSources.Add(source);
         }
     }
 
     /// <summary>A picked profile's defaults (sources, sizes, clip length) come from its content, which is loaded here.</summary>
-    private void OnSlotChanged(PropertyChangedEventArgs e, ProfileSlotViewModel slot, Action<ProfileContent?> apply)
+    private void OnSlotChanged(PropertyChangedEventArgs e, ProfileSlotViewModel slot, Action<ProfileContent?, ProfileContent?, bool> apply)
     {
         if (e.PropertyName == nameof(ProfileSlotViewModel.Selected))
         {
@@ -357,7 +365,8 @@ public sealed partial class NewProjectPageViewModel : PageViewModel
         }
     }
 
-    private async Task ApplyContentAsync(ProfileSlotViewModel slot, Action<ProfileContent?> apply)
+    /// <param name="apply">Gets the new content, the content applied before, and whether both are versions of the same profile.</param>
+    private async Task ApplyContentAsync(ProfileSlotViewModel slot, Action<ProfileContent?, ProfileContent?, bool> apply)
     {
         var picked = slot.Selected;
         // The same profile announced again (the pickers are refilled each time the screen opens)
@@ -366,16 +375,19 @@ public sealed partial class NewProjectPageViewModel : PageViewModel
         {
             return;
         }
+        UpdateMissing();   // Start waits for these defaults
         var (loaded, content) = await LoadContentAsync(picked);
         // A failed load leaves everything as it was and is tried again next time; another
         // profile may also have been picked while this one loaded.
-        if (!loaded || slot.Selected != picked)
+        if (loaded && slot.Selected == picked)
         {
-            return;
+            var sameProfile = applied is not null && picked is not null && applied.Id == picked.Id;
+            var previous = _content.GetValueOrDefault(slot);
+            _applied[slot] = picked;
+            _content[slot] = content;
+            apply(content, previous, sameProfile);
         }
-        _applied[slot] = picked;
-        _content[slot] = content;
-        apply(content);
+        UpdateMissing();
     }
 
     private async Task<(bool Loaded, ProfileContent? Content)> LoadContentAsync(ProfileSummary? picked)
@@ -414,9 +426,18 @@ public sealed partial class NewProjectPageViewModel : PageViewModel
             missing.Add("a brief");
         }
         missing.AddRange(Cards.SelectMany(c => c.Slots).Where(s => s.Selected is null).Select(s => $"a {s.Label.ToLowerInvariant()}"));
-        if (StillSize.Value is null || ClipSize.Value is null)
+        // A profile's defaults (sizes, sources, clip length) must be in before Start, or the new
+        // profile would be saved with the old one's values.
+        missing.AddRange(new[] { ResearchSlot, ImageSlot, VideoSlot }
+            .Where(s => s.Selected is not null && _applied.GetValueOrDefault(s) != s.Selected)
+            .Select(s => $"the defaults of {s.Selected!.Name} (loading, or they could not be read)"));
+        if (StillSize.Problem is { } still)
         {
-            missing.Add("a valid generation size");
+            missing.Add($"{still} for the still images");
+        }
+        if (ClipSize.Problem is { } clip)
+        {
+            missing.Add($"{clip} for the video clips");
         }
         if (MaxClip.Value is null)
         {

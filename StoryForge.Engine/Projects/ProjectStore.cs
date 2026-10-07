@@ -83,6 +83,21 @@ internal sealed class ProjectStore(IDbContextFactory<StoryForgeDbContext> contex
 
     private static string Tidy(string? text) => (text ?? "").Trim();
 
+    private static double Ratio(string aspect) => aspect switch
+    {
+        "16:9" => 16.0 / 9,
+        "9:16" => 9.0 / 16,
+        _ => 1,
+    };
+
+    // Generation sizes follow the model, not the exact ratio (1344 × 768 for 16:9): only the shape counts.
+    private static bool HasShape(GenerationSize size, string aspect) => aspect switch
+    {
+        "16:9" => size.Width > size.Height,
+        "9:16" => size.Width < size.Height,
+        _ => size.Width == size.Height,
+    };
+
     /// <summary>
     /// Every part is there before anything reads it, so a setup with a part missing (from a remote
     /// caller, later) is an ArgumentException as documented, not a NullReferenceException.
@@ -103,12 +118,9 @@ internal sealed class ProjectStore(IDbContextFactory<StoryForgeDbContext> contex
         Require(s.Brief.Length > 0, "A project needs a brief.");
         Require(Aspects.Contains(s.Output.Aspect), $"The aspect must be 16:9, 9:16 or 1:1, not \"{s.Output.Aspect}\".");
         Require(s.Output.Width >= 1 && s.Output.Height >= 1, "The delivery resolution must be at least 1 × 1.");
-        Require(s.Output.Aspect switch
-        {
-            "16:9" => s.Output.Width > s.Output.Height,
-            "9:16" => s.Output.Width < s.Output.Height,
-            _ => s.Output.Width == s.Output.Height,
-        }, $"A {s.Output.Width} × {s.Output.Height} delivery does not fit a {s.Output.Aspect} video.");
+        // Delivery sizes are exact (1920 × 1080); 2 % leaves room for rounding, not for another shape.
+        Require(Math.Abs((double)s.Output.Width / s.Output.Height / Ratio(s.Output.Aspect) - 1) <= 0.02,
+            $"A {s.Output.Width} × {s.Output.Height} delivery does not fit a {s.Output.Aspect} video.");
         Require(s.Output.Language.Length > 0, "A project needs a language.");
         Require(Enum.IsDefined(s.Output.Assembly), $"There is no assembly \"{s.Output.Assembly}\".");
         Require(Enum.IsDefined(s.Stills.Consistency), $"There is no consistency \"{s.Stills.Consistency}\".");
@@ -119,8 +131,10 @@ internal sealed class ProjectStore(IDbContextFactory<StoryForgeDbContext> contex
         Require(s.Clips.Size.Width >= 1 && s.Clips.Size.Height >= 1, "The video clip size must be at least 1 × 1.");
         Require(s.Clips.MaxClipSeconds >= 1, "The max clip length must be at least 1 second.");
         // Stills and clips are generated in the video's shape; a 16:9 still in a 9:16 video is a mistake.
-        Require(s.Stills.Size.Aspect == s.Output.Aspect, $"The still image size is for {s.Stills.Size.Aspect}, but the video is {s.Output.Aspect}.");
-        Require(s.Clips.Size.Aspect == s.Output.Aspect, $"The video clip size is for {s.Clips.Size.Aspect}, but the video is {s.Output.Aspect}.");
+        Require(s.Stills.Size.Aspect == s.Output.Aspect && HasShape(s.Stills.Size, s.Output.Aspect),
+            $"A {s.Stills.Size.Width} × {s.Stills.Size.Height} still does not fit a {s.Output.Aspect} video.");
+        Require(s.Clips.Size.Aspect == s.Output.Aspect && HasShape(s.Clips.Size, s.Output.Aspect),
+            $"A {s.Clips.Size.Width} × {s.Clips.Size.Height} clip does not fit a {s.Output.Aspect} video.");
     }
 
     /// <summary>Every profile the project names exists in that exact version, and is of the kind its slot needs.</summary>

@@ -83,8 +83,11 @@ internal sealed class FakeStoryForgeClient : IStoryForgeClient
         }
     }
 
+    /// <summary>When set, asking for the projects folder in use throws it.</summary>
+    public Exception? EffectiveFolderFailure { get; set; }
+
     public Task<string> GetEffectiveProjectsFolderAsync(CancellationToken cancellationToken = default) =>
-        Task.FromResult(Settings.Paths.ProjectsFolder is { Length: > 0 } folder ? folder : DefaultProjectsFolder);
+        EffectiveFolderFailure is not null ? Task.FromException<string>(EffectiveFolderFailure) : Task.FromResult(Settings.Paths.ProjectsFolder is { Length: > 0 } folder ? folder : DefaultProjectsFolder);
 
     /// <summary>When set, reading whether a secret exists throws it.</summary>
     public Exception? SecretFailure { get; set; }

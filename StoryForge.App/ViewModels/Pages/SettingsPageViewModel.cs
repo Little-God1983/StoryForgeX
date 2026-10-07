@@ -137,10 +137,12 @@ public sealed partial class SettingsPageViewModel : PageViewModel
                 card.Load(settings);
             }
             ProjectsFolder = settings.Paths.ProjectsFolder;
+            // The cards hold the saved settings now, so writing them is safe from here on,
+            // whatever happens to the extras below.
+            _loaded = true;
             EffectiveProjectsFolder = await _client.GetEffectiveProjectsFolderAsync();
             await LmStudio.LoadApiTokenStateAsync();
             ShowStatuses();
-            _loaded = true;
         }
         finally
         {

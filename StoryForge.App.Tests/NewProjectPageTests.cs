@@ -239,6 +239,102 @@ public sealed class NewProjectPageTests
     }
 
     [Fact]
+    public async Task Start_waits_for_a_newly_picked_profiles_defaults()
+    {
+        // Otherwise the new profile would be saved with the old profile's size.
+        AddOneOfEach();
+        _client.AddProfile(ProfileKind.Image, "Photoreal", Empty with { Sizes = [new("16:9", 1920, 1080)] });
+        var page = await ShownPage();
+        FillBrief(page);
+        var loading = new TaskCompletionSource();
+        _client.ProfileLoadGate = loading.Task;
+
+        page.ImageSlot.Selected = page.ImageSlot.Choices.Single(p => p.Name == "Photoreal");
+
+        Assert.False(page.StartCommand.CanExecute(null));
+        Assert.Contains("Photoreal", page.MissingText);
+        _client.ProfileLoadGate = null;
+        loading.SetResult();
+        await page.WhenSettled();
+        Assert.Equal(1920, page.StillSize.Value!.Width);
+        Assert.True(page.StartCommand.CanExecute(null));
+    }
+
+    [Fact]
+    public async Task Start_stays_off_while_a_picked_profiles_defaults_failed_to_load()
+    {
+        AddOneOfEach();
+        _client.AddProfile(ProfileKind.Image, "Photoreal", Empty);
+        var page = await ShownPage();
+        FillBrief(page);
+        _client.ProfileLoadFailure = new InvalidOperationException("database is locked");
+
+        page.ImageSlot.Selected = page.ImageSlot.Choices.Single(p => p.Name == "Photoreal");
+        await page.WhenSettled();
+
+        Assert.False(page.StartCommand.CanExecute(null));
+    }
+
+    [Fact]
+    public async Task A_custom_size_must_have_the_videos_shape()
+    {
+        AddOneOfEach();
+        var page = await ShownPage();
+        FillBrief(page);
+        page.Aspect = "9:16";
+
+        page.StillSize.SelectedIndex = GenerationSizeViewModel.CustomIndex;
+        page.StillSize.CustomWidth = "1344";
+        page.StillSize.CustomHeight = "768";
+
+        Assert.False(page.StartCommand.CanExecute(null));
+        Assert.Contains("9:16", page.MissingText);
+    }
+
+    [Fact]
+    public async Task A_new_version_of_the_same_profile_keeps_typed_sources_and_custom_values()
+    {
+        AddOneOfEach();
+        var page = await ShownPage();
+        page.NewSource = "wikipedia.org";
+        page.AddSourceCommand.Execute(null);
+        page.StillSize.SelectedIndex = GenerationSizeViewModel.CustomIndex;
+        page.StillSize.CustomWidth = "1600";
+        page.MaxClip.SelectedIndex = GenerationSizeViewModel.CustomIndex;
+        page.MaxClip.CustomSeconds = "12";
+        var research = page.ResearchSlot.Selected!;
+        var image = page.ImageSlot.Selected!;
+        var video = page.VideoSlot.Selected!;
+        await _client.SaveProfileVersionAsync(research.Id, Empty with { ResearchSources = ["bg3.wiki", "eldenring.wiki"] });
+        await _client.SaveProfileVersionAsync(image.Id, Empty with { Sizes = [new("16:9", 1920, 1080)] });
+        await _client.SaveProfileVersionAsync(video.Id, Empty with { MaxClipSeconds = 10 });
+
+        await page.ShowAsync();
+
+        Assert.Equal(["bg3.wiki", "eldenring.wiki", "wikipedia.org"], page.ResearchSources);
+        Assert.Equal(1600, page.StillSize.Value!.Width);
+        Assert.Equal(12, page.MaxClip.Value);
+        Assert.Equal(4, page.ImageSlot.Selected!.LatestVersion);   // it was at v3
+    }
+
+    [Fact]
+    public async Task Another_video_profile_drops_a_custom_clip_length_like_the_size()
+    {
+        // A length typed for one model may be too long for the next one.
+        AddOneOfEach();
+        _client.AddProfile(ProfileKind.Video, "Wan 2.2", Empty with { MaxClipSeconds = 6 });
+        var page = await ShownPage();
+        page.MaxClip.SelectedIndex = GenerationSizeViewModel.CustomIndex;
+        page.MaxClip.CustomSeconds = "25";
+
+        page.VideoSlot.Selected = page.VideoSlot.Choices.Single(p => p.Name == "Wan 2.2");
+        await page.WhenSettled();
+
+        Assert.False(page.MaxClip.IsCustom);
+        Assert.Equal(6, page.MaxClip.Value);
+    }
+
+    [Fact]
     public async Task A_custom_size_is_possible_and_must_be_a_number()
     {
         AddOneOfEach();
@@ -249,7 +345,7 @@ public sealed class NewProjectPageTests
         Assert.Equal("1344", page.StillSize.CustomWidth);   // starts from the default
         page.StillSize.CustomWidth = "13x4";
         Assert.False(page.StartCommand.CanExecute(null));
-        Assert.Contains("generation size", page.MissingText);
+        Assert.Contains("still images", page.MissingText);
         page.StillSize.CustomWidth = "1536";
 
         Assert.Equal(new GenerationSize("16:9", 1536, 768), page.StillSize.Value);

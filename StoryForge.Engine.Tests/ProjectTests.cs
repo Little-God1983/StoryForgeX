@@ -183,6 +183,8 @@ public sealed class ProjectTests : IDisposable
 
     [Theory]
     [InlineData("portrait delivery")]
+    [InlineData("almost square delivery")]
+    [InlineData("landscape still")]
     [InlineData("square delivery")]
     [InlineData("language")]
     [InlineData("gate")]
@@ -196,6 +198,13 @@ public sealed class ProjectTests : IDisposable
         var bad = field switch
         {
             "portrait delivery" => s with { Output = s.Output with { Width = 1080, Height = 1920 } },   // on a 16:9 project
+            "almost square delivery" => s with { Output = s.Output with { Width = 1000, Height = 999 } },
+            "landscape still" => s with
+            {
+                Output = s.Output with { Aspect = "9:16", Width = 1080, Height = 1920 },
+                Stills = s.Stills with { Size = new GenerationSize("9:16", 1344, 768) },
+                Clips = s.Clips with { Size = new GenerationSize("9:16", 720, 1280) },
+            },
             "square delivery" => s with { Output = s.Output with { Width = 1080, Height = 1080 } },
             "language" => s with { Output = s.Output with { Language = "  " } },
             "gate" => s with { Gates = [(PipelineStage)42] },
