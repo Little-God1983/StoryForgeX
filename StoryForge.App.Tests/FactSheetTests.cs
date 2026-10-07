@@ -144,6 +144,45 @@ public sealed class FactSheetTests
     }
 
     [Fact]
+    public async Task Plus_then_minus_in_quick_succession_ends_where_it_started()
+    {
+        var (matrix, project) = await StartedAsync();
+        await FinishAsync(matrix, project);
+        var row = matrix.FactSheet!.Facts[0];
+        var gate = new TaskCompletionSource();
+        _client.FactChangeGate = gate.Task;
+
+        var raise = row.RaiseWeightCommand.ExecuteAsync(null);
+        var lower = row.LowerWeightCommand.ExecuteAsync(null);
+        gate.SetResult();
+        await Task.WhenAll(raise, lower);
+
+        Assert.Equal(5, row.Weight);
+        Assert.Equal([new FactChange(Weight: 6), new FactChange(Weight: 5)], _client.FactChanges.Select(c => c.Change));
+    }
+
+    [Fact]
+    public async Task A_new_run_that_starts_while_the_sheet_is_still_loading_keeps_its_log()
+    {
+        var (matrix, project) = await StartedAsync();
+        var gate = new TaskCompletionSource();
+        _client.FactSheetGate = gate.Task;
+        _client.FactSheets[project.Id] = new FactSheetView(project.Id, StageState.NeedsReview, null,
+            [new ResultVersion(1, VersionOrigin.Generated, At, null)], 1, null, new FactSheet([Fact("F01", "Coins hold souls.")]), []);
+
+        _client.Raise(new StageUpdate(project.Id, PipelineStage.Research, StageState.NeedsReview));   // starts a load that waits
+        var loading = matrix.Updating;
+        _client.Raise(new StageUpdate(project.Id, PipelineStage.Research, StageState.Running));
+        _client.Raise(new StageUpdate(project.Id, PipelineStage.Research, StageState.Running, new ActivityLine(At, ActivityKind.Fetch, "bg3.wiki/wiki/Soul_Coin")));
+        gate.SetResult();
+        await loading;
+
+        var sheet = matrix.FactSheet!;
+        Assert.True(sheet.IsRunning);
+        Assert.Equal(["bg3.wiki/wiki/Soul_Coin"], sheet.Activity.Select(a => a.Text));
+    }
+
+    [Fact]
     public async Task A_fact_is_reworded_in_the_panel()
     {
         var (matrix, project) = await StartedAsync();

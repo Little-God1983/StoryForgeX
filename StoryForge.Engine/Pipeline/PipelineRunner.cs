@@ -93,9 +93,9 @@ internal sealed class PipelineRunner(
             if (_jobs.TryGetValue((projectId, stage), out job) && !job.Started)
             {
                 // Still waiting its turn: it goes back now, not after the run before it, and the
-                // queue skips it when it gets there.
+                // queue skips it when it gets there. It stays listed until it is back, so a new run
+                // of the stage cannot slip in between and be overwritten.
                 job.Skipped = waiting = true;
-                _jobs.Remove((projectId, stage));
             }
         }
         if (job is null)
@@ -106,7 +106,7 @@ internal sealed class PipelineRunner(
         {
             // After EnqueueAsync has written Running and kept the state before, so that is what comes back.
             await job.Queued.Task;
-            await RestoreAsync(job, Snapshot(job.Activity));
+            await RestoreAsync(job);
             return;
         }
         try
@@ -187,6 +187,7 @@ internal sealed class PipelineRunner(
             {
                 job.PreviousState = cell.State;
                 job.PreviousError = cell.Error;
+                job.PreviousActivity = cell.ActivityJson;
                 cell.State = StageState.Running;
                 cell.Error = null;
                 cell.ActivityJson = "[]";
@@ -268,7 +269,7 @@ internal sealed class PipelineRunner(
             }
             else
             {
-                await RestoreAsync(job, Snapshot(activity));
+                await RestoreAsync(job);
             }
         }
         catch (StageFailedException ex)
@@ -345,15 +346,17 @@ internal sealed class PipelineRunner(
         Publish(new StageUpdate(job.ProjectId, job.Stage, StageState.Failed));
     }
 
-    /// <summary>A cancelled stage goes back to where it stood; the last result, if any, is still there.</summary>
-    private async Task RestoreAsync(Job job, List<ActivityLine> activity)
+    /// <summary>
+    /// A cancelled stage goes back to where it stood, with the log that belongs to that: a failure
+    /// keeps the log that explains it. The last result, if any, is still there.
+    /// </summary>
+    private async Task RestoreAsync(Job job)
     {
-        activity.Add(new ActivityLine(clock.GetUtcNow(), Client.ActivityKind.Check, "cancelled"));
         await ChangeCellAsync(job.ProjectId, job.Stage, cell =>
         {
             cell.State = job.PreviousState;
             cell.Error = job.PreviousError;
-            cell.ActivityJson = StoredJson.Write(activity);
+            cell.ActivityJson = job.PreviousActivity;
         }, CancellationToken.None);
         Forget(job);
         Publish(new StageUpdate(job.ProjectId, job.Stage, job.PreviousState));
@@ -429,6 +432,8 @@ internal sealed class PipelineRunner(
         public StageState PreviousState { get; set; }
 
         public string? PreviousError { get; set; }
+
+        public string PreviousActivity { get; set; } = "[]";
 
         /// <summary>Done once EnqueueAsync has marked the cell Running and queued the job.</summary>
         public TaskCompletionSource Queued { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);

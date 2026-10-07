@@ -78,6 +78,31 @@ public sealed class ResearchCheckTests
         Assert.True(pages.Contains(Page, "infernal iron"));
     }
 
+    [Theory]
+    [InlineData("the … of … a")]                                                   // pieces too short to prove anything
+    [InlineData("used as currency in the Nine Hells … Soul Coins are small")]       // pieces out of order
+    public void A_shortened_quote_needs_real_pieces_in_the_pages_order(string quote) =>
+        Assert.Single(FactSheetCheck.Problems(Output(new ResearchFact("Coins hold souls.", Page, quote)), Read()));
+
+    [Fact]
+    public void A_quote_never_runs_across_a_gap_between_parts_that_were_not_read()
+    {
+        var pages = new ResearchPages();
+        pages.Add(Page, null, "The end of the first part", 0);
+        pages.Add(Page, null, "the start of a far later part.", 24000);
+
+        Assert.False(pages.Contains(Page, "first part the start"));
+        Assert.True(pages.Contains(Page, "the start of a far later part"));
+    }
+
+    [Fact]
+    public void An_empty_entry_in_the_list_is_sent_back_not_crashed_on()
+    {
+        var problems = FactSheetCheck.Problems(new ResearchOutput([null!, new ResearchFact("Coins hold souls.", Page, "a single mortal soul is bound")]), Read());
+
+        Assert.Equal(["F01 is empty."], problems);
+    }
+
     [Fact]
     public void A_quote_that_is_not_on_the_page_is_sent_back()
     {

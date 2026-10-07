@@ -7,10 +7,12 @@ namespace StoryForge.App.ViewModels.Research;
 /// <summary>One fact in the list: its words, its source, its weight, and whether it is left out.</summary>
 public sealed partial class FactRowViewModel : ObservableObject
 {
-    private readonly Func<FactRowViewModel, FactChange, Task> _change;
+    // The change is worked out when it is this row's turn, from the row as it is then: + and −
+    // clicked before the earlier one came back still add up.
+    private readonly Func<FactRowViewModel, Func<FactRowViewModel, FactChange?>, Task> _change;
     private readonly Action<FactRowViewModel> _select;
 
-    public FactRowViewModel(Fact fact, Func<FactRowViewModel, FactChange, Task> change, Action<FactRowViewModel> select)
+    public FactRowViewModel(Fact fact, Func<FactRowViewModel, Func<FactRowViewModel, FactChange?>, Task> change, Action<FactRowViewModel> select)
     {
         _change = change;
         _select = select;
@@ -72,16 +74,16 @@ public sealed partial class FactRowViewModel : ObservableObject
     private bool CanLower() => Weight > Fact.MinWeight;
 
     [RelayCommand(CanExecute = nameof(CanRaise))]
-    private Task RaiseWeightAsync() => _change(this, new FactChange(Weight: Weight + 1));
+    private Task RaiseWeightAsync() => _change(this, row => row.Weight < Fact.MaxWeight ? new FactChange(Weight: row.Weight + 1) : null);
 
     [RelayCommand(CanExecute = nameof(CanLower))]
-    private Task LowerWeightAsync() => _change(this, new FactChange(Weight: Weight - 1));
+    private Task LowerWeightAsync() => _change(this, row => row.Weight > Fact.MinWeight ? new FactChange(Weight: row.Weight - 1) : null);
 
     [RelayCommand]
-    private Task LeaveOutAsync() => _change(this, new FactChange(LeftOut: true));
+    private Task LeaveOutAsync() => _change(this, _ => new FactChange(LeftOut: true));
 
     [RelayCommand]
-    private Task PutBackAsync() => _change(this, new FactChange(LeftOut: false));
+    private Task PutBackAsync() => _change(this, _ => new FactChange(LeftOut: false));
 
     [RelayCommand]
     private void Select() => _select(this);

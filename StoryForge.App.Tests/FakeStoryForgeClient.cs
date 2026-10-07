@@ -338,22 +338,42 @@ internal sealed class FakeStoryForgeClient : IStoryForgeClient
         return Task.CompletedTask;
     }
 
-    public Task<FactSheetView> GetFactSheetAsync(Guid projectId, int? version = null, CancellationToken cancellationToken = default)
+    /// <summary>When set, reading a fact sheet takes what it read now and waits for this before answering.</summary>
+    public Task? FactSheetGate { get; set; }
+
+    /// <summary>When set, changing a fact waits for this before it changes anything.</summary>
+    public Task? FactChangeGate { get; set; }
+
+    public async Task<FactSheetView> GetFactSheetAsync(Guid projectId, int? version = null, CancellationToken cancellationToken = default)
+    {
+        var view = ReadFactSheet(projectId, version);
+        if (FactSheetGate is not null)
+        {
+            await FactSheetGate;
+        }
+        return view;
+    }
+
+    private FactSheetView ReadFactSheet(Guid projectId, int? version)
     {
         var view = FactSheets.GetValueOrDefault(projectId) ?? new FactSheetView(projectId, StageState.NotStarted, null, [], null, null, null, []);
         if (version is not null && SheetVersions.TryGetValue((projectId, version.Value), out var older))
         {
             view = view with { Version = version, Sheet = older };
         }
-        return Task.FromResult(view);
+        return view;
     }
 
     /// <summary>Older versions' sheets, for showing a version other than the current one.</summary>
     public Dictionary<(Guid ProjectId, int Version), FactSheet> SheetVersions { get; } = [];
 
     /// <summary>Changes the fact in the stored sheet, in the same version (enough to show it on screen).</summary>
-    public Task<FactSheetView> ChangeFactAsync(Guid projectId, int version, string factId, FactChange change, CancellationToken cancellationToken = default)
+    public async Task<FactSheetView> ChangeFactAsync(Guid projectId, int version, string factId, FactChange change, CancellationToken cancellationToken = default)
     {
+        if (FactChangeGate is not null)
+        {
+            await FactChangeGate;
+        }
         ThrowIfFailing();
         FactChanges.Add((projectId, version, factId, change));
         var view = FactSheets[projectId];
@@ -364,7 +384,7 @@ internal sealed class FakeStoryForgeClient : IStoryForgeClient
             LeftOut = change.LeftOut ?? f.LeftOut,
         });
         FactSheets[projectId] = view = view with { Sheet = new FactSheet([.. facts]) };
-        return Task.FromResult(view);
+        return view;
     }
 
     private void ThrowIfFailing()

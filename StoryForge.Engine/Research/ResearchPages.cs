@@ -65,9 +65,34 @@ internal sealed partial class ResearchPages
             return false;
         }
         var text = Normalize(page);
-        var parts = Ellipsis().Split(quote).Select(Normalize).Where(part => part.Length > 0).ToList();
-        return parts.Count > 0 && parts.All(part => text.Contains(part, StringComparison.Ordinal));
+        var pieces = Ellipsis().Split(quote).Select(Normalize).Where(piece => piece.Length > 0).ToList();
+        // A shortened quote proves something only with real pieces, in the page's own order:
+        // "the … of … a" is on every page.
+        if (pieces.Count == 0 || (pieces.Count > 1 && pieces.Any(piece => piece.Length < MinPiece)))
+        {
+            return false;
+        }
+        var from = 0;
+        foreach (var piece in pieces)
+        {
+            var at = text.IndexOf(piece, from, StringComparison.Ordinal);
+            if (at < 0)
+            {
+                return false;
+            }
+            from = at + piece.Length;
+        }
+        return true;
     }
+
+    /// <summary>The shortest piece of a quote shortened with "…" that counts.</summary>
+    private const int MinPiece = 12;
+
+    /// <summary>
+    /// Between parts of a page that do not meet. Not whitespace, so normalizing keeps it, and no quote
+    /// holds it, so no quote can run across a gap of text that was never read.
+    /// </summary>
+    private const char Gap = '\u0001';
 
     private string? Text(string url)
     {
@@ -166,14 +191,14 @@ internal sealed partial class ResearchPages
                 }
                 if (end >= 0 && offset > end)
                 {
-                    text.Append('\n');
+                    text.Append(Gap);
                 }
                 text.Append(part);
                 end = offset + part.Length;
             }
             foreach (var part in Loose)
             {
-                text.Append('\n').Append(part);
+                text.Append(Gap).Append(part);
             }
             return text.ToString();
         }

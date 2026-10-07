@@ -222,7 +222,7 @@ public sealed class ResearchRunTests : IDisposable
         await client.CancelAsync(project.Id, PipelineStage.Research);
 
         Assert.Equal(StageState.NotStarted, await WaitForAsync(client, project.Id, StageState.NotStarted, StageState.Failed));
-        Assert.Contains((await client.GetFactSheetAsync(project.Id)).Activity, a => a.Text == "cancelled");
+        Assert.Empty((await client.GetFactSheetAsync(project.Id)).Activity);   // the log from before: none
     }
 
     [Fact]
@@ -245,6 +245,27 @@ public sealed class ResearchRunTests : IDisposable
         await client.RegenerateAsync(second.Id, PipelineStage.Research);   // free to start again
         await client.CancelAsync(first.Id, PipelineStage.Research);
         Assert.Equal(StageState.NeedsReview, await WaitForAsync(client, second.Id, StageState.NeedsReview, StageState.Failed));
+    }
+
+    [Fact]
+    public async Task A_cancelled_retry_brings_back_the_failure_with_its_own_log()
+    {
+        _agent.Fail("Claude CLI was not found (claude). Check its executable in Settings.");
+        var client = await StartAsync();
+        var project = await NewProjectAsync(client);
+        await client.StartRunAsync(project.Id);
+        await WaitForAsync(client, project.Id, StageState.Failed);
+        var failed = await client.GetFactSheetAsync(project.Id);
+
+        _agent.Hold();
+        await client.RegenerateAsync(project.Id, PipelineStage.Research);
+        await _agent.Started.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        await client.CancelAsync(project.Id, PipelineStage.Research);
+        await WaitForAsync(client, project.Id, StageState.Failed);
+
+        var back = await client.GetFactSheetAsync(project.Id);
+        Assert.Equal(failed.Error, back.Error);
+        Assert.Equal(failed.Activity, back.Activity);
     }
 
     [Fact]
@@ -407,6 +428,43 @@ public sealed class ResearchRunTests : IDisposable
         Assert.Equal(["bg3.wiki", "forgottenrealms.fandom.com"], request.Sources);
         Assert.StartsWith("Collect the facts the script needs", request.Instructions);
         Assert.Equal(("English", 240), (request.Language, request.TargetSeconds));
+    }
+
+    [Fact]
+    public async Task A_server_still_pending_at_the_start_does_not_cost_a_finished_answer()
+    {
+        // Claude CLI may list the server as "pending" while it connects; the run can still succeed.
+        var server = Path.Combine(_engine.DataDirectory, "StoryForge.ResearchServer.exe");
+        var claude = new ScriptedClaude(
+            """{"type":"system","subtype":"init","session_id":"s","mcp_servers":[{"name":"storyforge","status":"pending"}]}""",
+            """{"type":"result","subtype":"success","is_error":false,"session_id":"s","structured_output":{"facts":[]}}""");
+        var host = await _engine.StartAsync(services =>
+        {
+            services.Replace(ServiceDescriptor.Singleton<Providers.IStreamingProcess>(claude));
+            services.Configure<StoryForgeEngineOptions>(o => o.ResearchServerPath = server);
+        });
+        File.WriteAllText(server, "");
+        var agent = host.Services.GetRequiredService<IResearchAgent>();
+
+        var answer = await agent.AskAsync(
+            new ResearchRequest(Guid.NewGuid(), "Soul coins.", ["bg3.wiki"], "", "", "English", 240), null, [], new Progress<ActivityLine>(), default);
+
+        Assert.NotNull(answer.Output);
+        Assert.Equal("s", answer.Session);
+    }
+
+    /// <summary>A Claude CLI that prints the given lines.</summary>
+    private sealed class ScriptedClaude(params string[] lines) : Providers.IStreamingProcess
+    {
+        public Task<Providers.StreamingRunResult> RunAsync(string executable, IReadOnlyList<string> arguments, string workingDirectory, string input,
+            Action<string> onLine, TimeSpan timeout, CancellationToken cancellationToken)
+        {
+            foreach (var line in lines)
+            {
+                onLine(line);
+            }
+            return Task.FromResult(new Providers.StreamingRunResult(0, ""));
+        }
     }
 
     /// <summary>Answers from a script: a fact sheet, a failure, or a run that waits until cancelled.</summary>

@@ -98,12 +98,13 @@ internal sealed class ClaudeCliResearchAgent(
             throw new StageFailedException($"Claude CLI could not be started: {ex.Message}");
         }
 
-        if (stream.ServerProblem is { } serverProblem)
-        {
-            throw new StageFailedException($"The research server did not start ({serverProblem}), so nothing could be searched.");
-        }
         if (stream.Output is null)
         {
+            // Only then: a server still "pending" at the start may have connected later and done its work.
+            if (stream.ServerProblem is { } serverProblem)
+            {
+                throw new StageFailedException($"The research server did not start ({serverProblem}), so nothing could be searched.");
+            }
             var reason = stream.Error ?? FirstLine(result.StandardError);
             throw new StageFailedException(result.ExitCode == 0 && stream.Error is null
                 ? "Claude CLI finished without a fact sheet."

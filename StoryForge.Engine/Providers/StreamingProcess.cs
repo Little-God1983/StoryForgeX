@@ -103,6 +103,12 @@ internal sealed class StreamingProcess : IStreamingProcess
         {
             // Already gone.
         }
+        catch (Exception ex) when (ex is AggregateException or System.ComponentModel.Win32Exception)
+        {
+            // Part of the tree was already exiting or could not be ended. What is reported is the
+            // cancel or the error that got us here, not this.
+            System.Diagnostics.Debug.WriteLine($"Ending the process tree was not complete: {ex.Message}");
+        }
     }
 }
 

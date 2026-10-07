@@ -25,6 +25,9 @@ public sealed partial class FactSheetViewModel : ObservableObject
     // One change at a time: each builds on the version the last one made.
     private readonly SemaphoreSlim _changing = new(1, 1);
 
+    // Counts loads and live updates; a load that finds the count moved on drops its view.
+    private int _loads;
+
     public FactSheetViewModel(IStoryForgeClient client, Guid projectId, IReadOnlyList<string> sources, Action<string> openUrl)
     {
         _client = client;
@@ -124,9 +127,15 @@ public sealed partial class FactSheetViewModel : ObservableObject
 
     public async Task LoadAsync(int? version = null)
     {
+        var mine = ++_loads;
         try
         {
-            Apply(await _client.GetFactSheetAsync(ProjectId, version));
+            var view = await _client.GetFactSheetAsync(ProjectId, version);
+            if (mine != _loads)
+            {
+                return;   // a newer load or a live update came in meanwhile; this view is old
+            }
+            Apply(view);
             ActionError = null;
         }
         catch (Exception ex)
@@ -145,6 +154,7 @@ public sealed partial class FactSheetViewModel : ObservableObject
         }
         if (update.State == StageState.Running)
         {
+            _loads++;   // a load still on its way would show the state from before this run
             if (State != StageState.Running)
             {
                 // A new run: its log starts empty.
@@ -266,12 +276,13 @@ public sealed partial class FactSheetViewModel : ObservableObject
         RefusedSummary = refused == 0 ? "" : $"{refused} {(refused == 1 ? "request" : "requests")} refused (not a project source)";
     }
 
-    private async Task ChangeAsync(FactRowViewModel row, FactChange change)
+    private async Task ChangeAsync(FactRowViewModel row, Func<FactRowViewModel, FactChange?> make)
     {
         await _changing.WaitAsync();
         try
         {
-            if (Version is not { } version)
+            // Worked out now, after the changes before it came back.
+            if (Version is not { } version || make(row) is not { } change)
             {
                 return;
             }
@@ -332,7 +343,7 @@ public sealed partial class FactSheetViewModel : ObservableObject
         IsEditing = false;
         if (text != row.Statement)
         {
-            await ChangeAsync(row, new FactChange(Statement: text));
+            await ChangeAsync(row, _ => new FactChange(Statement: text));
         }
     }
 

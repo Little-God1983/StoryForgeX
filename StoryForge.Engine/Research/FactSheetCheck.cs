@@ -26,6 +26,11 @@ internal static class FactSheetCheck
         {
             var fact = output.Facts[i];
             var id = Id(i);
+            if (fact is null)
+            {
+                problems.Add($"{id} is empty.");
+                continue;
+            }
             if (string.IsNullOrWhiteSpace(fact.Statement))
             {
                 problems.Add($"{id} has no statement.");
