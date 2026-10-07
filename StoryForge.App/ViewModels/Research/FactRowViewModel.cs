@@ -40,8 +40,9 @@ public sealed partial class FactRowViewModel : ObservableObject
     [ObservableProperty]
     private bool _isSelected;
 
-    /// <summary>"bg3.wiki/wiki/Soul_Coin": the source without its scheme.</summary>
-    public string SourceDisplay => SourceUrl.Replace("https://", "", StringComparison.OrdinalIgnoreCase).Replace("http://", "", StringComparison.OrdinalIgnoreCase);
+    /// <summary>"bg3.wiki/wiki/Soul_Coins:_A_Treatise": the source without its scheme, readable.</summary>
+    public string SourceDisplay => Uri.UnescapeDataString(
+        SourceUrl.Replace("https://", "", StringComparison.OrdinalIgnoreCase).Replace("http://", "", StringComparison.OrdinalIgnoreCase));
 
     public bool IsMust => Weight >= Fact.MustWeight;
 

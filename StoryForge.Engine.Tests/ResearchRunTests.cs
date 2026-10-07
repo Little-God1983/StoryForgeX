@@ -201,6 +201,8 @@ public sealed class ResearchRunTests : IDisposable
 
         Assert.Equal(StageState.Approved, (await client.GetProjectAsync(project.Id)).Stages[0].State);
         Assert.Equal(1, (await client.GetFactSheetAsync(project.Id)).ApprovedVersion);
+        // The script stage does not exist yet, so the project says where it really stands.
+        Assert.Equal("Research: approved", (await client.GetRecentProjectsAsync()).Single().StatusLine);
         await Assert.ThrowsAsync<KeyNotFoundException>(() => client.ApproveAsync(project.Id, PipelineStage.Research, 7));
     }
 
@@ -213,6 +215,9 @@ public sealed class ResearchRunTests : IDisposable
         await client.StartRunAsync(project.Id);
         await WaitForAsync(client, project.Id, StageState.Running);
         await _agent.Started.Task.WaitAsync(TimeSpan.FromSeconds(10));
+
+        // Opened while it runs, the screen gets what the run has done so far.
+        Assert.Contains((await client.GetFactSheetAsync(project.Id)).Activity, a => a.Kind == ActivityKind.Fetch);
 
         await client.CancelAsync(project.Id, PipelineStage.Research);
 

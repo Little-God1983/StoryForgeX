@@ -179,10 +179,11 @@ internal sealed class ClaudeStream(ResearchPages pages, IProgress<ActivityLine> 
 
     private void Report(ActivityKind kind, string text) => activity.Report(new ActivityLine(clock.GetUtcNow(), kind, text));
 
-    private static string Display(string url) =>
+    /// <summary>"bg3.wiki/wiki/Soul_Coins:_A_Treatise": without the scheme, escapes undone.</summary>
+    private static string Display(string url) => Uri.UnescapeDataString(
         url.StartsWith("https://", StringComparison.OrdinalIgnoreCase) ? url[8..]
         : url.StartsWith("http://", StringComparison.OrdinalIgnoreCase) ? url[7..]
-        : url;
+        : url);
 
     private static string FirstLine(string text) =>
         text.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).FirstOrDefault() ?? "";

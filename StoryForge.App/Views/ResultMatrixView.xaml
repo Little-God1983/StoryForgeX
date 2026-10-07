@@ -121,7 +121,8 @@
         <TextBlock Text="{Binding LoadError}" Foreground="{StaticResource PillErrorTextBrush}" FontSize="13" TextWrapping="Wrap" />
       </Border>
 
-      <!-- The fact sheet, in place of the matrix while it is open. -->
+      <!-- The last child fills the rest: the fact sheet, or in its place the matrix. -->
+      <Grid>
       <views:FactSheetView DataContext="{Binding FactSheet}" Margin="28,20"
                            Visibility="{Binding DataContext.ShowsFactSheet, RelativeSource={RelativeSource AncestorType=UserControl}, Converter={StaticResource Visible}}" />
 
@@ -148,6 +149,7 @@
                      Text="No shots yet. The script and storyboard fill in this matrix once the run starts." />
         </Border>
       </StackPanel>
+      </Grid>
     </DockPanel>
   </Grid>
 </UserControl>

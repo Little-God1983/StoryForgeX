@@ -190,7 +190,7 @@ public sealed class ResearchCheckTests
                 (ActivityKind.Refused, "www.reddit.com/r/BaldursGate3/  (not a project source)"),
                 (ActivityKind.Search, "bg3.wiki  \"soul coin\"  → 2 hits"),
                 (ActivityKind.Fetch, "bg3.wiki/wiki/Soul_Coin"),
-                (ActivityKind.Failed, "bg3.wiki/wiki/Nope  – bg3.wiki has no page \"Nope\"."),
+                (ActivityKind.Failed, "bg3.wiki/wiki/Soul_Coins:_A_Treatise  – bg3.wiki has no page \"Soul Coins: A Treatise\"."),
                 (ActivityKind.Model, "writing the fact sheet"),
             ],
             activity.Select(a => (a.Kind, a.Text)));
@@ -236,9 +236,9 @@ public sealed class ResearchCheckTests
         """{"type":"assistant","message":{"content":[{"type":"tool_use","id":"t1","name":"mcp__storyforge__search","input":{"source":"bg3.wiki","query":"soul coin"}},{"type":"tool_use","id":"t2","name":"mcp__storyforge__fetch","input":{"url":"https://www.reddit.com/r/BaldursGate3/"}}]}}""",
         """{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"t2","is_error":true,"content":[{"type":"text","text":"Refused: https://www.reddit.com/r/BaldursGate3/ is not on the project's source list (bg3.wiki)."}]}]}}""",
         """{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"t1","content":[{"type":"text","text":"{\"source\":\"bg3.wiki\",\"results\":[{\"title\":\"Soul Coin\"},{\"title\":\"Nadira\"}]}"}]}]}}""",
-        """{"type":"assistant","message":{"content":[{"type":"tool_use","id":"t3","name":"mcp__storyforge__fetch","input":{"url":"https://bg3.wiki/wiki/Soul_Coin"}},{"type":"tool_use","id":"t4","name":"mcp__storyforge__fetch","input":{"url":"https://bg3.wiki/wiki/Nope"}}]}}""",
+        """{"type":"assistant","message":{"content":[{"type":"tool_use","id":"t3","name":"mcp__storyforge__fetch","input":{"url":"https://bg3.wiki/wiki/Soul_Coin"}},{"type":"tool_use","id":"t4","name":"mcp__storyforge__fetch","input":{"url":"https://bg3.wiki/wiki/Soul_Coins%3A_A_Treatise"}}]}}""",
         """{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"t3","content":"Page: https://bg3.wiki/wiki/Soul_Coin\nTitle: Soul Coin\nCharacters 0–100 of 100.\n-----\nSoul Coins are small, coin-shaped objects forged of infernal iron into which a single mortal soul is bound."}]}}""",
-        """{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"t4","is_error":true,"content":"bg3.wiki has no page \"Nope\"."}]}}""",
+        """{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"t4","is_error":true,"content":"bg3.wiki has no page \"Soul Coins: A Treatise\"."}]}}""",
         """{"type":"assistant","message":{"content":[{"type":"tool_use","id":"t5","name":"StructuredOutput","input":{}}]}}""",
         """{"type":"result","subtype":"success","is_error":false,"session_id":"s-1","total_cost_usd":0.04,"structured_output":{"facts":[{"statement":"Coins hold souls.","sourceUrl":"https://bg3.wiki/wiki/Soul_Coin","quote":"a single mortal soul is bound"}]}}""",
     ];

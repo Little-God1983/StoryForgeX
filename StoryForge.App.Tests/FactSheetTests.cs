@@ -99,6 +99,8 @@ public sealed class FactSheetTests
         Assert.True(sheet.Facts[1].IsMust);
         Assert.Equal("must be in the video", sheet.Facts[1].WeightMeaning);
         Assert.Equal("bg3.wiki/wiki/Soul_Coin", sheet.Facts[0].SourceDisplay);
+        sheet.Facts[0].Update(Fact("F01", "x") with { SourceUrl = "https://bg3.wiki/wiki/Soul_Coins%3A_A_Treatise" });
+        Assert.Equal("bg3.wiki/wiki/Soul_Coins:_A_Treatise", sheet.Facts[0].SourceDisplay);
         Assert.Equal([new VersionChoice(1, IsShown: true, IsApproved: false)], sheet.Versions);
         Assert.Equal("Research – review", matrix.Stages[0].Label);
     }

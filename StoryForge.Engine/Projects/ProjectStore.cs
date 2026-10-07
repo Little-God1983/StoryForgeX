@@ -67,7 +67,8 @@ internal sealed class ProjectStore(IDbContextFactory<StoryForgeDbContext> contex
     }
 
     /// <summary>
-    /// "Not started", or the first stage that is not approved yet and where it stands: "Research: needs review".
+    /// "Not started", or the first stage that is not approved yet and where it stands: "Research: needs
+    /// review". When that stage has not started, the last approved one: "Research: approved".
     /// </summary>
     internal static string StatusLine(IReadOnlyList<StageStatus> stages)
     {
@@ -76,7 +77,15 @@ internal sealed class ProjectStore(IDbContextFactory<StoryForgeDbContext> contex
             return "Not started";
         }
         var open = stages.FirstOrDefault(s => s.State != StageState.Approved);
-        return open is null ? "All stages approved" : $"{open.Stage}: {StateText(open.State)}";
+        if (open is null)
+        {
+            return "All stages approved";
+        }
+        if (open.State == StageState.NotStarted && stages.TakeWhile(s => s != open).LastOrDefault() is { } approved)
+        {
+            return $"{approved.Stage}: approved";
+        }
+        return $"{open.Stage}: {StateText(open.State)}";
     }
 
     internal static string StateText(StageState state) => state switch
