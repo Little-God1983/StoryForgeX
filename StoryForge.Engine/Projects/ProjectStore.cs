@@ -28,6 +28,7 @@ internal sealed class ProjectStore(IDbContextFactory<StoryForgeDbContext> contex
 
     public async Task<Project> CreateAsync(ProjectSetup setup, CancellationToken cancellationToken)
     {
+        RequireParts(setup);
         setup = Normalize(setup);
         Validate(setup);
 
@@ -70,15 +71,31 @@ internal sealed class ProjectStore(IDbContextFactory<StoryForgeDbContext> contex
     {
         Name = (s.Name ?? "").Trim(),
         Brief = (s.Brief ?? "").Trim(),
-        ResearchSources = [.. (s.ResearchSources ?? []).Select(r => r.Trim()).Where(r => r.Length > 0)],
-        Writing = s.Writing with { Provider = s.Writing.Provider.Trim(), Model = s.Writing.Model.Trim() },
-        Voice = s.Voice with { Provider = s.Voice.Provider.Trim(), Model = s.Voice.Model.Trim() },
-        Stills = s.Stills with { Provider = s.Stills.Provider.Trim(), Model = s.Stills.Model.Trim() },
-        Clips = s.Clips with { Provider = s.Clips.Provider.Trim(), Model = s.Clips.Model.Trim() },
-        Output = s.Output with { Aspect = s.Output.Aspect.Trim(), Language = s.Output.Language.Trim() },
+        ResearchSources = [.. (s.ResearchSources ?? []).Select(r => (r ?? "").Trim()).Where(r => r.Length > 0)],
+        Writing = s.Writing with { Provider = Tidy(s.Writing.Provider), Model = Tidy(s.Writing.Model) },
+        Voice = s.Voice with { Provider = Tidy(s.Voice.Provider), Model = Tidy(s.Voice.Model) },
+        Stills = s.Stills with { Provider = Tidy(s.Stills.Provider), Model = Tidy(s.Stills.Model) },
+        Clips = s.Clips with { Provider = Tidy(s.Clips.Provider), Model = Tidy(s.Clips.Model) },
+        Output = s.Output with { Aspect = Tidy(s.Output.Aspect), Language = Tidy(s.Output.Language) },
         // The required gates are always on, whatever the caller sent; kept in run order.
         Gates = [.. (s.Gates ?? []).Concat(ProjectSetup.RequiredGates).Distinct().Order()],
     };
+
+    private static string Tidy(string? text) => (text ?? "").Trim();
+
+    /// <summary>
+    /// Every part is there before anything reads it, so a setup with a part missing (from a remote
+    /// caller, later) is an ArgumentException as documented, not a NullReferenceException.
+    /// </summary>
+    private static void RequireParts(ProjectSetup s)
+    {
+        Require(s is not null, "A project needs a setup.");
+        Require(s!.Writing is not null, "The research & script choices are missing.");
+        Require(s.Voice is not null, "The voice choices are missing.");
+        Require(s.Stills is not null && s.Stills.Size is not null, "The still image choices are missing.");
+        Require(s.Clips is not null && s.Clips.Size is not null, "The video clip choices are missing.");
+        Require(s.Output is not null, "The output choices are missing.");
+    }
 
     private static void Validate(ProjectSetup s)
     {
@@ -90,6 +107,9 @@ internal sealed class ProjectStore(IDbContextFactory<StoryForgeDbContext> contex
         Require(s.Stills.Size.Width >= 1 && s.Stills.Size.Height >= 1, "The still image size must be at least 1 × 1.");
         Require(s.Clips.Size.Width >= 1 && s.Clips.Size.Height >= 1, "The video clip size must be at least 1 × 1.");
         Require(s.Clips.MaxClipSeconds >= 1, "The max clip length must be at least 1 second.");
+        // Stills and clips are generated in the video's shape; a 16:9 still in a 9:16 video is a mistake.
+        Require(s.Stills.Size.Aspect == s.Output.Aspect, $"The still image size is for {s.Stills.Size.Aspect}, but the video is {s.Output.Aspect}.");
+        Require(s.Clips.Size.Aspect == s.Output.Aspect, $"The video clip size is for {s.Clips.Size.Aspect}, but the video is {s.Output.Aspect}.");
     }
 
     /// <summary>Every profile the project names exists in that exact version, and is of the kind its slot needs.</summary>

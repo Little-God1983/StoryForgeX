@@ -80,7 +80,18 @@ public sealed partial class MainViewModel : ObservableObject
     /// </summary>
     public async Task LoadAsync()
     {
-        await _settings.LoadAsync();
+        // Each step on its own: settings that cannot be read must not cost the recent projects
+        // and the checks. What failed is reported once everything else has loaded.
+        Exception? settingsFailure = null;
+        try
+        {
+            await _settings.LoadAsync();
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"Loading settings failed: {ex}");
+            settingsFailure = ex;
+        }
         // Not awaited yet: the workflow templates folder may be on a network share that takes
         // its timeout to answer, and the home screen and the checks should not wait for that.
         var profiles = _profiles.LoadAsync();
@@ -97,6 +108,10 @@ public sealed partial class MainViewModel : ObservableObject
             Debug.WriteLine($"First provider check failed: {ex}");
         }
         await profiles;
+        if (settingsFailure is not null)
+        {
+            throw new InvalidOperationException($"The settings could not be read: {settingsFailure.Message}", settingsFailure);
+        }
     }
 
     /// <summary>Opens a project from Recent projects in the result matrix.</summary>

@@ -134,6 +134,20 @@ public sealed class StartupLoadTests
     }
 
     [Fact]
+    public async Task Settings_that_cannot_be_read_do_not_stop_the_rest_of_loading()
+    {
+        _client.SettingsLoadFailure = new InvalidOperationException("database is locked");
+        _client.RecentProjects.Add(new(Guid.NewGuid(), "Soul Coins", "Not started"));
+        var main = Main();
+
+        var failure = await Assert.ThrowsAnyAsync<Exception>(main.LoadAsync);
+
+        Assert.Contains("database is locked", failure.Message);
+        Assert.Single(main.RecentProjects);
+        Assert.Equal(1, _client.StatusChecks);
+    }
+
+    [Fact]
     public async Task Loading_twice_does_not_duplicate_projects_and_keeps_the_four_pills()
     {
         _client.Providers.Add(new(ProviderId.ComfyUi, "ComfyUI", ProviderState.NotSetUp));

@@ -15,8 +15,24 @@ public sealed partial class ProfileSlotViewModel(ProfileKind kind, string label)
 
     public ObservableCollection<ProfileSummary> Choices { get; } = [];
 
-    [ObservableProperty]
     private ProfileSummary? _selected;
+    private bool _refilling;
+
+    /// <summary>
+    /// The picked profile. Writes while the choices are refilled are ignored: WPF's dropdown writes
+    /// null when its list is cleared, which would drop the pick and everything that came with it.
+    /// </summary>
+    public ProfileSummary? Selected
+    {
+        get => _selected;
+        set
+        {
+            if (!_refilling)
+            {
+                SetProperty(ref _selected, value);
+            }
+        }
+    }
 
     public bool HasChoices => Choices.Count > 0;
 
@@ -26,12 +42,25 @@ public sealed partial class ProfileSlotViewModel(ProfileKind kind, string label)
     public void SetChoices(IEnumerable<ProfileSummary> profiles)
     {
         var keep = Selected?.Id;
-        Choices.Clear();
-        foreach (var profile in profiles.Where(p => p.Kind == Kind))
+        _refilling = true;
+        try
         {
-            Choices.Add(profile);
+            Choices.Clear();
+            foreach (var profile in profiles.Where(p => p.Kind == Kind))
+            {
+                Choices.Add(profile);
+            }
         }
-        Selected = Choices.FirstOrDefault(p => p.Id == keep) ?? Choices.FirstOrDefault();
+        finally
+        {
+            _refilling = false;
+        }
+        var pick = Choices.FirstOrDefault(p => p.Id == keep) ?? Choices.FirstOrDefault();
+        if (!SetProperty(ref _selected, pick, nameof(Selected)))
+        {
+            // Unchanged, but announced again: the dropdown lost its selection with the old list.
+            OnPropertyChanged(nameof(Selected));
+        }
         OnPropertyChanged(nameof(HasChoices));
     }
 

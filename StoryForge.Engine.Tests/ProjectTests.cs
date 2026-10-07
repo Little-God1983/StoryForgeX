@@ -143,6 +143,55 @@ public sealed class ProjectTests : IDisposable
         Assert.Empty(await client.GetRecentProjectsAsync());
     }
 
+    [Theory]
+    [InlineData("stills")]
+    [InlineData("clips")]
+    public async Task A_generation_size_for_another_aspect_is_refused(string stage)
+    {
+        // A 16:9 still in a 9:16 video would render every shot the wrong shape.
+        var client = await _engine.StartClientAsync();
+        var s = await ValidSetup(client);
+        var portrait = s with { Output = s.Output with { Aspect = "9:16", Width = 1080, Height = 1920 } };
+        var bad = stage == "stills"
+            ? portrait with { Clips = s.Clips with { Size = new GenerationSize("9:16", 720, 1280) } }
+            : portrait with { Stills = s.Stills with { Size = new GenerationSize("9:16", 768, 1344) } };
+
+        await Assert.ThrowsAsync<ArgumentException>(() => client.CreateProjectAsync(bad));
+    }
+
+    [Theory]
+    [InlineData("writing")]
+    [InlineData("voice")]
+    [InlineData("stills")]
+    [InlineData("clips")]
+    [InlineData("output")]
+    public async Task A_missing_part_is_refused_as_an_argument_not_a_crash(string part)
+    {
+        var client = await _engine.StartClientAsync();
+        var s = await ValidSetup(client);
+        var bad = part switch
+        {
+            "writing" => s with { Writing = null! },
+            "voice" => s with { Voice = null! },
+            "stills" => s with { Stills = null! },
+            "clips" => s with { Clips = null! },
+            _ => s with { Output = null! },
+        };
+
+        await Assert.ThrowsAsync<ArgumentException>(() => client.CreateProjectAsync(bad));
+    }
+
+    [Fact]
+    public async Task A_missing_model_means_the_providers_default()
+    {
+        var client = await _engine.StartClientAsync();
+        var s = await ValidSetup(client);
+
+        var project = await client.CreateProjectAsync(s with { Voice = s.Voice with { Model = null! } });
+
+        Assert.Equal("", project.Setup.Voice.Model);
+    }
+
     [Fact]
     public async Task A_profile_version_that_does_not_exist_is_refused()
     {

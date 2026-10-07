@@ -48,7 +48,11 @@ internal sealed class FakeStoryForgeClient : IStoryForgeClient
             ? Task.FromException<IReadOnlyList<ProjectSummary>>(RecentProjectsFailure)
             : Task.FromResult<IReadOnlyList<ProjectSummary>>([.. RecentProjects]);
 
-    public Task<EngineSettings> GetSettingsAsync(CancellationToken cancellationToken = default) => Task.FromResult(Settings);
+    /// <summary>When set, reading the settings throws it.</summary>
+    public Exception? SettingsLoadFailure { get; set; }
+
+    public Task<EngineSettings> GetSettingsAsync(CancellationToken cancellationToken = default) =>
+        SettingsLoadFailure is not null ? Task.FromException<EngineSettings>(SettingsLoadFailure) : Task.FromResult(Settings);
 
     /// <summary>When set, saves wait for it, so tests can see whether two overlap.</summary>
     public Task? SaveGate { get; set; }

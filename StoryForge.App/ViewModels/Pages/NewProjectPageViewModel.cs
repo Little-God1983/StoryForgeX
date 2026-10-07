@@ -18,8 +18,6 @@ public sealed partial class NewProjectPageViewModel : PageViewModel
     private static readonly IReadOnlyList<Choice<string>> TextProviders = [new("Claude CLI", "Claude CLI"), new("LM Studio", "LM Studio (OpenAI API)")];
     private static readonly IReadOnlyList<Choice<string>> ComfyUi = [new("ComfyUI", "ComfyUI (local)")];
 
-    public static IReadOnlyList<string> Aspects { get; } = ["16:9", "9:16", "1:1"];
-
     public static IReadOnlyList<Choice<Consistency>> ConsistencyChoices { get; } =
     [
         new(Consistency.ReferenceImages, "From reference images · Qwen Image 2.1"),
@@ -41,6 +39,7 @@ public sealed partial class NewProjectPageViewModel : PageViewModel
 
     private readonly IStoryForgeClient _client;
     private readonly List<Task> _pending = [];
+    private readonly Dictionary<ProfileSlotViewModel, ProfileSummary?> _applied = [];
 
     public NewProjectPageViewModel(IStoryForgeClient client)
         : base("New project", "Projects / New project", "")
@@ -265,9 +264,6 @@ public sealed partial class NewProjectPageViewModel : PageViewModel
         }
     }
 
-    [RelayCommand]
-    private void ChooseAspect(string aspect) => Aspect = aspect;
-
     [RelayCommand(CanExecute = nameof(CanStart))]
     private async Task StartAsync()
     {
@@ -308,19 +304,21 @@ public sealed partial class NewProjectPageViewModel : PageViewModel
         {
             return TargetSeconds;
         }
+        // Checked in whole seconds, as stored: 0.005 minutes is no length at all.
         return double.TryParse(CustomTargetMinutes.Trim().Replace(',', '.'), System.Globalization.NumberStyles.Float,
-                   System.Globalization.CultureInfo.InvariantCulture, out var minutes) && minutes > 0 && minutes <= 600
-            ? (int)Math.Round(minutes * 60)
+                   System.Globalization.CultureInfo.InvariantCulture, out var minutes)
+               && (int)Math.Round(minutes * 60) is var seconds and >= 1 and <= 36000
+            ? seconds
             : null;
     }
 
     partial void OnAspectChanged(string value)
     {
-        // The list first, then the pick in it: the same tier (1080p, 1440p, 4K) in the new aspect.
+        // The list first, then the pick in it: the same tier (1080p, 1440p, 4K) in the new aspect,
+        // found by the short side, which every aspect's tier shares.
         OnPropertyChanged(nameof(DeliveryChoices));
-        var tier = Math.Max(0, DeliveryChoices.Select(c => c.Value.Width * c.Value.Height).ToList()
-            .IndexOf(SelectedDelivery.Value.Width * SelectedDelivery.Value.Height));
-        SelectedDelivery = DeliveryChoices[tier];
+        var shortSide = Math.Min(SelectedDelivery.Value.Width, SelectedDelivery.Value.Height);
+        SelectedDelivery = DeliveryChoices.FirstOrDefault(c => Math.Min(c.Value.Width, c.Value.Height) == shortSide) ?? DeliveryChoices[0];
         Track(ReloadSizesAsync());
     }
 
@@ -334,8 +332,15 @@ public sealed partial class NewProjectPageViewModel : PageViewModel
 
     private async Task ReloadSizesAsync()
     {
-        StillSize.UseDefaultFor(Aspect, await ContentOf(ImageSlot));
-        ClipSize.UseDefaultFor(Aspect, await ContentOf(VideoSlot));
+        var aspect = Aspect;
+        var image = await ContentOf(ImageSlot);
+        var video = await ContentOf(VideoSlot);
+        // Another aspect may have been picked while these loaded; its own reload applies then.
+        if (aspect == Aspect)
+        {
+            StillSize.UseDefaultFor(aspect, image);
+            ClipSize.UseDefaultFor(aspect, video);
+        }
     }
 
     private void ApplyResearchProfile(ProfileContent? content)
@@ -359,6 +364,13 @@ public sealed partial class NewProjectPageViewModel : PageViewModel
     private async Task ApplyContentAsync(ProfileSlotViewModel slot, Action<ProfileContent?> apply)
     {
         var picked = slot.Selected;
+        // The same profile announced again (the pickers are refilled each time the screen opens)
+        // keeps what the user changed since: typed sources, a custom size.
+        if (_applied.TryGetValue(slot, out var applied) && applied == picked)
+        {
+            return;
+        }
+        _applied[slot] = picked;
         var content = await ContentOf(slot);
         // Another profile may have been picked while this one loaded.
         if (slot.Selected == picked)

@@ -96,7 +96,7 @@ public sealed class NewProjectPageTests
         page.StillSize.SelectedIndex = GenerationSizeViewModel.CustomIndex;
         page.StillSize.CustomWidth = "1500";
 
-        page.ChooseAspectCommand.Execute("9:16");
+        page.Aspect = "9:16";
         await page.WhenSettled();
 
         Assert.Equal(new GenerationSize("9:16", 768, 1344), page.StillSize.Value);
@@ -118,7 +118,7 @@ public sealed class NewProjectPageTests
         var clipEntries = page.MaxClip.Options.ToList();
 
         page.StillSize.SelectedIndex = -1;   // what WPF writes when it loses the selection
-        page.ChooseAspectCommand.Execute("9:16");
+        page.Aspect = "9:16";
         await page.WhenSettled();
         page.MaxClip.UseDefault(null);
 
@@ -127,6 +127,84 @@ public sealed class NewProjectPageTests
         Assert.Equal("768 × 1344 · profile default", page.StillSize.Options[0].Label);
         Assert.Equal("20 s · built-in default", page.MaxClip.Options[0].Label);
         Assert.Equal(GenerationSizeViewModel.ProfileDefaultIndex, page.StillSize.SelectedIndex);
+    }
+
+    [Theory]
+    [InlineData("16:9", 3840, 2160, "1:1", 2160, 2160)]
+    [InlineData("1:1", 1440, 1440, "16:9", 2560, 1440)]
+    [InlineData("16:9", 2560, 1440, "9:16", 1440, 2560)]
+    public async Task Another_aspect_keeps_the_delivery_tier(string from, int w, int h, string to, int expectedW, int expectedH)
+    {
+        var page = await ShownPage();
+        page.Aspect = from;
+        page.SelectedDelivery = page.DeliveryChoices.Single(c => c.Value.Width == w && c.Value.Height == h);
+
+        page.Aspect = to;
+
+        Assert.Equal(new GenerationSize(to, expectedW, expectedH), page.SelectedDelivery.Value);
+    }
+
+    [Fact]
+    public async Task Sizes_loading_for_an_earlier_aspect_do_not_land_after_a_later_one()
+    {
+        AddOneOfEach();
+        var page = await ShownPage();
+        var slow = new TaskCompletionSource();
+        _client.ProfileLoadGate = slow.Task;
+
+        page.Aspect = "9:16";        // its profile reads wait
+        _client.ProfileLoadGate = null;
+        page.Aspect = "1:1";         // its reads finish at once
+        slow.SetResult();
+        await page.WhenSettled();
+
+        Assert.Equal("1:1", page.StillSize.Value!.Aspect);
+        Assert.Equal("1:1", page.ClipSize.Value!.Aspect);
+    }
+
+    [Fact]
+    public async Task Coming_back_to_the_screen_keeps_typed_sources_and_custom_sizes()
+    {
+        AddOneOfEach();
+        var page = await ShownPage();
+        // What WPF does: a dropdown whose list is cleared writes null into its SelectedItem.
+        foreach (var slot in page.Cards.SelectMany(c => c.Slots))
+        {
+            slot.Choices.CollectionChanged += (_, e) =>
+            {
+                if (e.Action == System.Collections.Specialized.NotifyCollectionChangedAction.Reset)
+                {
+                    slot.Selected = null;
+                }
+            };
+        }
+        page.NewSource = "wikipedia.org";
+        page.AddSourceCommand.Execute(null);
+        page.StillSize.SelectedIndex = GenerationSizeViewModel.CustomIndex;
+        page.StillSize.CustomWidth = "1600";
+
+        await page.ShowAsync();
+
+        Assert.Contains("wikipedia.org", page.ResearchSources);
+        Assert.Equal(1600, page.StillSize.Value!.Width);
+        Assert.Equal("Lore", page.ResearchSlot.Selected!.Name);
+    }
+
+    [Theory]
+    [InlineData("0.005")]
+    [InlineData("0")]
+    [InlineData("abc")]
+    public async Task A_custom_target_length_under_a_second_keeps_start_off(string minutes)
+    {
+        AddOneOfEach();
+        var page = await ShownPage();
+        FillBrief(page);
+
+        page.TargetSeconds = NewProjectPageViewModel.CustomTarget;
+        page.CustomTargetMinutes = minutes;
+
+        Assert.False(page.StartCommand.CanExecute(null));
+        Assert.Contains("target length", page.MissingText);
     }
 
     [Fact]
@@ -217,7 +295,7 @@ public sealed class NewProjectPageTests
         AddOneOfEach();
         var page = await ShownPage();
         FillBrief(page);
-        page.ChooseAspectCommand.Execute("9:16");
+        page.Aspect = "9:16";
         await page.WhenSettled();
         page.TargetSeconds = NewProjectPageViewModel.CustomTarget;
         page.CustomTargetMinutes = "2.5";
