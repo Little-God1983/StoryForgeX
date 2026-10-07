@@ -233,8 +233,10 @@ if ($LASTEXITCODE -ne 0) {
     Fail "The publish failed (exit code $LASTEXITCODE)." $buildFailedHints
 }
 
-if (-not (Test-Path -LiteralPath (Join-Path $InstallDir $AppExeName))) {
-    Fail "The publish reported success but $AppExeName is missing from $InstallDir." $buildFailedHints
+foreach ($required in $RequiredFiles) {
+    if (-not (Test-Path -LiteralPath (Join-Path $InstallDir $required))) {
+        Fail "The publish reported success but $required is missing from $InstallDir." $buildFailedHints
+    }
 }
 
 $files = @(Get-ChildItem -LiteralPath $InstallDir -Recurse -File)
