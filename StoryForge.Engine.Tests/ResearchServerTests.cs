@@ -123,6 +123,44 @@ public sealed class ResearchServerTests
     }
 
     [Fact]
+    public async Task An_API_address_that_leads_off_the_sources_does_not_break_the_wiki_for_the_rest_of_the_run()
+    {
+        // Looking for the API, /w/api.php redirects elsewhere (refused); /api.php is the real one.
+        var web = new Web()
+            .On("https://forgottenrealms.fandom.com/w/api.php", _ => Redirect("https://evil.example/api.php"))
+            .On("https://forgottenrealms.fandom.com/api.php?action=query&meta=siteinfo", _ => Json(
+                """{"query":{"general":{"server":"https://forgottenrealms.fandom.com","articlepath":"/wiki/$1"}}}"""))
+            .On("https://forgottenrealms.fandom.com/api.php?action=query&list=search", _ => Json(
+                """{"query":{"search":[{"title":"Soul coin","snippet":"currency of the Nine Hells"}]}}"""));
+        var tools = Tools(web);
+
+        var first = await tools.SearchAsync("forgottenrealms.fandom.com", "soul coin", default);
+        var second = await tools.SearchAsync("forgottenrealms.fandom.com", "soul coin", default);
+
+        Assert.NotEqual(true, first.IsError);
+        Assert.NotEqual(true, second.IsError);
+        Assert.Contains("https://forgottenrealms.fandom.com/wiki/Soul_coin", Text(second));
+    }
+
+    [Fact]
+    public async Task A_site_that_is_not_a_wiki_is_asked_once_not_on_every_page()
+    {
+        var web = new Web()
+            .On("https://www.reddit.com/r/BaldursGate3/w/api.php", _ => new HttpResponseMessage(HttpStatusCode.NotFound))
+            .On("https://www.reddit.com/w/api.php", _ => new HttpResponseMessage(HttpStatusCode.NotFound))
+            .On("https://www.reddit.com/api.php", _ => new HttpResponseMessage(HttpStatusCode.NotFound))
+            .On("https://reddit.com/w/api.php", _ => new HttpResponseMessage(HttpStatusCode.NotFound))
+            .On("https://reddit.com/api.php", _ => new HttpResponseMessage(HttpStatusCode.NotFound))
+            .On("https://www.reddit.com/r/BaldursGate3/", _ => Html("<p>Soul coins thread</p>"));
+        var tools = Tools(web);
+
+        await tools.FetchAsync("https://www.reddit.com/r/BaldursGate3/one", cancellationToken: default);
+        await tools.FetchAsync("https://www.reddit.com/r/BaldursGate3/two", cancellationToken: default);
+
+        Assert.Equal(2, web.Requests.Count(r => r.AbsolutePath.EndsWith("api.php", StringComparison.Ordinal)));
+    }
+
+    [Fact]
     public async Task A_wiki_page_comes_back_as_its_text_with_its_own_URL_first()
     {
         var web = BgWiki().On("https://bg3.wiki/w/api.php?action=parse&page=Soul%20Coin", _ => Json(

@@ -294,8 +294,11 @@ public sealed partial class FactSheetViewModel : ObservableObject
     [RelayCommand(CanExecute = nameof(CanApprove))]
     private async Task ApproveAsync()
     {
-        await RunAsync("approve the fact sheet", () => _client.ApproveAsync(ProjectId, PipelineStage.Research, Version!.Value));
-        await LoadAsync();
+        // Reloaded only when it went through: a reload would clear the reason it did not.
+        if (await RunAsync("approve the fact sheet", () => _client.ApproveAsync(ProjectId, PipelineStage.Research, Version!.Value)))
+        {
+            await LoadAsync();
+        }
     }
 
     private bool CanRegenerate() => !IsRunning;
@@ -351,17 +354,20 @@ public sealed partial class FactSheetViewModel : ObservableObject
         }
     }
 
-    private async Task RunAsync(string what, Func<Task> action)
+    /// <summary>Runs one action; false (and the reason on screen) when it did not go through.</summary>
+    private async Task<bool> RunAsync(string what, Func<Task> action)
     {
         try
         {
             await action();
             ActionError = null;
+            return true;
         }
         catch (Exception ex)
         {
             Debug.WriteLine($"Could not {what}: {ex}");
             ActionError = $"Could not {what}: {ex.Message}";
+            return false;
         }
     }
 }

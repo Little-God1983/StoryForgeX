@@ -21,20 +21,24 @@ internal sealed class MediaWiki(SiteWeb web)
     // bg3.wiki keeps its API under /w/, Fandom at the root.
     private static readonly string[] ApiPaths = ["/w/api.php", "/api.php"];
 
-    private readonly ConcurrentDictionary<Source, Task<WikiSite?>> _sites = new();
+    private readonly ConcurrentDictionary<Source, Task<Discovery>> _sites = new();
 
     /// <summary>The wiki behind <paramref name="source"/>, or null when it is not a MediaWiki site.</summary>
     public async Task<WikiSite?> FindAsync(Source source, CancellationToken cancellationToken)
     {
         // Shared by every call, so no single call's token; each request has its own timeout.
         var found = await _sites.GetOrAdd(source, s => DiscoverAsync(s, CancellationToken.None)).WaitAsync(cancellationToken);
-        if (found is null)
+        if (!found.Settled)
         {
-            // Maybe the site was only down for a moment: the next call asks again.
+            // The site did not answer: maybe it was down for a moment, so the next call asks again.
+            // "Not a wiki" is settled and kept, so a plain site is not asked again for every page.
             _sites.TryRemove(source, out _);
         }
-        return found;
+        return found.Site;
     }
+
+    /// <summary>What looking for a wiki found; unsettled when the site could not be reached.</summary>
+    private sealed record Discovery(WikiSite? Site, bool Settled);
 
     public async Task<IReadOnlyList<SearchHit>> SearchAsync(WikiSite wiki, string query, CancellationToken cancellationToken)
     {
@@ -80,8 +84,13 @@ internal sealed class MediaWiki(SiteWeb web)
     private static string PageUrl(WikiSite wiki, string title) =>
         wiki.ArticleUrl.Replace("$1", Uri.EscapeDataString(title.Replace(' ', '_')).Replace("%2F", "/", StringComparison.Ordinal), StringComparison.Ordinal);
 
-    private async Task<WikiSite?> DiscoverAsync(Source source, CancellationToken cancellationToken)
+    /// <summary>
+    /// Asks each usual API address. Never throws: whatever goes wrong with one address (an error page,
+    /// not JSON, a redirect off the sources) only means the API is not there.
+    /// </summary>
+    private async Task<Discovery> DiscoverAsync(Source source, CancellationToken cancellationToken)
     {
+        var settled = true;
         foreach (var path in ApiPaths)
         {
             var api = new Uri($"https://{source.Host}{path}");
@@ -91,7 +100,12 @@ internal sealed class MediaWiki(SiteWeb web)
                 var page = await web.GetOnSiteAsync(new Uri(api, "?action=query&meta=siteinfo&siprop=general&format=json&formatversion=2"), source, cancellationToken);
                 json = JsonDocument.Parse(page.Body);
             }
-            catch (Exception ex) when (ex is WebFailureException or JsonException)
+            catch (WebFailureException ex)
+            {
+                settled &= !ex.Unreachable;
+                continue;
+            }
+            catch (Exception ex) when (ex is RefusedException or JsonException)
             {
                 continue;
             }
@@ -106,11 +120,11 @@ internal sealed class MediaWiki(SiteWeb web)
                     {
                         serverUrl = "https:" + serverUrl;
                     }
-                    return new WikiSite(source, api, serverUrl.TrimEnd('/') + articlePath.GetString());
+                    return new Discovery(new WikiSite(source, api, serverUrl.TrimEnd('/') + articlePath.GetString()), Settled: true);
                 }
             }
         }
-        return null;
+        return new Discovery(null, settled);
     }
 
     private async Task<JsonDocument> ApiAsync(WikiSite wiki, string query, CancellationToken cancellationToken)

@@ -10,7 +10,11 @@ internal sealed class RefusedException(Uri url, string sources)
     : Exception($"{Answers.RefusedPrefix} {url} is not on the project's source list ({sources}). Only those sites can be reached.");
 
 /// <summary>A page that could not be read: an HTTP error, a timeout, too many redirects.</summary>
-internal sealed class WebFailureException(string message) : Exception(message);
+/// <param name="unreachable">The site did not answer at all (no connection, a timeout), so it may answer later.</param>
+internal sealed class WebFailureException(string message, bool unreachable = false) : Exception(message)
+{
+    public bool Unreachable { get; } = unreachable;
+}
 
 internal sealed record WebPage(Uri Url, string? MediaType, string Body);
 
@@ -65,11 +69,11 @@ internal sealed class SiteWeb(HttpMessageInvoker http, SourceList sources)
             }
             catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
             {
-                throw new WebFailureException($"{url} did not answer within {Timeout.TotalSeconds:0} s.");
+                throw new WebFailureException($"{url} did not answer within {Timeout.TotalSeconds:0} s.", unreachable: true);
             }
             catch (HttpRequestException ex)
             {
-                throw new WebFailureException($"{url} could not be reached: {ex.Message}");
+                throw new WebFailureException($"{url} could not be reached: {ex.Message}", unreachable: true);
             }
 
             using (response)
@@ -83,7 +87,18 @@ internal sealed class SiteWeb(HttpMessageInvoker http, SourceList sources)
                 {
                     throw new WebFailureException($"HTTP {(int)response.StatusCode} from {url}.");
                 }
-                return new WebPage(url, response.Content.Headers.ContentType?.MediaType, await ReadAsync(response, deadline.Token));
+                try
+                {
+                    return new WebPage(url, response.Content.Headers.ContentType?.MediaType, await ReadAsync(response, deadline.Token));
+                }
+                catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+                {
+                    throw new WebFailureException($"{url} did not finish sending within {Timeout.TotalSeconds:0} s.", unreachable: true);
+                }
+                catch (Exception ex) when (ex is HttpRequestException or IOException)
+                {
+                    throw new WebFailureException($"{url} broke off while sending: {ex.Message}", unreachable: true);
+                }
             }
         }
         throw new WebFailureException($"{url} redirects more than {MaxRedirects} times.");

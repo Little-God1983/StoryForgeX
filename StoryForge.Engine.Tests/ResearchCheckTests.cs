@@ -52,6 +52,33 @@ public sealed class ResearchCheckTests
     }
 
     [Fact]
+    public void A_quote_across_the_cut_between_two_parts_of_a_long_page_passes()
+    {
+        // The server hands out long pages in parts; a cut can fall in the middle of a word.
+        var pages = new ResearchPages();
+        var stream = new ClaudeStream(pages, new Collect([]), TimeProvider.System);
+        stream.Read("""{"type":"assistant","message":{"content":[{"type":"tool_use","id":"a","name":"mcp__storyforge__fetch","input":{"url":"https://bg3.wiki/wiki/Long"}},{"type":"tool_use","id":"b","name":"mcp__storyforge__fetch","input":{"url":"https://bg3.wiki/wiki/Long","start":9}}]}}""");
+        stream.Read("""{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"b","content":"Page: https://bg3.wiki/wiki/Long\nCharacters 9 to 19 of 19.\n-----\nnal engine"}]}}""");
+        stream.Read("""{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"a","content":"Page: https://bg3.wiki/wiki/Long\nCharacters 0 to 9 of 19. The page continues: fetch it again with start=9.\n-----\nthe infer"}]}}""");
+
+        Assert.True(pages.Contains("https://bg3.wiki/wiki/Long", "the infernal engine"));
+    }
+
+    [Fact]
+    public void Parts_read_twice_or_with_a_gap_between_them_never_join_into_words_that_are_not_there()
+    {
+        var pages = new ResearchPages();
+        pages.Add(Page, null, "Soul Coins are small", 0);
+        pages.Add(Page, null, "Soul Coins are small", 0);
+        pages.Add(Page, null, "infernal iron", 100);
+
+        Assert.True(pages.Contains(Page, "Soul Coins are small"));
+        Assert.False(pages.Contains(Page, "Soul Coins are smallSoul"));
+        Assert.False(pages.Contains(Page, "smallinfernal"));
+        Assert.True(pages.Contains(Page, "infernal iron"));
+    }
+
+    [Fact]
     public void A_quote_that_is_not_on_the_page_is_sent_back()
     {
         var problems = FactSheetCheck.Problems(

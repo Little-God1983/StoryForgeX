@@ -226,6 +226,28 @@ public sealed class ResearchRunTests : IDisposable
     }
 
     [Fact]
+    public async Task Cancelling_a_waiting_run_puts_it_back_at_once_not_after_the_run_before_it()
+    {
+        _agent.Hold();
+        var client = await StartAsync();
+        var first = await NewProjectAsync(client);
+        var second = await NewProjectAsync(client);
+        await client.StartRunAsync(first.Id);
+        await _agent.Started.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        await client.StartRunAsync(second.Id);
+        Assert.Equal(StageState.Running, (await client.GetProjectAsync(second.Id)).Stages[0].State);   // waiting its turn
+
+        await client.CancelAsync(second.Id, PipelineStage.Research);
+
+        Assert.Equal(StageState.NotStarted, (await client.GetProjectAsync(second.Id)).Stages[0].State);
+        Assert.Equal(StageState.Running, (await client.GetProjectAsync(first.Id)).Stages[0].State);
+        _agent.Answer(Good());
+        await client.RegenerateAsync(second.Id, PipelineStage.Research);   // free to start again
+        await client.CancelAsync(first.Id, PipelineStage.Research);
+        Assert.Equal(StageState.NeedsReview, await WaitForAsync(client, second.Id, StageState.NeedsReview, StageState.Failed));
+    }
+
+    [Fact]
     public async Task Facts_cannot_change_while_research_runs()
     {
         _agent.Answer(Good());

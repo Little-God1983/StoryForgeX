@@ -47,7 +47,7 @@ public sealed partial class ResultMatrixPageViewModel : PageViewModel
     }
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(HasProject), nameof(Name), nameof(Summary), nameof(Stages))]
+    [NotifyPropertyChangedFor(nameof(HasProject), nameof(Name), nameof(Summary), nameof(Stages), nameof(ShowsMatrix))]
     private Project? _project;
 
     public bool HasProject => Project is not null;

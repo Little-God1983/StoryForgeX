@@ -90,6 +90,22 @@ public partial class App : Application
     protected override void OnExit(ExitEventArgs e)
     {
         _statusTimer?.Stop();
+        // Stopping (not just disposing) the host stops a running stage: its Claude CLI and the
+        // research server are ended instead of running on in the background, and the stage is
+        // marked "closed while it ran". Started from a pool thread: awaited from here, the engine's
+        // continuations would wait for the UI thread this very call is blocking.
+        var host = _host;
+        try
+        {
+            if (host is not null)
+            {
+                Task.Run(() => host.StopAsync(TimeSpan.FromSeconds(10))).GetAwaiter().GetResult();
+            }
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"Stopping the engine failed: {ex}");
+        }
         _host?.Dispose();
         base.OnExit(e);
     }

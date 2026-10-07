@@ -87,13 +87,33 @@ internal sealed class PipelineRunner(
     public async Task CancelAsync(Guid projectId, PipelineStage stage)
     {
         Job? job;
+        var waiting = false;
         lock (_lock)
         {
-            _jobs.TryGetValue((projectId, stage), out job);
+            if (_jobs.TryGetValue((projectId, stage), out job) && !job.Started)
+            {
+                // Still waiting its turn: it goes back now, not after the run before it, and the
+                // queue skips it when it gets there.
+                job.Skipped = waiting = true;
+                _jobs.Remove((projectId, stage));
+            }
         }
-        if (job is not null)
+        if (job is null)
+        {
+            return;
+        }
+        if (waiting)
+        {
+            await RestoreAsync(job, Snapshot(job.Activity));
+            return;
+        }
+        try
         {
             await job.Cancel.CancelAsync();
+        }
+        catch (ObjectDisposedException)
+        {
+            // It finished in the moment between finding it and cancelling it.
         }
     }
 
@@ -205,6 +225,16 @@ internal sealed class PipelineRunner(
             }
             Publish(new StageUpdate(job.ProjectId, job.Stage, StageState.Running, line));
         });
+        lock (_lock)
+        {
+            if (job.Skipped)
+            {
+                job.Cancel.Dispose();
+                return;   // cancelled while it waited; CancelAsync already put it back
+            }
+            job.Started = true;
+        }
+        var goOn = false;
         try
         {
             job.Cancel.Token.ThrowIfCancellationRequested();
@@ -214,10 +244,7 @@ internal sealed class PipelineRunner(
             var state = await StoreAsync(job, result, gated, Snapshot(activity));
             Forget(job);
             Publish(new StageUpdate(job.ProjectId, job.Stage, state));
-            if (!gated)
-            {
-                await ContinueAsync(job.ProjectId, job.Stage, _stopping.Token);
-            }
+            goOn = !gated;
         }
         catch (OperationCanceledException) when (job.Cancel.IsCancellationRequested)
         {
@@ -243,6 +270,24 @@ internal sealed class PipelineRunner(
         {
             Forget(job);
             job.Cancel.Dispose();
+        }
+
+        // Outside the stage's own try: the stage is stored and approved, and a next stage that
+        // cannot be queued must not mark it failed.
+        if (goOn)
+        {
+            try
+            {
+                await ContinueAsync(job.ProjectId, job.Stage, _stopping.Token);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                Debug.WriteLine($"Queueing the stage after {job.Stage} of {job.ProjectId} failed: {ex}");
+            }
+            catch (OperationCanceledException)
+            {
+                // Closing.
+            }
         }
     }
 
@@ -370,6 +415,12 @@ internal sealed class PipelineRunner(
         public StageState PreviousState { get; set; }
 
         public string? PreviousError { get; set; }
+
+        /// <summary>The loop has picked it up; set under the runner's lock.</summary>
+        public bool Started { get; set; }
+
+        /// <summary>Cancelled while it waited; the loop drops it. Set under the runner's lock.</summary>
+        public bool Skipped { get; set; }
 
         /// <summary>What the stage has done so far; locked while written or copied.</summary>
         public List<ActivityLine> Activity { get; } = [];

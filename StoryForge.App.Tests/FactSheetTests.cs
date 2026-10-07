@@ -195,6 +195,34 @@ public sealed class FactSheetTests
     }
 
     [Fact]
+    public async Task An_approve_that_does_not_go_through_keeps_saying_why()
+    {
+        var (matrix, project) = await StartedAsync();
+        await FinishAsync(matrix, project);
+        var sheet = matrix.FactSheet!;
+        _client.StageFailure = new InvalidOperationException("The Research stage is running. Approve it when it is done.");
+
+        await sheet.ApproveCommand.ExecuteAsync(null);
+
+        Assert.Equal("Could not approve the fact sheet: The Research stage is running. Approve it when it is done.", sheet.ActionError);
+        Assert.True(sheet.IsReview);
+    }
+
+    [Fact]
+    public async Task Opening_a_project_on_the_empty_matrix_screen_shows_its_matrix()
+    {
+        var (_, project) = await StartedAsync();
+        var empty = new ResultMatrixPageViewModel(_client, _opened.Add);
+        var changed = new List<string?>();
+        empty.PropertyChanged += (_, e) => changed.Add(e.PropertyName);
+
+        await empty.OpenAsync(project.Id);
+
+        Assert.True(empty.ShowsMatrix);
+        Assert.Contains(nameof(ResultMatrixPageViewModel.ShowsMatrix), changed);
+    }
+
+    [Fact]
     public async Task An_older_version_can_be_shown()
     {
         var (matrix, project) = await StartedAsync();

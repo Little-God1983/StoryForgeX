@@ -10,21 +10,22 @@ namespace StoryForge.Engine.Research;
 /// </summary>
 internal sealed partial class ResearchPages
 {
-    private readonly Dictionary<string, StringBuilder> _pages = [];
+    private readonly Dictionary<string, Page> _pages = [];
     private readonly Dictionary<string, string> _aliases = [];
 
     public int Count => _pages.Count;
 
-    /// <summary>Adds a part of a page; parts of a long page arrive one fetch at a time.</summary>
+    /// <summary>Adds a part of a page; parts of a long page arrive one fetch at a time, in any order.</summary>
     /// <param name="requestedUrl">The URL the model asked for, when it differs from the page's own (a redirect).</param>
-    public void Add(string url, string? requestedUrl, string text)
+    /// <param name="offset">Where the part starts in the page text; null when the answer did not say.</param>
+    public void Add(string url, string? requestedUrl, string text, int? offset = null)
     {
         var key = Key(url);
         if (!_pages.TryGetValue(key, out var page))
         {
-            _pages[key] = page = new StringBuilder();
+            _pages[key] = page = new Page();
         }
-        page.Append('\n').Append(text);
+        page.Add(text, offset);
         if (requestedUrl is not null && Key(requestedUrl) != key)
         {
             _aliases[Key(requestedUrl)] = key;
@@ -33,9 +34,16 @@ internal sealed partial class ResearchPages
 
     public void AddAll(ResearchPages other)
     {
-        foreach (var (key, text) in other._pages)
+        foreach (var (key, page) in other._pages)
         {
-            Add(key, null, text.ToString());
+            foreach (var (offset, text) in page.Parts)
+            {
+                Add(key, null, text, offset);
+            }
+            foreach (var text in page.Loose)
+            {
+                Add(key, null, text);
+            }
         }
         foreach (var (alias, key) in other._aliases)
         {
@@ -68,7 +76,7 @@ internal sealed partial class ResearchPages
         {
             key = target;
         }
-        return _pages.TryGetValue(key, out var page) ? page.ToString() : null;
+        return _pages.TryGetValue(key, out var page) ? page.Text() : null;
     }
 
     /// <summary>
@@ -115,4 +123,59 @@ internal sealed partial class ResearchPages
 
     [GeneratedRegex(@"\.\.\.|…|\[\.\.\.\]|\[…\]")]
     private static partial Regex Ellipsis();
+
+    /// <summary>One page's text, put together from the parts the research read.</summary>
+    private sealed class Page
+    {
+        /// <summary>Parts by where they start in the page text.</summary>
+        public SortedDictionary<int, string> Parts { get; } = [];
+
+        /// <summary>Parts whose place the answer did not give; they never join a neighbour.</summary>
+        public List<string> Loose { get; } = [];
+
+        public void Add(string text, int? offset)
+        {
+            if (offset is not { } at)
+            {
+                Loose.Add(text);
+            }
+            else if (!Parts.TryGetValue(at, out var known) || known.Length < text.Length)
+            {
+                Parts[at] = text;
+            }
+        }
+
+        /// <summary>
+        /// Parts that meet are joined as they are, so a cut in the middle of a word disappears; an
+        /// overlap is not repeated; a gap becomes a line break, never a join that is not on the page.
+        /// </summary>
+        public string Text()
+        {
+            var text = new StringBuilder();
+            var end = -1;
+            foreach (var (offset, part) in Parts)
+            {
+                if (end >= 0 && offset < end)
+                {
+                    if (offset + part.Length > end)
+                    {
+                        text.Append(part, end - offset, offset + part.Length - end);
+                        end = offset + part.Length;
+                    }
+                    continue;
+                }
+                if (end >= 0 && offset > end)
+                {
+                    text.Append('\n');
+                }
+                text.Append(part);
+                end = offset + part.Length;
+            }
+            foreach (var part in Loose)
+            {
+                text.Append('\n').Append(part);
+            }
+            return text.ToString();
+        }
+    }
 }

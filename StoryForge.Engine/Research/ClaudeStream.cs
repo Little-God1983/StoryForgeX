@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using StoryForge.Client;
 
 namespace StoryForge.Engine.Research;
@@ -15,7 +16,7 @@ internal static class ServerAnswers
 /// Reads Claude CLI's stream-json output as it comes: every search and page read becomes a line of
 /// activity, every page read is kept for checking quotes, and the last line carries the answer.
 /// </summary>
-internal sealed class ClaudeStream(ResearchPages pages, IProgress<ActivityLine> activity, TimeProvider clock)
+internal sealed partial class ClaudeStream(ResearchPages pages, IProgress<ActivityLine> activity, TimeProvider clock)
 {
     public const string SearchTool = "mcp__storyforge__search";
     public const string FetchTool = "mcp__storyforge__fetch";
@@ -142,24 +143,36 @@ internal sealed class ClaudeStream(ResearchPages pages, IProgress<ActivityLine> 
                 }
                 else
                 {
-                    var (url, body) = Page(text, requested);
-                    pages.Add(url, requested, body);
+                    var (url, offset, body) = Page(text, requested);
+                    pages.Add(url, requested, body, offset);
                     Report(ActivityKind.Fetch, Display(url));
                 }
                 break;
         }
     }
 
-    /// <summary>The page's own URL and its text, from "Page: …\n…\n-----\n&lt;text&gt;".</summary>
-    private static (string Url, string Text) Page(string answer, string requested)
+    /// <summary>
+    /// The page's own URL, where this part starts in the page text, and the part, from
+    /// "Page: …\n…Characters 12000 to 24000 of 30000.…\n-----\n&lt;text&gt;".
+    /// </summary>
+    private static (string Url, int? Offset, string Text) Page(string answer, string requested)
     {
         var lines = answer.Split('\n');
         var url = lines.Length > 0 && lines[0].StartsWith(ServerAnswers.PagePrefix, StringComparison.Ordinal)
             ? lines[0][ServerAnswers.PagePrefix.Length..].Trim()
             : requested;
         var marker = Array.IndexOf(lines, ServerAnswers.TextMarker);
-        return (url, marker < 0 ? answer : string.Join('\n', lines[(marker + 1)..]));
+        if (marker < 0)
+        {
+            return (url, null, answer);
+        }
+        var range = lines[..marker].Select(line => PartRange().Match(line)).FirstOrDefault(m => m.Success);
+        int? offset = range is not null && int.TryParse(range.Groups["from"].Value, out var from) ? from : null;
+        return (url, offset, string.Join('\n', lines[(marker + 1)..]));
     }
+
+    [GeneratedRegex(@"^Characters (?<from>\d+) to \d+ of \d+\.")]
+    private static partial Regex PartRange();
 
     private static string Hits(string answer)
     {
