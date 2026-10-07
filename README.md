@@ -7,3 +7,9 @@ video, FFmpeg or DaVinci Resolve for assembly).
 
 The work is planned as GitHub issues in build order: see the
 [v1 milestone](https://github.com/Little-God1983/StoryForgeX/milestone/1).
+
+## Stable build
+
+Double-click `scripts\build.cmd` on `main` to build, test and install the next version in
+`E:\StableVersion\StoryForgeX`, with a `StoryForge X` Start Menu entry. See
+[scripts/README.md](scripts/README.md).
