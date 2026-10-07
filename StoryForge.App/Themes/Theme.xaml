@@ -40,6 +40,11 @@
   <SolidColorBrush x:Key="PillErrorBackBrush" Color="#33201E" />
   <SolidColorBrush x:Key="PillErrorTextBrush" Color="#F08B7E" />
 
+  <!-- Note boxes that explain what an action will do ("Saving creates v4 …"). -->
+  <SolidColorBrush x:Key="NoteBackBrush" Color="#262338" />
+  <SolidColorBrush x:Key="NoteBorderBrush" Color="#3D3663" />
+  <SolidColorBrush x:Key="NoteTextBrush" Color="#D4CCFA" />
+
   <!-- Text coloured by a ProviderState bound to Tag. -->
   <Style x:Key="StateTextStyle" TargetType="TextBlock">
     <Setter Property="Foreground" Value="{StaticResource PillNeutralTextBrush}" />
@@ -309,6 +314,38 @@
             </Trigger>
             <Trigger Property="IsEnabled" Value="False">
               <Setter Property="Opacity" Value="0.5" />
+            </Trigger>
+          </ControlTemplate.Triggers>
+        </ControlTemplate>
+      </Setter.Value>
+    </Setter>
+  </Style>
+
+  <!-- Primary button: the one main action of a screen, e.g. "Save as v4". -->
+  <Style x:Key="PrimaryButtonStyle" TargetType="Button">
+    <Setter Property="Foreground" Value="#1A1206" />
+    <Setter Property="Background" Value="{StaticResource AccentBrush}" />
+    <Setter Property="FontWeight" Value="Bold" />
+    <Setter Property="FontSize" Value="14" />
+    <Setter Property="Padding" Value="16,0" />
+    <Setter Property="MinHeight" Value="44" />
+    <Setter Property="Cursor" Value="Hand" />
+    <Setter Property="Template">
+      <Setter.Value>
+        <ControlTemplate TargetType="Button">
+          <Border x:Name="Chrome" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding Background}"
+                  BorderThickness="1" CornerRadius="8" Padding="{TemplateBinding Padding}">
+            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+          </Border>
+          <ControlTemplate.Triggers>
+            <Trigger Property="IsMouseOver" Value="True">
+              <Setter TargetName="Chrome" Property="Background" Value="{StaticResource AccentTextBrush}" />
+            </Trigger>
+            <Trigger Property="IsKeyboardFocused" Value="True">
+              <Setter TargetName="Chrome" Property="BorderBrush" Value="{StaticResource TextBrush}" />
+            </Trigger>
+            <Trigger Property="IsEnabled" Value="False">
+              <Setter Property="Opacity" Value="0.45" />
             </Trigger>
           </ControlTemplate.Triggers>
         </ControlTemplate>

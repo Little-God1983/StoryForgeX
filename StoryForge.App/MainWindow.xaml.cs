@@ -20,10 +20,24 @@ public partial class MainWindow : Window
     public MainViewModel ViewModel { get; }
 
     private bool _flushedBeforeClose;
+    private bool _profileChangesDropped;
 
     // Settings save a moment after the last keystroke; closing first writes what is still waiting.
+    // Profile edits are saved only as a new version, so closing asks before dropping them.
     private async void OnClosing(object? sender, CancelEventArgs e)
     {
+        if (!_profileChangesDropped && ViewModel.HasUnsavedProfileChanges)
+        {
+            var answer = MessageBox.Show(this,
+                "Some profiles have changes that are not saved as a version yet.\n\nClose StoryForge X and lose them?",
+                "StoryForge X", MessageBoxButton.YesNo, MessageBoxImage.Warning, MessageBoxResult.No);
+            if (answer != MessageBoxResult.Yes)
+            {
+                e.Cancel = true;
+                return;
+            }
+            _profileChangesDropped = true;
+        }
         if (_flushedBeforeClose || !ViewModel.HasPendingSave)
         {
             return;

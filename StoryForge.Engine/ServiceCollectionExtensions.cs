@@ -1,9 +1,11 @@
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 using StoryForge.Client;
 using StoryForge.Engine.Data;
+using StoryForge.Engine.Profiles;
 using StoryForge.Engine.Providers;
 using StoryForge.Engine.Secrets;
 using StoryForge.Engine.Settings;
@@ -44,7 +46,9 @@ public static class ServiceCollectionExtensions
             db.UseSqlite(new SqliteConnectionStringBuilder { DataSource = path }.ToString());
         });
         services.AddHostedService<DatabaseInitializer>();
+        services.TryAddSingleton(TimeProvider.System);
         services.AddSingleton<SettingsStore>();
+        services.AddSingleton<ProfileStore>();
         services.AddSingleton<IProcessRunner, ProcessRunner>();
         services.AddSingleton<HttpMessageHandler>(_ => new SocketsHttpHandler { ConnectTimeout = TimeSpan.FromSeconds(3) });
         services.AddSingleton<ProviderChecks>();

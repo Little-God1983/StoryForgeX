@@ -24,4 +24,27 @@ public interface IStoryForgeClient
 
     /// <summary>Stores a secret in the OS credential store; null or empty removes it.</summary>
     Task SetSecretAsync(SecretKey key, string? value, CancellationToken cancellationToken = default);
+
+    /// <summary>All profiles, grouped by <see cref="ProfileKind"/> order, then by name.</summary>
+    Task<IReadOnlyList<ProfileSummary>> GetProfilesAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>Creates a profile with the starting content for its kind, saved as v1.</summary>
+    /// <exception cref="ArgumentException">The name is empty or already used by a profile of this kind.</exception>
+    Task<ProfileSummary> CreateProfileAsync(ProfileKind kind, string name, CancellationToken cancellationToken = default);
+
+    /// <summary>One version of a profile; null means the latest.</summary>
+    /// <exception cref="KeyNotFoundException">No such profile or version.</exception>
+    Task<ProfileVersion> GetProfileVersionAsync(Guid profileId, int? version = null, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Saves <paramref name="content"/> as the next version; earlier versions stay as they are.
+    /// Content equal to the latest version saves nothing and returns that version.
+    /// </summary>
+    Task<ProfileVersion> SaveProfileVersionAsync(Guid profileId, ProfileContent content, CancellationToken cancellationToken = default);
+
+    /// <summary>Copies a reference file into the engine's store; the returned path goes into a profile.</summary>
+    Task<string> ImportReferenceFileAsync(string sourcePath, CancellationToken cancellationToken = default);
+
+    /// <summary>The workflow files (*.json) in the ComfyUI templates folder, by name; empty if none is set.</summary>
+    Task<IReadOnlyList<string>> GetWorkflowTemplatesAsync(CancellationToken cancellationToken = default);
 }

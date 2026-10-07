@@ -21,6 +21,7 @@ public sealed partial class MainViewModel : ObservableObject
     private readonly IStoryForgeClient _client;
     private readonly ProviderStatusBoard _board;
     private readonly SettingsPageViewModel _settings;
+    private readonly ProfilesPageViewModel _profiles;
 
     /// <param name="saveDelay">How long Settings waits after the last edit before saving.</param>
     public MainViewModel(IStoryForgeClient client, ProviderStatusBoard board, TimeSpan saveDelay)
@@ -28,11 +29,12 @@ public sealed partial class MainViewModel : ObservableObject
         _client = client;
         _board = board;
         _settings = new SettingsPageViewModel(client, board, saveDelay);
+        _profiles = new ProfilesPageViewModel(client);
         NavItems =
         [
             new("New project", "M12 5v14M5 12h14", new NewProjectPageViewModel()),
             new("Result matrix", "M3 3h7v7H3zM14 3h7v7h-7zM3 14h7v7H3zM14 14h7v7h-7z", new ResultMatrixPageViewModel()),
-            new("Profiles", "M4 6h16M4 12h10M4 18h16", new ProfilesPageViewModel()),
+            new("Profiles", "M4 6h16M4 12h10M4 18h16", _profiles),
             new("Settings", "M12 9a3 3 0 1 0 0 6a3 3 0 1 0 0-6M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1L7 17M17 7l2.1-2.1", _settings),
         ];
         _selectedNavItem = NavItems[0];
@@ -59,13 +61,19 @@ public sealed partial class MainViewModel : ObservableObject
 
     public bool HasRecentProjects => RecentProjects.Count > 0;
 
+    /// <summary>What opening the current screen started (Profiles reads its lists); tests await it.</summary>
+    public Task PageShowing { get; private set; } = Task.CompletedTask;
+
     /// <summary>
-    /// Loads the settings and the recent projects, then checks the providers. The checks come last
+    /// Loads the settings, the profiles and the recent projects, then checks the providers. The checks come last
     /// because they take seconds (a CLI starting, a port timing out); the screens are filled first.
     /// </summary>
     public async Task LoadAsync()
     {
         await _settings.LoadAsync();
+        // Not awaited yet: the workflow templates folder may be on a network share that takes
+        // its timeout to answer, and the home screen and the checks should not wait for that.
+        var profiles = _profiles.LoadAsync();
 
         var projects = await _client.GetRecentProjectsAsync();
         RecentProjects.Clear();
@@ -84,12 +92,16 @@ public sealed partial class MainViewModel : ObservableObject
             // The app works without statuses; the pills keep saying "checking…" until a later check.
             Debug.WriteLine($"First provider check failed: {ex}");
         }
+        await profiles;
     }
 
     /// <summary>Writes anything still waiting to be saved; called when the window closes.</summary>
     public Task FlushAsync() => _settings.FlushAsync();
 
     public bool HasPendingSave => _settings.HasPendingSave;
+
+    /// <summary>Profile edits not saved as a version; closing asks before dropping them.</summary>
+    public bool HasUnsavedProfileChanges => _profiles.HasUnsavedChanges;
 
     private void ShowPills()
     {
@@ -116,6 +128,28 @@ public sealed partial class MainViewModel : ObservableObject
             oldValue.PropertyChanged -= OnPagePropertyChanged;
         }
         newValue.PropertyChanged += OnPagePropertyChanged;
+        if (newValue == _profiles)
+        {
+            PageShowing = ShowProfilesAsync();
+        }
+    }
+
+    /// <summary>
+    /// Workflow files may have been added, or the folder changed in Settings, since the screen was
+    /// last open. A folder typed a moment ago may still be waiting to be saved, so that goes first.
+    /// </summary>
+    private async Task ShowProfilesAsync()
+    {
+        try
+        {
+            await _settings.SavePendingAsync();
+        }
+        catch (Exception ex)
+        {
+            // Settings shows its own save error; Profiles still opens with what is saved.
+            Debug.WriteLine($"Saving settings before opening Profiles failed: {ex}");
+        }
+        await _profiles.ShowAsync();
     }
 
     // A page can change its own breadcrumb (Settings: "Settings / Paths & cache").
