@@ -208,6 +208,37 @@ public sealed class NewProjectPageTests
     }
 
     [Fact]
+    public async Task Another_aspect_switches_the_sizes_at_once_without_loading_anything()
+    {
+        // Nothing to wait for, so Start can never send sizes for the old aspect.
+        AddOneOfEach();
+        var page = await ShownPage();
+        FillBrief(page);
+        _client.ProfileLoadGate = new TaskCompletionSource().Task;   // any load would hang
+
+        page.Aspect = "9:16";
+
+        Assert.Equal(new GenerationSize("9:16", 768, 1344), page.StillSize.Value);
+        Assert.Equal("9:16", page.ClipSize.Value!.Aspect);
+        Assert.True(page.StartCommand.CanExecute(null));
+    }
+
+    [Fact]
+    public async Task A_profile_whose_content_failed_to_load_is_tried_again_when_the_screen_opens()
+    {
+        AddOneOfEach();
+        _client.ProfileLoadFailure = new InvalidOperationException("database is locked");
+        var page = await ShownPage();
+        Assert.Contains("database is locked", page.Error);
+
+        _client.ProfileLoadFailure = null;
+        await page.ShowAsync();
+
+        Assert.Equal(["bg3.wiki", "forgottenrealms.fandom.com"], page.ResearchSources);
+        Assert.Equal(30, page.MaxClip.Value);
+    }
+
+    [Fact]
     public async Task A_custom_size_is_possible_and_must_be_a_number()
     {
         AddOneOfEach();
@@ -376,6 +407,24 @@ public sealed class NewProjectPageTests
 
         Assert.IsType<ResultMatrixPageViewModel>(main.CurrentPage);
         Assert.Equal("Soul Coins – BG3 lore", ((ResultMatrixPageViewModel)main.CurrentPage).Name);
+    }
+
+    [Fact]
+    public async Task A_recent_project_that_cannot_be_opened_leaves_the_open_one_on_screen()
+    {
+        AddOneOfEach();
+        var main = new MainViewModel(_client, new ProviderStatusBoard(_client), TimeSpan.Zero);
+        await main.LoadAsync();
+        var page = (NewProjectPageViewModel)main.CurrentPage;
+        FillBrief(page);
+        await page.StartCommand.ExecuteAsync(null);
+        var matrix = (ResultMatrixPageViewModel)main.CurrentPage;
+
+        await matrix.OpenAsync(Guid.NewGuid());   // a stale entry
+
+        Assert.Equal("Soul Coins – BG3 lore", matrix.Name);
+        Assert.Equal("Projects / Soul Coins – BG3 lore", matrix.Breadcrumb);
+        Assert.NotNull(matrix.LoadError);
     }
 
     [Fact]

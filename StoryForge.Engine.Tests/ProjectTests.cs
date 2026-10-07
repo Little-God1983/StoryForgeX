@@ -181,6 +181,32 @@ public sealed class ProjectTests : IDisposable
         await Assert.ThrowsAsync<ArgumentException>(() => client.CreateProjectAsync(bad));
     }
 
+    [Theory]
+    [InlineData("portrait delivery")]
+    [InlineData("square delivery")]
+    [InlineData("language")]
+    [InlineData("gate")]
+    [InlineData("mode")]
+    [InlineData("consistency")]
+    [InlineData("assembly")]
+    public async Task Choices_that_do_not_fit_or_do_not_exist_are_refused(string field)
+    {
+        var client = await _engine.StartClientAsync();
+        var s = await ValidSetup(client);
+        var bad = field switch
+        {
+            "portrait delivery" => s with { Output = s.Output with { Width = 1080, Height = 1920 } },   // on a 16:9 project
+            "square delivery" => s with { Output = s.Output with { Width = 1080, Height = 1080 } },
+            "language" => s with { Output = s.Output with { Language = "  " } },
+            "gate" => s with { Gates = [(PipelineStage)42] },
+            "mode" => s with { Mode = (RunMode)7 },
+            "consistency" => s with { Stills = s.Stills with { Consistency = (Consistency)9 } },
+            _ => s with { Output = s.Output with { Assembly = (AssemblyTarget)5 } },
+        };
+
+        await Assert.ThrowsAsync<ArgumentException>(() => client.CreateProjectAsync(bad));
+    }
+
     [Fact]
     public async Task A_missing_model_means_the_providers_default()
     {

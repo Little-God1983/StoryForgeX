@@ -25,8 +25,6 @@ public sealed record StageChip(PipelineStage Stage, string Name, StageState Stat
 public sealed partial class ResultMatrixPageViewModel(IStoryForgeClient client)
     : PageViewModel("Result matrix", "Projects / Result matrix", "No project open. Start one from New project.")
 {
-    private const string BaseBreadcrumb = "Projects / Result matrix";
-
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(HasProject), nameof(Name), nameof(Summary), nameof(Stages))]
     private Project? _project;
@@ -62,9 +60,8 @@ public sealed partial class ResultMatrixPageViewModel(IStoryForgeClient client)
         }
         catch (Exception ex)
         {
+            // The project already on screen stays; the error shows above it.
             Debug.WriteLine($"Opening project {projectId} failed: {ex}");
-            Project = null;
-            Breadcrumb = BaseBreadcrumb;
             LoadError = $"Could not open the project: {ex.Message}";
         }
     }

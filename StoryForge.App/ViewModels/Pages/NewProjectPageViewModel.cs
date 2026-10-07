@@ -41,6 +41,9 @@ public sealed partial class NewProjectPageViewModel : PageViewModel
     private readonly List<Task> _pending = [];
     private readonly Dictionary<ProfileSlotViewModel, ProfileSummary?> _applied = [];
 
+    /// <summary>The picked profiles' content, kept so another aspect switches the sizes at once.</summary>
+    private readonly Dictionary<ProfileSlotViewModel, ProfileContent?> _content = [];
+
     public NewProjectPageViewModel(IStoryForgeClient client)
         : base("New project", "Projects / New project", "")
     {
@@ -216,11 +219,13 @@ public sealed partial class NewProjectPageViewModel : PageViewModel
         try
         {
             var profiles = await _client.GetProfilesAsync();
+            // Cleared before the pickers are filled: filling them loads content, which can fail
+            // and must be able to say so.
+            Error = null;
             foreach (var slot in Cards.SelectMany(c => c.Slots))
             {
                 slot.SetChoices(profiles);
             }
-            Error = null;
         }
         catch (Exception ex)
         {
@@ -319,7 +324,11 @@ public sealed partial class NewProjectPageViewModel : PageViewModel
         OnPropertyChanged(nameof(DeliveryChoices));
         var shortSide = Math.Min(SelectedDelivery.Value.Width, SelectedDelivery.Value.Height);
         SelectedDelivery = DeliveryChoices.FirstOrDefault(c => Math.Min(c.Value.Width, c.Value.Height) == shortSide) ?? DeliveryChoices[0];
-        Track(ReloadSizesAsync());
+        // From the content already loaded: nothing to wait for, so Start never sees sizes for the
+        // old aspect, and no late load can bring them back.
+        StillSize.UseDefaultFor(value, _content.GetValueOrDefault(ImageSlot));
+        ClipSize.UseDefaultFor(value, _content.GetValueOrDefault(VideoSlot));
+        UpdateMissing();
     }
 
     partial void OnNameChanged(string value) => UpdateMissing();
@@ -329,19 +338,6 @@ public sealed partial class NewProjectPageViewModel : PageViewModel
     partial void OnTargetSecondsChanged(int value) => UpdateMissing();
 
     partial void OnCustomTargetMinutesChanged(string value) => UpdateMissing();
-
-    private async Task ReloadSizesAsync()
-    {
-        var aspect = Aspect;
-        var image = await ContentOf(ImageSlot);
-        var video = await ContentOf(VideoSlot);
-        // Another aspect may have been picked while these loaded; its own reload applies then.
-        if (aspect == Aspect)
-        {
-            StillSize.UseDefaultFor(aspect, image);
-            ClipSize.UseDefaultFor(aspect, video);
-        }
-    }
 
     private void ApplyResearchProfile(ProfileContent? content)
     {
@@ -370,30 +366,33 @@ public sealed partial class NewProjectPageViewModel : PageViewModel
         {
             return;
         }
-        _applied[slot] = picked;
-        var content = await ContentOf(slot);
-        // Another profile may have been picked while this one loaded.
-        if (slot.Selected == picked)
+        var (loaded, content) = await LoadContentAsync(picked);
+        // A failed load leaves everything as it was and is tried again next time; another
+        // profile may also have been picked while this one loaded.
+        if (!loaded || slot.Selected != picked)
         {
-            apply(content);
+            return;
         }
+        _applied[slot] = picked;
+        _content[slot] = content;
+        apply(content);
     }
 
-    private async Task<ProfileContent?> ContentOf(ProfileSlotViewModel slot)
+    private async Task<(bool Loaded, ProfileContent? Content)> LoadContentAsync(ProfileSummary? picked)
     {
-        if (slot.Selected is not { } picked)
+        if (picked is null)
         {
-            return null;
+            return (true, null);
         }
         try
         {
-            return (await _client.GetProfileVersionAsync(picked.Id, picked.LatestVersion)).Content;
+            return (true, (await _client.GetProfileVersionAsync(picked.Id, picked.LatestVersion)).Content);
         }
         catch (Exception ex)
         {
             Debug.WriteLine($"Loading profile {picked.Id} failed: {ex}");
             Error = $"Could not load {picked.Name}: {ex.Message}";
-            return null;
+            return (false, null);
         }
     }
 

@@ -103,6 +103,17 @@ internal sealed class ProjectStore(IDbContextFactory<StoryForgeDbContext> contex
         Require(s.Brief.Length > 0, "A project needs a brief.");
         Require(Aspects.Contains(s.Output.Aspect), $"The aspect must be 16:9, 9:16 or 1:1, not \"{s.Output.Aspect}\".");
         Require(s.Output.Width >= 1 && s.Output.Height >= 1, "The delivery resolution must be at least 1 × 1.");
+        Require(s.Output.Aspect switch
+        {
+            "16:9" => s.Output.Width > s.Output.Height,
+            "9:16" => s.Output.Width < s.Output.Height,
+            _ => s.Output.Width == s.Output.Height,
+        }, $"A {s.Output.Width} × {s.Output.Height} delivery does not fit a {s.Output.Aspect} video.");
+        Require(s.Output.Language.Length > 0, "A project needs a language.");
+        Require(Enum.IsDefined(s.Output.Assembly), $"There is no assembly \"{s.Output.Assembly}\".");
+        Require(Enum.IsDefined(s.Stills.Consistency), $"There is no consistency \"{s.Stills.Consistency}\".");
+        Require(Enum.IsDefined(s.Mode), $"There is no run mode \"{s.Mode}\".");
+        Require(s.Gates.All(Enum.IsDefined), "A gate names a stage that does not exist.");
         Require(s.Output.TargetSeconds >= 1, "The target length must be at least 1 second.");
         Require(s.Stills.Size.Width >= 1 && s.Stills.Size.Height >= 1, "The still image size must be at least 1 × 1.");
         Require(s.Clips.Size.Width >= 1 && s.Clips.Size.Height >= 1, "The video clip size must be at least 1 × 1.");
