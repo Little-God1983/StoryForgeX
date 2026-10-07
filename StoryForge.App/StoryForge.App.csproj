@@ -7,6 +7,8 @@
     <!-- For DarkTitleBar's DwmSetWindowAttribute: [LibraryImport] source-generates its marshalling
          and that generated code needs unsafe (SYSLIB1062). No hand-written unsafe code exists. -->
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <!-- Cut from Assets/StoryForge-logo.png: the emblem without the lettering, which is unreadable at 16 px. -->
+    <ApplicationIcon>Assets\StoryForge.ico</ApplicationIcon>
   </PropertyGroup>
 
   <ItemGroup>
@@ -22,6 +24,8 @@
   <ItemGroup>
     <!-- IBM Plex, SIL Open Font License 1.1 (Assets/Fonts/OFL.txt). -->
     <Resource Include="Assets\Fonts\*.ttf" />
+    <!-- The window and taskbar icon; the exe carries the same file through ApplicationIcon. -->
+    <Resource Include="Assets\StoryForge.ico" />
   </ItemGroup>
 
 </Project>
