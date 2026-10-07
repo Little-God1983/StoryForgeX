@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Options;
 using StoryForge.Client;
+using StoryForge.Engine.Profiles;
 using StoryForge.Engine.Providers;
 using StoryForge.Engine.Secrets;
 using StoryForge.Engine.Settings;
@@ -11,6 +12,7 @@ internal sealed class InProcessStoryForgeClient(
     SettingsStore settings,
     ISecretStore secrets,
     ProviderChecks checks,
+    ProfileStore profiles,
     IOptions<StoryForgeEngineOptions> options) : IStoryForgeClient
 {
     public Task<IReadOnlyList<ProviderStatus>> GetProviderStatusesAsync(CancellationToken cancellationToken = default) =>
@@ -39,6 +41,24 @@ internal sealed class InProcessStoryForgeClient(
         secrets.Write(SecretName(key), value);
         return Task.CompletedTask;
     }
+
+    public Task<IReadOnlyList<ProfileSummary>> GetProfilesAsync(CancellationToken cancellationToken = default) =>
+        profiles.ListAsync(cancellationToken);
+
+    public Task<ProfileSummary> CreateProfileAsync(ProfileKind kind, string name, CancellationToken cancellationToken = default) =>
+        profiles.CreateAsync(kind, name, cancellationToken);
+
+    public Task<ProfileVersion> GetProfileVersionAsync(Guid profileId, int? version = null, CancellationToken cancellationToken = default) =>
+        profiles.GetVersionAsync(profileId, version, cancellationToken);
+
+    public Task<ProfileVersion> SaveProfileVersionAsync(Guid profileId, ProfileContent content, CancellationToken cancellationToken = default) =>
+        profiles.SaveVersionAsync(profileId, content, cancellationToken);
+
+    public Task<string> ImportReferenceFileAsync(string sourcePath, CancellationToken cancellationToken = default) =>
+        profiles.ImportReferenceFileAsync(sourcePath, cancellationToken);
+
+    public Task<IReadOnlyList<string>> GetWorkflowTemplatesAsync(CancellationToken cancellationToken = default) =>
+        profiles.GetWorkflowTemplatesAsync(cancellationToken);
 
     internal static string SecretName(SecretKey key) => key switch
     {

@@ -30,6 +30,10 @@
     <DataTemplate DataType="{x:Type pages:SettingsPageViewModel}">
       <views:SettingsView />
     </DataTemplate>
+
+    <DataTemplate DataType="{x:Type pages:ProfilesPageViewModel}">
+      <views:ProfilesView />
+    </DataTemplate>
   </Window.Resources>
 
   <Grid>

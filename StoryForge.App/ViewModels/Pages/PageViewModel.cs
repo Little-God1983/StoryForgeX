@@ -25,6 +25,3 @@ public sealed class NewProjectPageViewModel()
 
 public sealed class ResultMatrixPageViewModel()
     : PageViewModel("Result matrix", "Projects / Result matrix", "No project open. Start one from New project.");
-
-public sealed class ProfilesPageViewModel()
-    : PageViewModel("Profiles", "Settings / Profiles", "Profiles for every stage come with issue #3.");

@@ -1,3 +1,5 @@
+using System.IO;
+using System.Text.Json;
 using StoryForge.Client;
 
 namespace StoryForge.App.Tests;
@@ -95,5 +97,121 @@ internal sealed class FakeStoryForgeClient : IStoryForgeClient
             Secrets[key] = value;
         }
         return Task.CompletedTask;
+    }
+    public static ProfileContent EmptyContent { get; } = new("", [], "", "", "", "", [], null, [], [], null, "");
+
+    /// <summary>What a new profile of each kind starts with; tests replace it to suit them.</summary>
+    public Func<ProfileKind, ProfileContent> Starter { get; set; } = kind => kind switch
+    {
+        ProfileKind.Image => EmptyContent with
+        {
+            Provider = "ComfyUI",
+            PromptTemplate = "{shot.visual}",
+            Inputs = [new("prompt", ""), new("seed", "")],
+            Sizes = [new("16:9", 1344, 768), new("9:16", 768, 1344)],
+        },
+        ProfileKind.Video => EmptyContent with { Provider = "ComfyUI", Sizes = [new("16:9", 1280, 720)], MaxClipSeconds = 20 },
+        ProfileKind.Voice => EmptyContent with { Provider = "ComfyUI", Inputs = [new("text", "")] },
+        _ => EmptyContent with { Provider = "Claude CLI", Instructions = "Write it." },
+    };
+
+    private readonly List<(ProfileSummary Summary, List<ProfileVersion> Versions)> _profiles = [];
+
+    public List<string> WorkflowTemplates { get; } = [];
+
+    public int TemplateReads { get; private set; }
+
+    public int ProfileSaves { get; private set; }
+
+    /// <summary>When set, profile saves wait for it.</summary>
+    public Task? ProfileSaveGate { get; set; }
+
+    /// <summary>When set, profile saves throw it.</summary>
+    public Exception? ProfileSaveFailure { get; set; }
+
+    /// <summary>When set, loading a profile version throws it.</summary>
+    public Exception? ProfileLoadFailure { get; set; }
+
+    /// <summary>When set, loading a profile version waits for it.</summary>
+    public Task? ProfileLoadGate { get; set; }
+
+    /// <summary>When set, listing the profiles throws it.</summary>
+    public Exception? ProfileListFailure { get; set; }
+
+    public List<string> ImportedFiles { get; } = [];
+
+    public Task<IReadOnlyList<ProfileSummary>> GetProfilesAsync(CancellationToken cancellationToken = default) =>
+        ProfileListFailure is not null
+            ? Task.FromException<IReadOnlyList<ProfileSummary>>(ProfileListFailure)
+            : Task.FromResult<IReadOnlyList<ProfileSummary>>(
+                [.. _profiles.Select(p => p.Summary).OrderBy(p => p.Kind).ThenBy(p => p.Name, StringComparer.CurrentCultureIgnoreCase)]);
+
+    public Task<ProfileSummary> CreateProfileAsync(ProfileKind kind, string name, CancellationToken cancellationToken = default)
+    {
+        name = name.Trim();
+        if (name.Length == 0 || _profiles.Any(p => p.Summary.Kind == kind && p.Summary.Name.Equals(name, StringComparison.OrdinalIgnoreCase)))
+        {
+            return Task.FromException<ProfileSummary>(new ArgumentException($"There is already a profile called \"{name}\"."));
+        }
+        var summary = new ProfileSummary(Guid.NewGuid(), kind, name, 1);
+        _profiles.Add((summary, [new ProfileVersion(summary.Id, 1, DateTimeOffset.UtcNow, Starter(kind))]));
+        return Task.FromResult(summary);
+    }
+
+    /// <summary>Adds a profile with the given versions, as if saved in an earlier session.</summary>
+    public ProfileSummary AddProfile(ProfileKind kind, string name, params ProfileContent[] versions)
+    {
+        var summary = new ProfileSummary(Guid.NewGuid(), kind, name, versions.Length);
+        _profiles.Add((summary, [.. versions.Select((c, i) => new ProfileVersion(summary.Id, i + 1, DateTimeOffset.UtcNow, c))]));
+        return summary;
+    }
+
+    public async Task<ProfileVersion> GetProfileVersionAsync(Guid profileId, int? version = null, CancellationToken cancellationToken = default)
+    {
+        if (ProfileLoadFailure is not null)
+        {
+            throw ProfileLoadFailure;
+        }
+        if (ProfileLoadGate is not null)
+        {
+            await ProfileLoadGate;
+        }
+        var versions = _profiles.SingleOrDefault(p => p.Summary.Id == profileId).Versions ?? throw new KeyNotFoundException();
+        return (version is null ? versions[^1] : versions.SingleOrDefault(v => v.Version == version)) ?? throw new KeyNotFoundException();
+    }
+
+    public async Task<ProfileVersion> SaveProfileVersionAsync(Guid profileId, ProfileContent content, CancellationToken cancellationToken = default)
+    {
+        if (ProfileSaveFailure is not null)
+        {
+            throw ProfileSaveFailure;
+        }
+        if (ProfileSaveGate is not null)
+        {
+            await ProfileSaveGate;
+        }
+        var index = _profiles.FindIndex(p => p.Summary.Id == profileId);
+        var (summary, versions) = _profiles[index];
+        if (JsonSerializer.Serialize(versions[^1].Content) == JsonSerializer.Serialize(content))
+        {
+            return versions[^1];
+        }
+        ProfileSaves++;
+        var saved = new ProfileVersion(profileId, versions.Count + 1, DateTimeOffset.UtcNow, content);
+        versions.Add(saved);
+        _profiles[index] = (summary with { LatestVersion = saved.Version }, versions);
+        return saved;
+    }
+
+    public Task<string> ImportReferenceFileAsync(string sourcePath, CancellationToken cancellationToken = default)
+    {
+        ImportedFiles.Add(sourcePath);
+        return Task.FromResult(@"C:\Data\references\" + Path.GetFileName(sourcePath));
+    }
+
+    public Task<IReadOnlyList<string>> GetWorkflowTemplatesAsync(CancellationToken cancellationToken = default)
+    {
+        TemplateReads++;
+        return Task.FromResult<IReadOnlyList<string>>([.. WorkflowTemplates]);
     }
 }

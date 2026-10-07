@@ -71,5 +71,11 @@ public sealed class ProviderStatusBoardTests
         public Task<string> GetEffectiveProjectsFolderAsync(CancellationToken cancellationToken = default) => _inner.GetEffectiveProjectsFolderAsync(cancellationToken);
         public Task<bool> HasSecretAsync(SecretKey key, CancellationToken cancellationToken = default) => _inner.HasSecretAsync(key, cancellationToken);
         public Task SetSecretAsync(SecretKey key, string? value, CancellationToken cancellationToken = default) => _inner.SetSecretAsync(key, value, cancellationToken);
+        public Task<IReadOnlyList<ProfileSummary>> GetProfilesAsync(CancellationToken cancellationToken = default) => _inner.GetProfilesAsync(cancellationToken);
+        public Task<ProfileSummary> CreateProfileAsync(ProfileKind kind, string name, CancellationToken cancellationToken = default) => _inner.CreateProfileAsync(kind, name, cancellationToken);
+        public Task<ProfileVersion> GetProfileVersionAsync(Guid profileId, int? version = null, CancellationToken cancellationToken = default) => _inner.GetProfileVersionAsync(profileId, version, cancellationToken);
+        public Task<ProfileVersion> SaveProfileVersionAsync(Guid profileId, ProfileContent content, CancellationToken cancellationToken = default) => _inner.SaveProfileVersionAsync(profileId, content, cancellationToken);
+        public Task<string> ImportReferenceFileAsync(string sourcePath, CancellationToken cancellationToken = default) => _inner.ImportReferenceFileAsync(sourcePath, cancellationToken);
+        public Task<IReadOnlyList<string>> GetWorkflowTemplatesAsync(CancellationToken cancellationToken = default) => _inner.GetWorkflowTemplatesAsync(cancellationToken);
     }
 }

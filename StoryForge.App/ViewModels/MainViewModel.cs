@@ -21,6 +21,7 @@ public sealed partial class MainViewModel : ObservableObject
     private readonly IStoryForgeClient _client;
     private readonly ProviderStatusBoard _board;
     private readonly SettingsPageViewModel _settings;
+    private readonly ProfilesPageViewModel _profiles;
 
     /// <param name="saveDelay">How long Settings waits after the last edit before saving.</param>
     public MainViewModel(IStoryForgeClient client, ProviderStatusBoard board, TimeSpan saveDelay)
@@ -28,11 +29,12 @@ public sealed partial class MainViewModel : ObservableObject
         _client = client;
         _board = board;
         _settings = new SettingsPageViewModel(client, board, saveDelay);
+        _profiles = new ProfilesPageViewModel(client);
         NavItems =
         [
             new("New project", "M12 5v14M5 12h14", new NewProjectPageViewModel()),
             new("Result matrix", "M3 3h7v7H3zM14 3h7v7h-7zM3 14h7v7H3zM14 14h7v7h-7z", new ResultMatrixPageViewModel()),
-            new("Profiles", "M4 6h16M4 12h10M4 18h16", new ProfilesPageViewModel()),
+            new("Profiles", "M4 6h16M4 12h10M4 18h16", _profiles),
             new("Settings", "M12 9a3 3 0 1 0 0 6a3 3 0 1 0 0-6M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1L7 17M17 7l2.1-2.1", _settings),
         ];
         _selectedNavItem = NavItems[0];
@@ -60,12 +62,13 @@ public sealed partial class MainViewModel : ObservableObject
     public bool HasRecentProjects => RecentProjects.Count > 0;
 
     /// <summary>
-    /// Loads the settings and the recent projects, then checks the providers. The checks come last
+    /// Loads the settings, the profiles and the recent projects, then checks the providers. The checks come last
     /// because they take seconds (a CLI starting, a port timing out); the screens are filled first.
     /// </summary>
     public async Task LoadAsync()
     {
         await _settings.LoadAsync();
+        await _profiles.LoadAsync();
 
         var projects = await _client.GetRecentProjectsAsync();
         RecentProjects.Clear();
@@ -90,6 +93,9 @@ public sealed partial class MainViewModel : ObservableObject
     public Task FlushAsync() => _settings.FlushAsync();
 
     public bool HasPendingSave => _settings.HasPendingSave;
+
+    /// <summary>Profile edits not saved as a version; closing asks before dropping them.</summary>
+    public bool HasUnsavedProfileChanges => _profiles.HasUnsavedChanges;
 
     private void ShowPills()
     {
@@ -116,6 +122,11 @@ public sealed partial class MainViewModel : ObservableObject
             oldValue.PropertyChanged -= OnPagePropertyChanged;
         }
         newValue.PropertyChanged += OnPagePropertyChanged;
+        if (newValue == _profiles)
+        {
+            // Workflow files may have been added, or the folder changed in Settings, since.
+            _ = _profiles.RefreshTemplatesAsync();
+        }
     }
 
     // A page can change its own breadcrumb (Settings: "Settings / Paths & cache").
