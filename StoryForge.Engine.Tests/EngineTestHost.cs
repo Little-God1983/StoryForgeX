@@ -1,9 +1,13 @@
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
 using StoryForge.Client;
 using StoryForge.Engine.Data;
+using StoryForge.Engine.Pipeline;
+using StoryForge.Engine.Research;
+using StoryForge.Engine.Script;
 
 namespace StoryForge.Engine.Tests;
 
@@ -29,6 +33,9 @@ internal sealed class EngineTestHost : IDisposable
             options.DataDirectory = DataDirectory;
             options.CredentialTargetPrefix = CredentialPrefix;
         });
+        // No test ever reaches the real Claude CLI: the models refuse unless a test puts its own in.
+        builder.Services.Replace(ServiceDescriptor.Singleton<IResearchAgent>(new NoModel()));
+        builder.Services.Replace(ServiceDescriptor.Singleton<IScriptAgent>(new NoModel()));
         replace?.Invoke(builder.Services);
         var host = builder.Build();
         await host.StartAsync();
@@ -43,6 +50,21 @@ internal sealed class EngineTestHost : IDisposable
     public async Task<IStoryForgeClient> StartClientAsync(Action<IServiceCollection>? replace = null) =>
         (await StartAsync(replace)).Services.GetRequiredService<IStoryForgeClient>();
 
+    /// <summary>A model that is not there: every stage that asks it fails with a plain reason.</summary>
+    private sealed class NoModel : IResearchAgent, IScriptAgent
+    {
+        private const string Reason = "No model in this test.";
+
+        public Task<ResearchAnswer> AskAsync(ResearchRequest request, ResearchAnswer? previous, IReadOnlyList<string> problems,
+            IProgress<ActivityLine> activity, CancellationToken cancellationToken) => throw new StageFailedException(Reason);
+
+        public Task<ScriptAnswer<ScriptOutput>> WriteAsync(ScriptRequest request, string? session, IReadOnlyList<string> problems,
+            IProgress<ActivityLine> activity, CancellationToken cancellationToken) => throw new StageFailedException(Reason);
+
+        public Task<ScriptAnswer<ScriptPart>> RewriteAsync(ScriptRequest request, IReadOnlyList<Segment> script, string segmentId, string? session,
+            IReadOnlyList<string> problems, IProgress<ActivityLine> activity, CancellationToken cancellationToken) => throw new StageFailedException(Reason);
+    }
+
     public void Dispose()
     {
         foreach (var host in _hosts)
@@ -53,6 +75,9 @@ internal sealed class EngineTestHost : IDisposable
             {
                 client.SetSecretAsync(key, null).GetAwaiter().GetResult();
             }
+            // Stopped, not just disposed: a stage the test started (the script after an approved
+            // fact sheet, say) must be done writing before the folder goes.
+            host.StopAsync(TimeSpan.FromSeconds(10)).GetAwaiter().GetResult();
             host.Dispose();
         }
         SqliteConnection.ClearAllPools();

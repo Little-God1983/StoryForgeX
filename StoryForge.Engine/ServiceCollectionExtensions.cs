@@ -10,6 +10,7 @@ using StoryForge.Engine.Profiles;
 using StoryForge.Engine.Projects;
 using StoryForge.Engine.Providers;
 using StoryForge.Engine.Research;
+using StoryForge.Engine.Script;
 using StoryForge.Engine.Secrets;
 using StoryForge.Engine.Settings;
 
@@ -58,9 +59,14 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<HttpMessageHandler>(_ => new SocketsHttpHandler { ConnectTimeout = TimeSpan.FromSeconds(3) });
         services.AddSingleton<ProviderChecks>();
         services.AddSingleton<IStreamingProcess, StreamingProcess>();
+        services.AddSingleton<ClaudeCli>();
         services.AddSingleton<IResearchAgent, ClaudeCliResearchAgent>();
         services.AddSingleton<IStageWorker, ResearchStage>();
         services.AddSingleton<FactSheets>();
+        services.AddSingleton<CellReader>();
+        services.AddSingleton<IScriptAgent, ClaudeCliScriptAgent>();
+        services.AddSingleton<IStageWorker, ScriptStage>();
+        services.AddSingleton<ScriptSegments>();
         // After DatabaseInitializer: hosted services start in order, and the runner reads the database.
         services.AddSingleton<PipelineRunner>();
         services.AddHostedService(provider => provider.GetRequiredService<PipelineRunner>());

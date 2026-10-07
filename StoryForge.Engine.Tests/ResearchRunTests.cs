@@ -201,8 +201,6 @@ public sealed class ResearchRunTests : IDisposable
 
         Assert.Equal(StageState.Approved, (await client.GetProjectAsync(project.Id)).Stages[0].State);
         Assert.Equal(1, (await client.GetFactSheetAsync(project.Id)).ApprovedVersion);
-        // The script stage does not exist yet, so the project says where it really stands.
-        Assert.Equal("Research: approved", (await client.GetRecentProjectsAsync()).Single().StatusLine);
         await Assert.ThrowsAsync<KeyNotFoundException>(() => client.ApproveAsync(project.Id, PipelineStage.Research, 7));
     }
 
@@ -441,6 +439,7 @@ public sealed class ResearchRunTests : IDisposable
         var host = await _engine.StartAsync(services =>
         {
             services.Replace(ServiceDescriptor.Singleton<Providers.IStreamingProcess>(claude));
+            services.Replace(ServiceDescriptor.Singleton<IResearchAgent, ClaudeCliResearchAgent>());
             services.Configure<StoryForgeEngineOptions>(o => o.ResearchServerPath = server);
         });
         File.WriteAllText(server, "");

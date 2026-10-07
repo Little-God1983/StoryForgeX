@@ -1,0 +1,318 @@
+<UserControl x:Class="StoryForge.App.Views.ScriptMatrixView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:client="clr-namespace:StoryForge.Client;assembly=StoryForge.Client"
+             xmlns:script="clr-namespace:StoryForge.App.ViewModels.Script"
+             xmlns:views="clr-namespace:StoryForge.App.Views"
+             mc:Ignorable="d"
+             d:DataContext="{d:DesignInstance Type=script:ScriptMatrixViewModel}">
+
+  <UserControl.Resources>
+    <BooleanToVisibilityConverter x:Key="Visible" />
+
+    <Style x:Key="SmallButtonStyle" TargetType="Button" BasedOn="{StaticResource SecondaryButtonStyle}">
+      <Setter Property="FontSize" Value="12" />
+      <Setter Property="Padding" Value="10,5" />
+    </Style>
+
+    <Style x:Key="BarStyle" TargetType="Border">
+      <Setter Property="CornerRadius" Value="10" />
+      <Setter Property="Padding" Value="16,10" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="Margin" Value="0,0,0,14" />
+    </Style>
+
+    <!-- A Script cell: coloured by state as in the canvas legend; the selected one has a light border. -->
+    <Style x:Key="CellStyle" TargetType="Button">
+      <Setter Property="Background" Value="{StaticResource CardBrush}" />
+      <Setter Property="Foreground" Value="{StaticResource TextMutedBrush}" />
+      <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}" />
+      <Setter Property="FontSize" Value="12" />
+      <Setter Property="Cursor" Value="Hand" />
+      <Setter Property="FocusVisualStyle" Value="{StaticResource RoundedFocusVisual}" />
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="Button">
+            <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="1" CornerRadius="8" Padding="10,0" Height="44">
+              <ContentPresenter VerticalAlignment="Center" />
+            </Border>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+      <Style.Triggers>
+        <DataTrigger Binding="{Binding State}" Value="{x:Static client:StageState.NeedsReview}">
+          <Setter Property="Background" Value="{StaticResource PillOffBackBrush}" />
+          <Setter Property="Foreground" Value="{StaticResource PillOffTextBrush}" />
+        </DataTrigger>
+        <DataTrigger Binding="{Binding State}" Value="{x:Static client:StageState.Approved}">
+          <Setter Property="Background" Value="{StaticResource PillOkBackBrush}" />
+          <Setter Property="Foreground" Value="{StaticResource PillOkTextBrush}" />
+        </DataTrigger>
+        <DataTrigger Binding="{Binding State}" Value="{x:Static client:StageState.Running}">
+          <Setter Property="Background" Value="#172536" />
+          <Setter Property="Foreground" Value="#6FB3EE" />
+        </DataTrigger>
+        <DataTrigger Binding="{Binding State}" Value="{x:Static client:StageState.Failed}">
+          <Setter Property="Background" Value="{StaticResource PillErrorBackBrush}" />
+          <Setter Property="Foreground" Value="{StaticResource PillErrorTextBrush}" />
+        </DataTrigger>
+        <DataTrigger Binding="{Binding State}" Value="{x:Static client:StageState.Stale}">
+          <Setter Property="Background" Value="{StaticResource NoteBackBrush}" />
+          <Setter Property="Foreground" Value="#B4A8F5" />
+        </DataTrigger>
+        <DataTrigger Binding="{Binding IsSelected}" Value="True">
+          <Setter Property="BorderBrush" Value="{StaticResource TextBrush}" />
+        </DataTrigger>
+      </Style.Triggers>
+    </Style>
+
+    <!-- A cell of a stage that comes later: not started. -->
+    <Style x:Key="LaterCellStyle" TargetType="Border">
+      <Setter Property="Background" Value="{StaticResource CardBrush}" />
+      <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="CornerRadius" Value="8" />
+      <Setter Property="Height" Value="44" />
+      <Setter Property="Margin" Value="6,0,0,0" />
+    </Style>
+  </UserControl.Resources>
+
+  <DockPanel>
+    <!-- Where the script stands: one bar per state. -->
+    <StackPanel DockPanel.Dock="Top">
+      <Border Style="{StaticResource BarStyle}" Background="{StaticResource AccentSoftBrush}" BorderBrush="#5A4520"
+              Visibility="{Binding IsReview, Converter={StaticResource Visible}}">
+        <DockPanel>
+          <Button DockPanel.Dock="Right" Content="Approve remaining" Style="{StaticResource PrimaryButtonStyle}" MinHeight="36" FontSize="13"
+                  Margin="8,0,0,0" Command="{Binding ApproveRemainingCommand}" />
+          <Button DockPanel.Dock="Right" Content="Regenerate script" Style="{StaticResource SecondaryButtonStyle}" Command="{Binding RegenerateScriptCommand}" />
+          <TextBlock Text="Gate: Script" FontSize="14" FontWeight="SemiBold" Foreground="{StaticResource AccentTextBrush}" VerticalAlignment="Center" Margin="0,0,14,0" />
+          <TextBlock VerticalAlignment="Center" FontSize="13" Foreground="#D9C9A8" TextWrapping="Wrap">
+            <Run Text="{Binding ApprovedSummary, Mode=OneWay}" /> The run goes on when every segment is approved.
+          </TextBlock>
+        </DockPanel>
+      </Border>
+
+      <Border Style="{StaticResource BarStyle}" Background="{StaticResource PillOkBackBrush}" BorderBrush="#2F5A50"
+              Visibility="{Binding IsApproved, Converter={StaticResource Visible}}">
+        <DockPanel>
+          <Button DockPanel.Dock="Right" Content="Regenerate script" Style="{StaticResource SecondaryButtonStyle}" Command="{Binding RegenerateScriptCommand}" />
+          <TextBlock Text="Script approved" FontSize="14" FontWeight="SemiBold" Foreground="{StaticResource PillOkTextBrush}" VerticalAlignment="Center" Margin="0,0,14,0" />
+          <TextBlock VerticalAlignment="Center" FontSize="13" Foreground="{StaticResource TextSoftBrush}" TextWrapping="Wrap"
+                     Text="Every segment is approved. A change to one makes a new version that needs approving again." />
+        </DockPanel>
+      </Border>
+
+      <Border Style="{StaticResource BarStyle}" Background="#172536" BorderBrush="#2B4A6B"
+              Visibility="{Binding IsRunning, Converter={StaticResource Visible}}">
+        <DockPanel>
+          <Button DockPanel.Dock="Right" Content="Cancel" Style="{StaticResource SecondaryButtonStyle}" Command="{Binding CancelCommand}" />
+          <TextBlock Text="Writing the script" FontSize="14" FontWeight="SemiBold" Foreground="#6FB3EE" VerticalAlignment="Center" Margin="0,0,14,0" />
+          <TextBlock VerticalAlignment="Center" FontSize="13" Foreground="#BCD3EA" TextWrapping="Wrap"
+                     Text="From the approved fact sheet and nothing else. The segments appear here when it is done." />
+        </DockPanel>
+      </Border>
+
+      <Border Style="{StaticResource BarStyle}" Background="{StaticResource PillErrorBackBrush}" BorderBrush="#6B3A33"
+              Visibility="{Binding IsFailed, Converter={StaticResource Visible}}">
+        <DockPanel>
+          <Button DockPanel.Dock="Right" Content="Retry" Style="{StaticResource PrimaryButtonStyle}" MinHeight="36" FontSize="13"
+                  Background="{StaticResource ErrorTextBrush}" Command="{Binding RegenerateScriptCommand}" />
+          <StackPanel VerticalAlignment="Center" Margin="0,0,14,0">
+            <TextBlock Text="Script failed" FontSize="14" FontWeight="SemiBold" Foreground="{StaticResource PillErrorTextBrush}" />
+            <TextBlock Text="{Binding Error}" FontSize="13" Foreground="#E2C1BB" TextWrapping="Wrap" Margin="0,2,0,0"
+                       AutomationProperties.AutomationId="ScriptError" />
+          </StackPanel>
+        </DockPanel>
+      </Border>
+
+      <Border Style="{StaticResource BarStyle}" Background="{StaticResource CardBrush}" BorderBrush="{StaticResource BorderBrush}"
+              Visibility="{Binding IsNotStarted, Converter={StaticResource Visible}}">
+        <TextBlock VerticalAlignment="Center" FontSize="13" Foreground="{StaticResource TextSoftBrush}" TextWrapping="Wrap"
+                   Text="The script is written as soon as the fact sheet is approved: one row per segment." />
+      </Border>
+
+      <Border Background="{StaticResource PillErrorBackBrush}" CornerRadius="8" Padding="12,8" Margin="0,0,0,14"
+              Visibility="{Binding ActionError, Converter={views:NullToCollapsedConverter}}">
+        <TextBlock Text="{Binding ActionError}" Foreground="{StaticResource PillErrorTextBrush}" FontSize="13" TextWrapping="Wrap" />
+      </Border>
+
+      <StackPanel Margin="0,0,0,12" Visibility="{Binding HasSegments, Converter={StaticResource Visible}}">
+        <TextBlock Text="{Binding LengthSummary}" FontFamily="{StaticResource MonoFont}" FontSize="12" Foreground="{StaticResource TextMutedBrush}"
+                   AutomationProperties.AutomationId="ScriptLength" />
+        <TextBlock Text="{Binding LengthNote}" FontSize="13" Foreground="{StaticResource AccentTextBrush}" TextWrapping="Wrap" Margin="0,4,0,0"
+                   Visibility="{Binding LengthNote, Converter={views:NullToCollapsedConverter}}" />
+      </StackPanel>
+    </StackPanel>
+
+    <Grid>
+      <!-- While the whole script is written (or failed before it had segments): the log. -->
+      <DockPanel Visibility="{Binding ShowsLog, Converter={StaticResource Visible}}">
+        <TextBlock DockPanel.Dock="Top" Text="WHAT THE SCRIPT WRITER DID" Style="{StaticResource SectionLabelStyle}" Margin="0,0,0,8" />
+        <Border Background="{StaticResource CardBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="10" Padding="16,12">
+          <ScrollViewer VerticalScrollBarVisibility="Auto">
+            <ItemsControl ItemsSource="{Binding Activity}" ItemTemplate="{StaticResource ActivityLineTemplate}"
+                          FontFamily="{StaticResource MonoFont}" FontSize="13" Focusable="False" AutomationProperties.Name="Script activity" />
+          </ScrollViewer>
+        </Border>
+      </DockPanel>
+
+      <!-- The matrix: one row per segment, and the selected segment on the right. -->
+      <Grid Visibility="{Binding HasSegments, Converter={StaticResource Visible}}">
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="*" />
+          <ColumnDefinition Width="400" />
+        </Grid.ColumnDefinitions>
+
+        <DockPanel Grid.Column="0" Margin="0,0,20,0">
+          <Grid DockPanel.Dock="Top" Margin="4,0,4,8">
+            <Grid.ColumnDefinitions>
+              <ColumnDefinition Width="220" />
+              <ColumnDefinition Width="*" />
+              <ColumnDefinition Width="*" />
+              <ColumnDefinition Width="*" />
+              <ColumnDefinition Width="*" />
+              <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+            <TextBlock Grid.Column="0" Text="SEGMENT" Style="{StaticResource SectionLabelStyle}" />
+            <TextBlock Grid.Column="1" Text="SCRIPT" Style="{StaticResource SectionLabelStyle}" />
+            <TextBlock Grid.Column="2" Text="VOICE" Style="{StaticResource SectionLabelStyle}" Margin="6,0,0,0" />
+            <TextBlock Grid.Column="3" Text="BOARD" Style="{StaticResource SectionLabelStyle}" Margin="6,0,0,0" />
+            <TextBlock Grid.Column="4" Text="STILL" Style="{StaticResource SectionLabelStyle}" Margin="6,0,0,0" />
+            <TextBlock Grid.Column="5" Text="CLIP" Style="{StaticResource SectionLabelStyle}" Margin="6,0,0,0" />
+          </Grid>
+          <ScrollViewer VerticalScrollBarVisibility="Auto">
+            <ItemsControl ItemsSource="{Binding Rows}" Focusable="False" AutomationProperties.Name="Segments">
+              <ItemsControl.ItemTemplate>
+                <DataTemplate DataType="{x:Type script:SegmentRowViewModel}">
+                  <Grid Margin="4,0,4,6">
+                    <Grid.ColumnDefinitions>
+                      <ColumnDefinition Width="220" />
+                      <ColumnDefinition Width="*" />
+                      <ColumnDefinition Width="*" />
+                      <ColumnDefinition Width="*" />
+                      <ColumnDefinition Width="*" />
+                      <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <StackPanel Grid.Column="0" VerticalAlignment="Center" Margin="6,0,10,0">
+                      <TextBlock Text="{Binding Id}" FontFamily="{StaticResource MonoFont}" FontSize="13" FontWeight="SemiBold" />
+                      <TextBlock Text="{Binding Title}" FontSize="12" Foreground="{StaticResource TextMutedBrush}" TextTrimming="CharacterEllipsis" ToolTip="{Binding Title}" />
+                    </StackPanel>
+                    <Button Grid.Column="1" Style="{StaticResource CellStyle}" Command="{Binding SelectCommand}" AutomationProperties.Name="{Binding}">
+                      <DockPanel>
+                        <TextBlock DockPanel.Dock="Right" Text="{Binding VersionText}" FontFamily="{StaticResource MonoFont}" />
+                        <TextBlock Text="{Binding StateText}" FontWeight="SemiBold" />
+                      </DockPanel>
+                    </Button>
+                    <Border Grid.Column="2" Style="{StaticResource LaterCellStyle}" />
+                    <Border Grid.Column="3" Style="{StaticResource LaterCellStyle}" />
+                    <Border Grid.Column="4" Style="{StaticResource LaterCellStyle}" />
+                    <Border Grid.Column="5" Style="{StaticResource LaterCellStyle}" />
+                  </Grid>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+          </ScrollViewer>
+        </DockPanel>
+
+        <!-- The selected segment. -->
+        <Border Grid.Column="1" Background="{StaticResource NavBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="10" Padding="20"
+                Visibility="{Binding HasSelection, Converter={StaticResource Visible}}">
+          <DockPanel>
+            <StackPanel DockPanel.Dock="Bottom" Margin="0,14,0,0" Visibility="{Binding IsNotEditing, Converter={StaticResource Visible}}">
+              <UniformGrid Columns="2">
+                <Button Content="Approve" Style="{StaticResource PrimaryButtonStyle}" Margin="0,0,4,0" Background="#58B7A6" Command="{Binding ApproveSegmentCommand}" />
+                <Button Content="Regenerate" Style="{StaticResource SecondaryButtonStyle}" MinHeight="44" Margin="4,0,0,0" Command="{Binding RegenerateSegmentCommand}" />
+              </UniformGrid>
+              <Button Content="Edit text…" Style="{StaticResource SecondaryButtonStyle}" MinHeight="44" Margin="0,8,0,0" Command="{Binding StartEditCommand}" />
+            </StackPanel>
+
+            <ScrollViewer VerticalScrollBarVisibility="Auto">
+              <StackPanel>
+                <TextBlock Text="SELECTED" Style="{StaticResource SectionLabelStyle}" />
+                <TextBlock Text="{Binding SelectedHeading}" FontSize="18" FontWeight="Bold" Margin="0,2,0,0" />
+                <TextBlock Text="{Binding SelectedStatus}" FontSize="13" Foreground="{StaticResource TextSoftBrush}" Margin="0,2,0,10" />
+                <TextBlock Text="{Binding SelectedError}" FontSize="13" Foreground="{StaticResource ErrorTextBrush}" TextWrapping="Wrap" Margin="0,0,0,10"
+                           Visibility="{Binding SelectedError, Converter={views:NullToCollapsedConverter}}" />
+
+                <ItemsControl ItemsSource="{Binding SelectedVersions}" Focusable="False" Margin="0,0,0,12" AutomationProperties.Name="Versions">
+                  <ItemsControl.ItemsPanel>
+                    <ItemsPanelTemplate>
+                      <WrapPanel />
+                    </ItemsPanelTemplate>
+                  </ItemsControl.ItemsPanel>
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate DataType="{x:Type script:SegmentVersionChoice}">
+                      <Button Content="{Binding Label}" Margin="0,0,6,6" FontFamily="{StaticResource MonoFont}"
+                              Command="{Binding DataContext.ShowVersionCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                              CommandParameter="{Binding Version}">
+                        <Button.Style>
+                          <Style TargetType="Button" BasedOn="{StaticResource SmallButtonStyle}">
+                            <Style.Triggers>
+                              <DataTrigger Binding="{Binding IsShown}" Value="True">
+                                <Setter Property="Background" Value="{StaticResource AccentSoftBrush}" />
+                                <Setter Property="BorderBrush" Value="{StaticResource AccentBrush}" />
+                                <Setter Property="Foreground" Value="{StaticResource AccentTextBrush}" />
+                              </DataTrigger>
+                            </Style.Triggers>
+                          </Style>
+                        </Button.Style>
+                      </Button>
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+
+                <StackPanel Visibility="{Binding IsNotEditing, Converter={StaticResource Visible}}">
+                  <TextBlock Text="Narration" Style="{StaticResource FieldLabelStyle}" />
+                  <Border Background="{StaticResource CardBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="8" Padding="12,10">
+                    <TextBlock Text="{Binding SelectedNarration}" FontSize="14" TextWrapping="Wrap" LineHeight="21" AutomationProperties.AutomationId="Narration" />
+                  </Border>
+                </StackPanel>
+
+                <StackPanel Visibility="{Binding IsEditing, Converter={StaticResource Visible}}">
+                  <TextBlock Text="Title" Style="{StaticResource FieldLabelStyle}" />
+                  <TextBox Text="{Binding EditTitle, UpdateSourceTrigger=PropertyChanged}" FontSize="14" Padding="10,6" Margin="0,0,0,10" AutomationProperties.Name="Segment title" />
+                  <TextBlock Text="Narration" Style="{StaticResource FieldLabelStyle}" />
+                  <TextBox Text="{Binding EditNarration, UpdateSourceTrigger=PropertyChanged}" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="160"
+                           VerticalContentAlignment="Top" FontSize="14" Padding="10,8" AutomationProperties.Name="Segment narration" />
+                  <TextBlock FontSize="12" Foreground="{StaticResource TextMutedBrush}" TextWrapping="Wrap" Margin="0,8,0,12"
+                             Text="Saving makes a new version; the facts the segment lists stay as they are." />
+                  <UniformGrid Columns="2">
+                    <Button Content="Save" Style="{StaticResource PrimaryButtonStyle}" Margin="0,0,4,0" Command="{Binding SaveEditCommand}" />
+                    <Button Content="Cancel" Style="{StaticResource SecondaryButtonStyle}" MinHeight="44" Margin="4,0,0,0" Command="{Binding CancelEditCommand}" />
+                  </UniformGrid>
+                </StackPanel>
+
+                <TextBlock Text="Facts used" Style="{StaticResource FieldLabelStyle}" Margin="0,14,0,6" />
+                <ItemsControl ItemsSource="{Binding SelectedFacts}" Focusable="False" AutomationProperties.Name="Facts used">
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate DataType="{x:Type script:UsedFact}">
+                      <DockPanel Margin="0,0,0,6">
+                        <TextBlock DockPanel.Dock="Left" Width="40" Text="{Binding Id}" FontFamily="{StaticResource MonoFont}" FontSize="12" Foreground="{StaticResource TextSoftBrush}" />
+                        <TextBlock DockPanel.Dock="Left" Width="26" Text="{Binding Weight}" FontFamily="{StaticResource MonoFont}" FontSize="12">
+                          <TextBlock.Style>
+                            <Style TargetType="TextBlock">
+                              <Setter Property="Foreground" Value="{StaticResource TextMutedBrush}" />
+                              <Style.Triggers>
+                                <DataTrigger Binding="{Binding IsMust}" Value="True">
+                                  <Setter Property="Foreground" Value="{StaticResource AccentTextBrush}" />
+                                </DataTrigger>
+                              </Style.Triggers>
+                            </Style>
+                          </TextBlock.Style>
+                        </TextBlock>
+                        <TextBlock Text="{Binding Statement}" FontSize="12" Foreground="{StaticResource TextSoftBrush}" TextWrapping="Wrap" />
+                      </DockPanel>
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+              </StackPanel>
+            </ScrollViewer>
+          </DockPanel>
+        </Border>
+      </Grid>
+    </Grid>
+  </DockPanel>
+</UserControl>

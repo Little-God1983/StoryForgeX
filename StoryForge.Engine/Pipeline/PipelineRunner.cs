@@ -12,6 +12,8 @@ namespace StoryForge.Engine.Pipeline;
 /// Runs stages, one job at a time for all projects (one GPU, one model loaded at a time). A queued
 /// stage shows as running at once. After a stage, the run waits at its gate or goes on with the
 /// next stage that exists; the stages arrive one issue at a time (Research in #5, Script in #6, …).
+/// A stage with a result per segment (the script) keeps each segment in a cell of its own: it is
+/// approved when every segment is, and a single segment can be written again on its own.
 /// </summary>
 internal sealed class PipelineRunner(
     IDbContextFactory<StoryForgeDbContext> contextFactory,
@@ -21,10 +23,13 @@ internal sealed class PipelineRunner(
 {
     internal const string ClosedWhileRunning = "StoryForge was closed while this stage ran. Retry runs it again.";
 
+    /// <summary>The key of a stage's own cell; a segment's cell has the segment's id.</summary>
+    private const string Whole = "";
+
     private readonly Dictionary<PipelineStage, IStageWorker> _workers = workers.ToDictionary(w => w.Stage);
     private readonly Channel<Job> _queue = Channel.CreateUnbounded<Job>(new UnboundedChannelOptions { SingleReader = true });
     private readonly Lock _lock = new();
-    private readonly Dictionary<(Guid, PipelineStage), Job> _jobs = [];
+    private readonly Dictionary<(Guid, PipelineStage, string), Job> _jobs = [];
     private readonly CancellationTokenSource _stopping = new();
     private Task _loop = Task.CompletedTask;
 
@@ -43,22 +48,31 @@ internal sealed class PipelineRunner(
         await _loop.WaitAsync(cancellationToken);
     }
 
-    /// <summary>Whether the stage is running or waiting to run for this project.</summary>
-    public bool IsBusy(Guid projectId, PipelineStage stage)
+    /// <summary>Whether the stage (or with <paramref name="key"/>, that segment) is running or waiting to run.</summary>
+    public bool IsBusy(Guid projectId, PipelineStage stage, string key = Whole)
     {
         lock (_lock)
         {
-            return _jobs.ContainsKey((projectId, stage));
+            return _jobs.ContainsKey((projectId, stage, key));
         }
     }
 
-    /// <summary>What a running stage has done so far; null when it is not running.</summary>
-    public IReadOnlyList<ActivityLine>? LiveActivity(Guid projectId, PipelineStage stage)
+    /// <summary>Whether the stage or any of its segments is running or waiting to run.</summary>
+    public bool IsAnyBusy(Guid projectId, PipelineStage stage)
+    {
+        lock (_lock)
+        {
+            return _jobs.Keys.Any(k => k.Item1 == projectId && k.Item2 == stage);
+        }
+    }
+
+    /// <summary>What a running stage (or segment) has done so far; null when it is not running.</summary>
+    public IReadOnlyList<ActivityLine>? LiveActivity(Guid projectId, PipelineStage stage, string key = Whole)
     {
         Job? job;
         lock (_lock)
         {
-            _jobs.TryGetValue((projectId, stage), out job);
+            _jobs.TryGetValue((projectId, stage, key), out job);
         }
         return job is null ? null : Snapshot(job.Activity);
     }
@@ -70,7 +84,7 @@ internal sealed class PipelineRunner(
         var next = project.Stages.FirstOrDefault(s => s.State != StageState.Approved);
         if (next is { State: StageState.NotStarted } && _workers.ContainsKey(next.Stage))
         {
-            await EnqueueAsync(projectId, next.Stage, cancellationToken);
+            await EnqueueAsync(projectId, next.Stage, Whole, cancellationToken);
         }
     }
 
@@ -81,16 +95,42 @@ internal sealed class PipelineRunner(
         {
             throw new InvalidOperationException($"The {stage} stage is not built yet.");
         }
-        await EnqueueAsync(projectId, stage, cancellationToken);
+        if (!IsBusy(projectId, stage) && IsAnyBusy(projectId, stage))
+        {
+            throw new InvalidOperationException($"A segment of the {stage} stage is being written. Try again when it is done.");
+        }
+        await EnqueueAsync(projectId, stage, Whole, cancellationToken);
     }
 
-    public async Task CancelAsync(Guid projectId, PipelineStage stage)
+    /// <summary>Writes one segment of a stage again; the stage's other segments stay as they are.</summary>
+    public async Task RegenerateSegmentAsync(Guid projectId, PipelineStage stage, string key, CancellationToken cancellationToken)
+    {
+        await projects.GetAsync(projectId, cancellationToken);
+        if (!_workers.TryGetValue(stage, out var worker) || worker is not ISegmentWorker)
+        {
+            throw new InvalidOperationException($"The {stage} stage has no segments to write one by one.");
+        }
+        if (IsBusy(projectId, stage))
+        {
+            throw new InvalidOperationException($"The {stage} stage is being written. Try again when it is done.");
+        }
+        await using (var db = await contextFactory.CreateDbContextAsync(cancellationToken))
+        {
+            if (!await db.Cells.AnyAsync(c => c.ProjectId == projectId && c.Stage == stage && c.Key == key, cancellationToken))
+            {
+                throw new KeyNotFoundException($"The {stage} stage has no segment {key}.");
+            }
+        }
+        await EnqueueAsync(projectId, stage, key, cancellationToken);
+    }
+
+    public async Task CancelAsync(Guid projectId, PipelineStage stage, string key = Whole)
     {
         Job? job;
         var waiting = false;
         lock (_lock)
         {
-            if (_jobs.TryGetValue((projectId, stage), out job) && !job.Started)
+            if (_jobs.TryGetValue((projectId, stage, key), out job) && !job.Started)
             {
                 // Still waiting its turn: it goes back now, not after the run before it, and the
                 // queue skips it when it gets there. It stays listed until it is back, so a new run
@@ -127,9 +167,9 @@ internal sealed class PipelineRunner(
         }
         await using (var db = await contextFactory.CreateDbContextAsync(cancellationToken))
         {
-            var cell = await db.Cells.FirstOrDefaultAsync(c => c.ProjectId == projectId && c.Stage == stage && c.Key == "", cancellationToken)
+            var cell = await db.Cells.FirstOrDefaultAsync(c => c.ProjectId == projectId && c.Stage == stage && c.Key == Whole, cancellationToken)
                 ?? throw new KeyNotFoundException($"The {stage} stage of project {projectId} has no result yet.");
-            if (!await db.CellVersions.AnyAsync(v => v.ProjectId == projectId && v.Stage == stage && v.Key == "" && v.Version == version, cancellationToken))
+            if (!await db.CellVersions.AnyAsync(v => v.ProjectId == projectId && v.Stage == stage && v.Key == Whole && v.Version == version, cancellationToken))
             {
                 throw new KeyNotFoundException($"The {stage} stage has no version {version}.");
             }
@@ -142,6 +182,28 @@ internal sealed class PipelineRunner(
         }
         Publish(new StageUpdate(projectId, stage, StageState.Approved));
         await ContinueAsync(projectId, stage, cancellationToken);
+    }
+
+    /// <summary>
+    /// After segments changed outside a run (approved, edited, switched to another version): the
+    /// stage is approved when every segment is, else it waits for review; once approved, the run goes on.
+    /// </summary>
+    public async Task SettleAsync(Guid projectId, PipelineStage stage, CancellationToken cancellationToken)
+    {
+        StageState? settled;
+        await using (var db = await contextFactory.CreateDbContextAsync(cancellationToken))
+        {
+            settled = await SettleAsync(db, projectId, stage, cancellationToken);
+            await db.SaveChangesAsync(cancellationToken);
+        }
+        if (settled is { } state)
+        {
+            Publish(new StageUpdate(projectId, stage, state));
+            if (state == StageState.Approved)
+            {
+                await ContinueAsync(projectId, stage, cancellationToken);
+            }
+        }
     }
 
     /// <summary>Tells the app about a change made outside a run, e.g. an edited fact sheet.</summary>
@@ -167,23 +229,23 @@ internal sealed class PipelineRunner(
         var next = stage + 1;
         if (Enum.IsDefined(next) && _workers.ContainsKey(next))
         {
-            await EnqueueAsync(projectId, next, cancellationToken);
+            await EnqueueAsync(projectId, next, Whole, cancellationToken);
         }
     }
 
-    private async Task EnqueueAsync(Guid projectId, PipelineStage stage, CancellationToken cancellationToken)
+    private async Task EnqueueAsync(Guid projectId, PipelineStage stage, string key, CancellationToken cancellationToken)
     {
-        var job = new Job(projectId, stage, CancellationTokenSource.CreateLinkedTokenSource(_stopping.Token));
+        var job = new Job(projectId, stage, key, CancellationTokenSource.CreateLinkedTokenSource(_stopping.Token));
         lock (_lock)
         {
-            if (!_jobs.TryAdd((projectId, stage), job))
+            if (!_jobs.TryAdd((projectId, stage, key), job))
             {
                 return;   // already running or waiting to run
             }
         }
         try
         {
-            await ChangeCellAsync(projectId, stage, cell =>
+            await ChangeCellAsync(projectId, stage, key, cell =>
             {
                 job.PreviousState = cell.State;
                 job.PreviousError = cell.Error;
@@ -199,7 +261,7 @@ internal sealed class PipelineRunner(
             job.Queued.TrySetResult();
             throw;
         }
-        Publish(new StageUpdate(projectId, stage, StageState.Running));
+        Publish(Update(job, StageState.Running));
         _queue.Writer.TryWrite(job);
         job.Queued.TrySetResult();
     }
@@ -218,7 +280,7 @@ internal sealed class PipelineRunner(
                 {
                     // Recording the outcome failed (the database busy or the disk full). The cell may
                     // say Running until the next start marks it; the next job must still run.
-                    Debug.WriteLine($"{job.Stage} of {job.ProjectId}: recording the outcome failed: {ex}");
+                    Debug.WriteLine($"{job.Stage} {job.Key} of {job.ProjectId}: recording the outcome failed: {ex}");
                     Forget(job);
                 }
             }
@@ -238,7 +300,7 @@ internal sealed class PipelineRunner(
             {
                 activity.Add(line);
             }
-            Publish(new StageUpdate(job.ProjectId, job.Stage, StageState.Running, line));
+            Publish(Update(job, StageState.Running, line));
         });
         lock (_lock)
         {
@@ -254,12 +316,28 @@ internal sealed class PipelineRunner(
         {
             job.Cancel.Token.ThrowIfCancellationRequested();
             var project = await projects.GetAsync(job.ProjectId, job.Cancel.Token);
-            var result = await _workers[job.Stage].RunAsync(new StageContext(project, reporter), job.Cancel.Token);
+            var context = new StageContext(project, reporter);
             var gated = IsGated(project.Setup, job.Stage);
-            var state = await StoreAsync(job, result, gated, Snapshot(activity));
-            Forget(job);
-            Publish(new StageUpdate(job.ProjectId, job.Stage, state));
-            goOn = !gated;
+            if (job.Key == Whole)
+            {
+                var result = await _workers[job.Stage].RunAsync(context, job.Cancel.Token);
+                var state = await StoreAsync(job, result, gated, Snapshot(activity));
+                Forget(job);
+                Publish(Update(job, state));
+                goOn = !gated;
+            }
+            else
+            {
+                var result = await ((ISegmentWorker)_workers[job.Stage]).RunSegmentAsync(context, job.Key, job.Cancel.Token);
+                var (state, stageState) = await StoreSegmentAsync(job, result, gated, Snapshot(activity));
+                Forget(job);
+                Publish(Update(job, state));
+                if (stageState is { } settled)
+                {
+                    Publish(new StageUpdate(job.ProjectId, job.Stage, settled));
+                    goOn = settled == StageState.Approved;
+                }
+            }
         }
         catch (OperationCanceledException) when (job.Cancel.IsCancellationRequested)
         {
@@ -278,7 +356,7 @@ internal sealed class PipelineRunner(
         }
         catch (Exception ex)
         {
-            Debug.WriteLine($"{job.Stage} of {job.ProjectId} failed: {ex}");
+            Debug.WriteLine($"{job.Stage} {job.Key} of {job.ProjectId} failed: {ex}");
             await FailAsync(job, $"Something went wrong: {ex.Message}", Snapshot(activity));
         }
         finally
@@ -309,41 +387,111 @@ internal sealed class PipelineRunner(
     private async Task<StageState> StoreAsync(Job job, StageResult result, bool gated, List<ActivityLine> activity)
     {
         await using var db = await contextFactory.CreateDbContextAsync(CancellationToken.None);
-        var cell = await db.Cells.FirstAsync(c => c.ProjectId == job.ProjectId && c.Stage == job.Stage && c.Key == "");
-        var version = 1 + (await db.CellVersions
-            .Where(v => v.ProjectId == job.ProjectId && v.Stage == job.Stage && v.Key == "")
-            .MaxAsync(v => (int?)v.Version) ?? 0);
-        db.CellVersions.Add(new CellVersionEntry
-        {
-            ProjectId = job.ProjectId,
-            Stage = job.Stage,
-            Version = version,
-            Origin = VersionOrigin.Generated,
-            InputHash = result.InputHash,
-            SchemaVersion = result.SchemaVersion,
-            OutputJson = result.OutputJson,
-            CreatedAt = clock.GetUtcNow(),
-        });
-        cell.CurrentVersion = version;
+        var cell = await db.Cells.FirstAsync(c => c.ProjectId == job.ProjectId && c.Stage == job.Stage && c.Key == Whole);
+        AddVersion(db, cell, await NextVersionAsync(db, job.ProjectId, job.Stage, Whole), result.OutputJson, result.SchemaVersion, result.InputHash);
         cell.State = gated ? StageState.NeedsReview : StageState.Approved;
-        cell.ApprovedVersion = gated ? cell.ApprovedVersion : version;
+        cell.ApprovedVersion = gated ? cell.ApprovedVersion : cell.CurrentVersion;
         cell.Error = null;
         cell.ActivityJson = StoredJson.Write(activity);
+
+        if (result.Segments is { } segments)
+        {
+            // A new whole result replaces the segments: each gets the new text as its next version
+            // (to review again when the stage is gated); segments the new result lacks are gone.
+            var existing = await db.Cells.Where(c => c.ProjectId == job.ProjectId && c.Stage == job.Stage && c.Key != Whole).ToListAsync();
+            db.Cells.RemoveRange(existing.Where(c => segments.All(s => s.Key != c.Key)));
+            foreach (var segment in segments)
+            {
+                var child = existing.FirstOrDefault(c => c.Key == segment.Key);
+                if (child is null)
+                {
+                    child = new CellEntry { ProjectId = job.ProjectId, Stage = job.Stage, Key = segment.Key };
+                    db.Cells.Add(child);
+                }
+                AddVersion(db, child, await NextVersionAsync(db, job.ProjectId, job.Stage, segment.Key), segment.OutputJson, segment.SchemaVersion, segment.InputHash);
+                child.State = gated ? StageState.NeedsReview : StageState.Approved;
+                child.ApprovedVersion = gated ? null : child.CurrentVersion;
+                child.Error = null;
+                child.UpdatedAt = clock.GetUtcNow();
+            }
+        }
         await TouchAsync(db, cell, CancellationToken.None);
         await db.SaveChangesAsync(CancellationToken.None);
         return cell.State;
     }
 
+    /// <summary>Stores a rewritten segment and settles the stage; the stage's new state, if it changed.</summary>
+    private async Task<(StageState Segment, StageState? Stage)> StoreSegmentAsync(Job job, CellResult result, bool gated, List<ActivityLine> activity)
+    {
+        await using var db = await contextFactory.CreateDbContextAsync(CancellationToken.None);
+        var cell = await db.Cells.FirstAsync(c => c.ProjectId == job.ProjectId && c.Stage == job.Stage && c.Key == job.Key);
+        AddVersion(db, cell, await NextVersionAsync(db, job.ProjectId, job.Stage, job.Key), result.OutputJson, result.SchemaVersion, result.InputHash);
+        cell.State = gated ? StageState.NeedsReview : StageState.Approved;
+        cell.ApprovedVersion = gated ? cell.ApprovedVersion : cell.CurrentVersion;
+        cell.Error = null;
+        cell.ActivityJson = StoredJson.Write(activity);
+        await TouchAsync(db, cell, CancellationToken.None);
+        var stage = await SettleAsync(db, job.ProjectId, job.Stage, CancellationToken.None);
+        await db.SaveChangesAsync(CancellationToken.None);
+        return (cell.State, stage);
+    }
+
+    /// <summary>
+    /// The stage's state from its segments: approved when every segment is, else waiting for review.
+    /// A stage that is running or failed is left as it is. Returns the new state when it changed.
+    /// </summary>
+    private async Task<StageState?> SettleAsync(StoryForgeDbContext db, Guid projectId, PipelineStage stage, CancellationToken cancellationToken)
+    {
+        var cell = await db.Cells.FirstOrDefaultAsync(c => c.ProjectId == projectId && c.Stage == stage && c.Key == Whole, cancellationToken);
+        if (cell is null || cell.State is not (StageState.NeedsReview or StageState.Approved))
+        {
+            return null;
+        }
+        // Tracked cells first: changes made in this context are not in the database yet.
+        var segments = await db.Cells.Where(c => c.ProjectId == projectId && c.Stage == stage && c.Key != Whole).ToListAsync(cancellationToken);
+        var state = segments.Count > 0 && segments.All(s => s.State == StageState.Approved) ? StageState.Approved : StageState.NeedsReview;
+        if (state == cell.State)
+        {
+            return null;
+        }
+        cell.State = state;
+        cell.ApprovedVersion = state == StageState.Approved ? cell.CurrentVersion : cell.ApprovedVersion;
+        cell.UpdatedAt = clock.GetUtcNow();
+        return state;
+    }
+
+    private void AddVersion(StoryForgeDbContext db, CellEntry cell, int version, string outputJson, int schemaVersion, string inputHash)
+    {
+        db.CellVersions.Add(new CellVersionEntry
+        {
+            ProjectId = cell.ProjectId,
+            Stage = cell.Stage,
+            Key = cell.Key,
+            Version = version,
+            Origin = VersionOrigin.Generated,
+            InputHash = inputHash,
+            SchemaVersion = schemaVersion,
+            OutputJson = outputJson,
+            CreatedAt = clock.GetUtcNow(),
+        });
+        cell.CurrentVersion = version;
+    }
+
+    private static async Task<int> NextVersionAsync(StoryForgeDbContext db, Guid projectId, PipelineStage stage, string key) =>
+        1 + (await db.CellVersions
+            .Where(v => v.ProjectId == projectId && v.Stage == stage && v.Key == key)
+            .MaxAsync(v => (int?)v.Version) ?? 0);
+
     private async Task FailAsync(Job job, string reason, List<ActivityLine> activity)
     {
-        await ChangeCellAsync(job.ProjectId, job.Stage, cell =>
+        await ChangeCellAsync(job.ProjectId, job.Stage, job.Key, cell =>
         {
             cell.State = StageState.Failed;
             cell.Error = reason;
             cell.ActivityJson = StoredJson.Write(activity);
         }, CancellationToken.None);
         Forget(job);
-        Publish(new StageUpdate(job.ProjectId, job.Stage, StageState.Failed));
+        Publish(Update(job, StageState.Failed));
     }
 
     /// <summary>
@@ -352,24 +500,24 @@ internal sealed class PipelineRunner(
     /// </summary>
     private async Task RestoreAsync(Job job)
     {
-        await ChangeCellAsync(job.ProjectId, job.Stage, cell =>
+        await ChangeCellAsync(job.ProjectId, job.Stage, job.Key, cell =>
         {
             cell.State = job.PreviousState;
             cell.Error = job.PreviousError;
             cell.ActivityJson = job.PreviousActivity;
         }, CancellationToken.None);
         Forget(job);
-        Publish(new StageUpdate(job.ProjectId, job.Stage, job.PreviousState));
+        Publish(Update(job, job.PreviousState));
     }
 
     /// <summary>Changes the cell (made on first use), and the project's "last changed" with it.</summary>
-    private async Task ChangeCellAsync(Guid projectId, PipelineStage stage, Action<CellEntry> change, CancellationToken cancellationToken)
+    private async Task ChangeCellAsync(Guid projectId, PipelineStage stage, string key, Action<CellEntry> change, CancellationToken cancellationToken)
     {
         await using var db = await contextFactory.CreateDbContextAsync(cancellationToken);
-        var cell = await db.Cells.FirstOrDefaultAsync(c => c.ProjectId == projectId && c.Stage == stage && c.Key == "", cancellationToken);
+        var cell = await db.Cells.FirstOrDefaultAsync(c => c.ProjectId == projectId && c.Stage == stage && c.Key == key, cancellationToken);
         if (cell is null)
         {
-            cell = new CellEntry { ProjectId = projectId, Stage = stage, State = StageState.NotStarted };
+            cell = new CellEntry { ProjectId = projectId, Stage = stage, Key = key, State = StageState.NotStarted };
             db.Cells.Add(cell);
         }
         change(cell);
@@ -406,12 +554,15 @@ internal sealed class PipelineRunner(
         lock (_lock)
         {
             // Only this job: a new run of the same stage may already be queued under the key.
-            if (_jobs.TryGetValue((job.ProjectId, job.Stage), out var current) && current == job)
+            if (_jobs.TryGetValue((job.ProjectId, job.Stage, job.Key), out var current) && current == job)
             {
-                _jobs.Remove((job.ProjectId, job.Stage));
+                _jobs.Remove((job.ProjectId, job.Stage, job.Key));
             }
         }
     }
+
+    private static StageUpdate Update(Job job, StageState state, ActivityLine? line = null) =>
+        new(job.ProjectId, job.Stage, state, line, job.Key == Whole ? null : job.Key);
 
     private static List<ActivityLine> Snapshot(List<ActivityLine> activity)
     {
@@ -421,11 +572,14 @@ internal sealed class PipelineRunner(
         }
     }
 
-    private sealed class Job(Guid projectId, PipelineStage stage, CancellationTokenSource cancel)
+    private sealed class Job(Guid projectId, PipelineStage stage, string key, CancellationTokenSource cancel)
     {
         public Guid ProjectId { get; } = projectId;
 
         public PipelineStage Stage { get; } = stage;
+
+        /// <summary>"" for the stage as a whole, else the segment.</summary>
+        public string Key { get; } = key;
 
         public CancellationTokenSource Cancel { get; } = cancel;
 

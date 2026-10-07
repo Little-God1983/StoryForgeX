@@ -1,12 +1,9 @@
-using System.ComponentModel;
 using System.Globalization;
 using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.Options;
 using StoryForge.Client;
 using StoryForge.Engine.Pipeline;
-using StoryForge.Engine.Providers;
-using StoryForge.Engine.Settings;
 
 namespace StoryForge.Engine.Research;
 
@@ -17,8 +14,7 @@ namespace StoryForge.Engine.Research;
 /// are still in front of it.
 /// </summary>
 internal sealed class ClaudeCliResearchAgent(
-    SettingsStore settings,
-    IStreamingProcess process,
+    ClaudeCli claude,
     IOptions<StoryForgeEngineOptions> options,
     TimeProvider clock) : IResearchAgent
 {
@@ -40,24 +36,11 @@ internal sealed class ClaudeCliResearchAgent(
         IProgress<ActivityLine> activity,
         CancellationToken cancellationToken)
     {
-        var cli = (await settings.LoadAsync(cancellationToken)).ClaudeCli;
-        if (string.IsNullOrWhiteSpace(cli.Executable))
-        {
-            throw new StageFailedException("Claude CLI is not set up: set its executable in Settings.");
-        }
         var server = options.Value.EffectiveResearchServerPath;
         if (!File.Exists(server))
         {
             throw new StageFailedException($"The research server is missing ({server}). Reinstall StoryForge X.");
         }
-
-        // One folder per project: a correction resumes the session, and Claude CLI finds sessions by folder.
-        var folder = Path.Combine(options.Value.DataDirectory, "research", request.ProjectId.ToString("N"));
-        Directory.CreateDirectory(folder);
-        var mcpConfig = Path.Combine(folder, "mcp.json");
-        var systemPrompt = Path.Combine(folder, "system.md");
-        await File.WriteAllTextAsync(mcpConfig, McpConfig(server, request.Sources), cancellationToken);
-        await File.WriteAllTextAsync(systemPrompt, SystemPrompt, cancellationToken);
 
         var pages = new ResearchPages();
         if (previous is not null)
@@ -68,84 +51,31 @@ internal sealed class ClaudeCliResearchAgent(
         var session = previous?.Session;
         activity.Report(new ActivityLine(clock.GetUtcNow(), ActivityKind.Model, session is null ? "researching the brief" : "fixing the fact sheet"));
 
-        StreamingRunResult result;
-        try
-        {
-            result = await process.RunAsync(
-                cli.Executable.Trim(),
-                Arguments(mcpConfig, systemPrompt, request.Model, session),
-                folder,
+        var reply = await claude.AskAsync(
+            new ClaudeCall(
+                // One folder per project: a correction resumes the session, and Claude CLI finds sessions by folder.
+                Path.Combine(options.Value.DataDirectory, "research", request.ProjectId.ToString("N")),
+                SystemPrompt,
                 session is null ? FirstPrompt(request) : CorrectionPrompt(problems),
-                stream.Read,
-                TimeSpan.FromSeconds(Math.Max(60, cli.TimeoutSeconds)),
-                cancellationToken);
-        }
-        catch (ExecutableNotFoundException)
-        {
-            throw new StageFailedException($"Claude CLI was not found ({cli.Executable.Trim()}). Check its executable in Settings.");
-        }
-        catch (TimeoutException)
-        {
-            throw new StageFailedException(
-                $"The research took longer than {Math.Max(60, cli.TimeoutSeconds) / 60.0:0.#} min and was stopped. Settings › Claude CLI sets the time limit.");
-        }
-        catch (ArgumentException ex)
-        {
-            throw new StageFailedException(ex.Message);
-        }
-        catch (Win32Exception ex)
-        {
-            throw new StageFailedException($"Claude CLI could not be started: {ex.Message}");
-        }
-
-        if (stream.Output is null)
-        {
-            // Only then: a server still "pending" at the start may have connected later and done its work.
-            if (stream.ServerProblem is { } serverProblem)
-            {
-                throw new StageFailedException($"The research server did not start ({serverProblem}), so nothing could be searched.");
-            }
-            var reason = stream.Error ?? FirstLine(result.StandardError);
-            throw new StageFailedException(result.ExitCode == 0 && stream.Error is null
-                ? "Claude CLI finished without a fact sheet."
-                : $"Claude CLI stopped: {(reason.Length > 0 ? reason : $"exit code {result.ExitCode}")}");
-        }
-        if (stream.CostUsd is { } cost)
+                ResearchSchema.Json,
+                request.Model,
+                session,
+                McpConfig(server, request.Sources),
+                [ClaudeStream.SearchTool, ClaudeStream.FetchTool],
+                "the research"),
+            stream,
+            cancellationToken);
+        if (reply.CostUsd is { } cost)
         {
             activity.Report(new ActivityLine(clock.GetUtcNow(), ActivityKind.Model,
                 string.Create(CultureInfo.InvariantCulture, $"answer received · {pages.Count} pages read · ${cost:0.00}")));
         }
-        return new ResearchAnswer(stream.Session, Read(stream.Output.Value), pages);
+        return new ResearchAnswer(reply.Session, Read(reply.Output), pages);
     }
 
-    internal static IReadOnlyList<string> Arguments(string mcpConfig, string systemPrompt, string model, string? session)
-    {
-        List<string> arguments =
-        [
-            "-p",
-            "--output-format", "stream-json",
-            "--verbose",
-            // No built-in tools at all: the research server is the only way to the web.
-            "--tools", "",
-            "--strict-mcp-config",
-            "--mcp-config", mcpConfig,
-            "--allowedTools", $"{ClaudeStream.SearchTool},{ClaudeStream.FetchTool}",
-            "--permission-prompts", "none",
-            // None of the user's settings, so none of their hooks or plugins run in the research.
-            "--setting-sources", "",
-            "--system-prompt-file", systemPrompt,
-            "--json-schema", ResearchSchema.Json,
-        ];
-        if (!string.IsNullOrWhiteSpace(model))
-        {
-            arguments.AddRange(["--model", model.Trim()]);
-        }
-        if (session is not null)
-        {
-            arguments.AddRange(["--resume", session]);
-        }
-        return arguments;
-    }
+    /// <summary>What research runs with: the research server's two tools and nothing else.</summary>
+    internal static IReadOnlyList<string> Arguments(string mcpConfig, string systemPrompt, string model, string? session) =>
+        ClaudeCli.Arguments(mcpConfig, [ClaudeStream.SearchTool, ClaudeStream.FetchTool], systemPrompt, ResearchSchema.Json, model, session);
 
     internal static string McpConfig(string server, IReadOnlyList<string> sources) =>
         JsonSerializer.Serialize(new
@@ -217,7 +147,4 @@ internal sealed class ClaudeCliResearchAgent(
             return null;   // FactSheetCheck reports it as "no fact sheet", and the model gets to try again
         }
     }
-
-    private static string FirstLine(string text) =>
-        text.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).FirstOrDefault() ?? "";
 }

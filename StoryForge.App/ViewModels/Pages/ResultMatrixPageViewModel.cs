@@ -3,6 +3,7 @@ using System.Globalization;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using StoryForge.App.ViewModels.Research;
+using StoryForge.App.ViewModels.Script;
 using StoryForge.Client;
 
 namespace StoryForge.App.ViewModels.Pages;
@@ -20,8 +21,8 @@ public sealed record StageChip(PipelineStage Stage, string Name, StageState Stat
     /// <summary>"Research", "Research – review": the chip's text, as on the canvas.</summary>
     public string Label => State is StageState.NotStarted or StageState.Approved ? Name : $"{Name} – {StateText}";
 
-    /// <summary>Only stages with a screen of their own open one; the others arrive with their issues.</summary>
-    public bool CanOpen => Stage == PipelineStage.Research;
+    /// <summary>Research opens the fact sheet, Script the matrix; the others arrive with their issues.</summary>
+    public bool CanOpen => Stage is PipelineStage.Research or PipelineStage.Script;
 
     // What screen readers announce.
     public override string ToString() => $"{Name}: {StateText}";
@@ -29,7 +30,7 @@ public sealed record StageChip(PipelineStage Stage, string Name, StageState Stat
 
 /// <summary>
 /// The Result matrix screen for the open project: its header (name, aspect, resolution, target
-/// length, stage chips) and the matrix of shots by stage, empty until the script fills it (#6 on).
+/// length, stage chips) and the matrix: one row per segment of the script, with its cells by stage.
 /// The Research chip opens the fact sheet in the same place.
 /// </summary>
 public sealed partial class ResultMatrixPageViewModel : PageViewModel
@@ -74,6 +75,13 @@ public sealed partial class ResultMatrixPageViewModel : PageViewModel
 
     public bool ShowsMatrix => HasProject && FactSheet is null;
 
+    /// <summary>The script of the open project: the matrix's rows and the panel of the selected segment.</summary>
+    [ObservableProperty]
+    private ScriptMatrixViewModel? _script;
+
+    /// <summary>The script's first load after a project opened; tests await it.</summary>
+    public Task ScriptLoading { get; private set; } = Task.CompletedTask;
+
     /// <summary>What reacting to the last engine update started; tests await it.</summary>
     public Task Updating { get; private set; } = Task.CompletedTask;
 
@@ -83,6 +91,8 @@ public sealed partial class ResultMatrixPageViewModel : PageViewModel
         Project = project;
         FactSheet = null;
         Breadcrumb = $"Projects / {project.Setup.Name}";
+        Script = new ScriptMatrixViewModel(_client, project.Id);
+        ScriptLoading = Script.LoadAsync();
     }
 
     /// <summary>Opens a project from Recent projects.</summary>
@@ -122,9 +132,13 @@ public sealed partial class ResultMatrixPageViewModel : PageViewModel
     [RelayCommand]
     private async Task OpenStageAsync(StageChip chip)
     {
-        if (chip.CanOpen)
+        if (chip.Stage == PipelineStage.Research)
         {
             await ShowFactSheetAsync();
+        }
+        else if (chip.Stage == PipelineStage.Script)
+        {
+            ShowMatrix();
         }
     }
 
@@ -145,6 +159,8 @@ public sealed partial class ResultMatrixPageViewModel : PageViewModel
             return;
         }
         var sheet = new FactSheetViewModel(_client, Project.Id, Project.Setup.ResearchSources, _openUrl);
+        // "Approve and continue": back to the matrix, where the script is being written.
+        sheet.Approved += (_, _) => ShowMatrix();
         FactSheet = sheet;
         Breadcrumb = $"Projects / {Project.Setup.Name} / Research";
         await sheet.LoadAsync();
@@ -156,13 +172,17 @@ public sealed partial class ResultMatrixPageViewModel : PageViewModel
         {
             return;
         }
-        if (Project.Stages.FirstOrDefault(s => s.Stage == update.Stage)?.State != update.State)
+        if (update.Key is null && Project.Stages.FirstOrDefault(s => s.Stage == update.Stage)?.State != update.State)
         {
             Project = Project with { Stages = [.. Project.Stages.Select(s => s.Stage == update.Stage ? s with { State = update.State } : s)] };
         }
         if (FactSheet is not null)
         {
             await FactSheet.ReceiveAsync(update);
+        }
+        if (Script is not null)
+        {
+            await Script.ReceiveAsync(update);
         }
     }
 

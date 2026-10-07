@@ -93,4 +93,34 @@ public interface IStoryForgeClient
     /// <exception cref="ArgumentException">The wording is empty or the weight is outside 1 to 10.</exception>
     /// <exception cref="InvalidOperationException">The stage is running.</exception>
     Task<FactSheetView> ChangeFactAsync(Guid projectId, int version, string factId, FactChange change, CancellationToken cancellationToken = default);
+
+    /// <summary>The Script stage: its state, its segments with their versions, and the facts they use.</summary>
+    /// <exception cref="KeyNotFoundException">No such project.</exception>
+    Task<ScriptView> GetScriptAsync(Guid projectId, CancellationToken cancellationToken = default);
+
+    /// <summary>Approves one version of a segment. When every segment is approved, the run goes on.</summary>
+    /// <exception cref="KeyNotFoundException">No such project, segment or version.</exception>
+    /// <exception cref="InvalidOperationException">The segment or the script is being written.</exception>
+    Task ApproveSegmentAsync(Guid projectId, string segmentId, int version, CancellationToken cancellationToken = default);
+
+    /// <summary>"Approve remaining": approves every segment as it stands, and the run goes on.</summary>
+    /// <exception cref="KeyNotFoundException">No such project, or no script yet.</exception>
+    /// <exception cref="InvalidOperationException">The script or a segment is being written.</exception>
+    Task ApproveScriptAsync(Guid projectId, CancellationToken cancellationToken = default);
+
+    /// <summary>Writes one segment again, keeping the rest of the script. The earlier versions stay.</summary>
+    /// <exception cref="KeyNotFoundException">No such project or segment.</exception>
+    /// <exception cref="InvalidOperationException">The script is being written.</exception>
+    Task RegenerateSegmentAsync(Guid projectId, string segmentId, CancellationToken cancellationToken = default);
+
+    /// <summary>Your own wording of a segment, saved as its next version, to review and approve like any other.</summary>
+    /// <exception cref="KeyNotFoundException">No such project or segment.</exception>
+    /// <exception cref="ArgumentException">The title or the narration is empty.</exception>
+    /// <exception cref="InvalidOperationException">The segment or the script is being written.</exception>
+    Task EditSegmentAsync(Guid projectId, string segmentId, string title, string narration, CancellationToken cancellationToken = default);
+
+    /// <summary>Switches a segment back (or forward) to one of its versions, which then needs approving.</summary>
+    /// <exception cref="KeyNotFoundException">No such project, segment or version.</exception>
+    /// <exception cref="InvalidOperationException">The segment or the script is being written.</exception>
+    Task SelectSegmentVersionAsync(Guid projectId, string segmentId, int version, CancellationToken cancellationToken = default);
 }

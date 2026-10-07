@@ -16,7 +16,8 @@ internal static class ServerAnswers
 /// Reads Claude CLI's stream-json output as it comes: every search and page read becomes a line of
 /// activity, every page read is kept for checking quotes, and the last line carries the answer.
 /// </summary>
-internal sealed partial class ClaudeStream(ResearchPages pages, IProgress<ActivityLine> activity, TimeProvider clock)
+/// <param name="writing">What the activity says when the model starts its answer, e.g. "writing the script".</param>
+internal sealed partial class ClaudeStream(ResearchPages pages, IProgress<ActivityLine> activity, TimeProvider clock, string writing = "writing the fact sheet")
 {
     public const string SearchTool = "mcp__storyforge__search";
     public const string FetchTool = "mcp__storyforge__fetch";
@@ -68,7 +69,7 @@ internal sealed partial class ClaudeStream(ResearchPages pages, IProgress<Activi
                         _calls[Text(block, "id") ?? ""] = (name, block.TryGetProperty("input", out var input) ? input.Clone() : default);
                         if (name == AnswerTool)
                         {
-                            Report(ActivityKind.Model, "writing the fact sheet");
+                            Report(ActivityKind.Model, writing);
                         }
                     }
                     break;

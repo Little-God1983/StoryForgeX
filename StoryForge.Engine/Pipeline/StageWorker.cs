@@ -10,7 +10,11 @@ internal sealed record StageContext(Project Project, IProgress<ActivityLine> Act
 
 /// <summary>A stage's finished result, ready to store as a new version.</summary>
 /// <param name="OutputJson">The result in <see cref="StoredJson"/> form.</param>
-internal sealed record StageResult(string OutputJson, int SchemaVersion, string InputHash);
+/// <param name="Segments">For a stage with a result per segment (the script), each segment's own result.</param>
+internal sealed record StageResult(string OutputJson, int SchemaVersion, string InputHash, IReadOnlyList<CellResult>? Segments = null);
+
+/// <summary>One segment's result: stored as the next version of the segment's own cell.</summary>
+internal sealed record CellResult(string Key, string OutputJson, int SchemaVersion, string InputHash);
 
 /// <summary>A stage that could not produce a result; the message is what the cell shows, in plain words.</summary>
 internal sealed class StageFailedException(string reason) : Exception(reason);
@@ -22,6 +26,13 @@ internal interface IStageWorker
 
     /// <exception cref="StageFailedException">The stage failed; the reason is shown on its cell.</exception>
     Task<StageResult> RunAsync(StageContext context, CancellationToken cancellationToken);
+}
+
+/// <summary>A stage whose segments can each be written again on their own (Regenerate on one segment).</summary>
+internal interface ISegmentWorker : IStageWorker
+{
+    /// <exception cref="StageFailedException">The segment could not be written; the reason is shown on its cell.</exception>
+    Task<CellResult> RunSegmentAsync(StageContext context, string key, CancellationToken cancellationToken);
 }
 
 /// <summary>How stage results and activity are stored: camelCase JSON, enums by name.</summary>
