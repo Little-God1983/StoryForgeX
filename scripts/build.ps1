@@ -29,7 +29,7 @@
     A folder of your own for the build instead of a versioned one. Nothing is bumped, committed
     or pushed, no Start Menu shortcut is written, and any branch is fine - this is the way to try a
     feature branch's build. The build is stamped <current version>-oneoff.g<commit> so it cannot be
-    mistaken for a stable one. Must be outside the repo and outside the stable root, and must be
+    mistaken for a stable one, with .dirty on the end when it holds uncommitted changes. Must be outside the repo and outside the stable root, and must be
     empty or a folder this script published into before - a folder holding anything else is
     refused untouched.
 
@@ -59,6 +59,9 @@
 param(
     [ValidateSet('major', 'minor', 'patch', 'build')]
     [string]$Part = 'build',
+    # Never empty: "-InstallDir $env:SOME_DIR" with the variable unset would otherwise read as no
+    # folder given - a full stable release instead of a one-off.
+    [ValidateNotNullOrEmpty()]
     [string]$InstallDir,
     [switch]$Clean,
     [switch]$SkipTests,
@@ -110,9 +113,10 @@ if ($stable) {
 }
 else {
     # FileVersion stays numeric, as Windows requires; only the product version carries the stamp.
-    $version = Get-OneOffVersion -Current $current -Commit (Get-HeadCommit)
+    $version = Get-OneOffVersion -Current $current -Commit (Get-HeadCommit) -Dirty:(Test-UncommittedChanges)
     Write-Ok "version $version"
     if ($NoShortcut) { Write-Note "-NoShortcut is implied: a one-off build never writes the Start Menu shortcut" }
+    if ($PSBoundParameters.ContainsKey('Part')) { Write-Warn "-Part has nothing to do here: a one-off build is stamped with the current version, never bumped" }
 }
 
 # An install folder inside the repo gets swept up by the next build, and each build then copies the

@@ -26,8 +26,8 @@ It only runs from a `main` that has no uncommitted or untracked files and is lev
 (neither behind nor ahead). On a feature branch it stops before building anything: the bump would
 land on the branch, the next branch would hand out the same number, and the stable folder would
 hold unmerged code. To try a branch's build, give it an `-InstallDir`. That is a one-off build
-stamped `<version>-oneoff.g<commit>`: nothing is bumped, committed or pushed, and no shortcut is
-written.
+stamped `<version>-oneoff.g<commit>`, with `.dirty` on the end when it holds uncommitted changes:
+nothing is bumped, committed or pushed, and no shortcut is written.
 
 A running StoryForge X is not closed, because it may be in the middle of a run. It keeps running the
 version it was started from, and the script says so at the end. The one exception is a one-off build

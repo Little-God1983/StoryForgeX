@@ -203,13 +203,13 @@ function Get-AppProcess {
     # junction, a subst drive - so real paths are compared, never the spelling.
     if ($AnyVersion) {
         # Exactly our folders, not a neighbour whose name happens to start the same way
-        # (StoryForgeX_old, StoryForgeXBackup): the current link itself, or a versioned folder, which
-        # always has a dash after the app name.
+        # (StoryForgeX_old, StoryForgeX-backup): the current link itself, or a versioned folder, which
+        # always has a dash and a version number after the app name.
         $current   = Get-CurrentLinkPath $InstallRoot
-        $versioned = (Join-Path (Resolve-RealPath $InstallRoot) $AppName) + '-'
+        $versioned = '^' + [regex]::Escape((Join-Path (Resolve-RealPath $InstallRoot) $AppName) + '-') + '\d[^\\]*\\'
         return @($all | Where-Object {
             (Test-PathUnder $_.ExecutablePath $current) -or
-            (Resolve-RealPath $_.ExecutablePath).StartsWith($versioned, [StringComparison]::OrdinalIgnoreCase)
+            ((Resolve-RealPath $_.ExecutablePath) -match $versioned)
         })
     }
     $exePath = Join-Path (Resolve-FullPath $InstallDir) $AppExeName
@@ -441,10 +441,22 @@ function Get-NextVersion {
 # pass it off as the stable build of the same number. The 'g' in front of the hash is load-bearing:
 # a short hash can be all digits with a leading zero (0123456, about 1 commit in 270), which is not a
 # valid SemVer prerelease identifier, and NuGet's restore then fails with nothing but MSB4181.
+#
+# -Dirty adds '.dirty': the build holds changes that are not in that commit, so checking the commit
+# out would not give back the code that was built.
 function Get-OneOffVersion {
-    param([string]$Current, [string]$Commit)
+    param([string]$Current, [string]$Commit, [switch]$Dirty)
     if (-not $Commit) { return "$Current-oneoff.nogit" }
-    return "$Current-oneoff.g$Commit"
+    $suffix = if ($Dirty) { '.dirty' } else { '' }
+    return "$Current-oneoff.g$Commit$suffix"
+}
+
+# True when the working tree has uncommitted or untracked files, and also when git cannot say: a
+# stamp must not claim a build matches its commit unless that is known.
+function Test-UncommittedChanges {
+    if (-not (Get-Command git -ErrorAction SilentlyContinue)) { return $true }
+    $changes = @(Invoke-Git @('status', '--porcelain') -Quiet)
+    return ($LASTEXITCODE -ne 0) -or ($changes.Count -gt 0)
 }
 
 # Writes the string back byte for byte apart from the number: same line endings, same BOM or lack of

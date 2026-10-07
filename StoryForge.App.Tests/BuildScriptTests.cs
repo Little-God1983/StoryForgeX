@@ -501,6 +501,66 @@ public sealed class BuildScriptTests
     }
 
     [Fact]
+    public void AnEmptyInstallDir_IsRefused_NotTakenForAStableBuild()
+    {
+        // -InstallDir $env:TEST_DIR with the variable unset passes an empty string. Read as "no
+        // folder given", that is a full release: bump, publish, Start Menu, push.
+        using var repo = new FakeRepo("1.2.2.8");
+
+        var result = repo.Build("-InstallDir ''");
+
+        Assert.DoesNotContain(repo.Calls, call => call.StartsWith("dotnet ") || call.StartsWith("git push"));
+        Assert.Equal("1.2.2.8", repo.Version);
+        Assert.False(Directory.Exists(repo.VersionFolder("1.2.2.9")), result.Output);
+    }
+
+    [Fact]
+    public void AOneOffBuildOfUncommittedChanges_SaysSoInItsStamp()
+    {
+        // The stamp names the commit the build came from. With edits on top, that commit does not
+        // hold the code that was built.
+        using var repo = new FakeRepo("1.2.2.8");
+        var folder = Path.Combine(repo.Outside, "StoryForgeX-test");
+
+        var result = repo.Build($"-InstallDir '{folder}'", before: "$env:FAKE_DIRTY = '1'");
+
+        Assert.True(result.ExitCode == 0, result.Output);
+        Assert.Contains("\"version\": \"1.2.2.8-oneoff.gabc1234.dirty\"", File.ReadAllText(Path.Combine(folder, "storyforgex-install.json")));
+    }
+
+    [Fact]
+    public void APartGivenToAOneOffBuild_IsReportedAsUnused()
+    {
+        // A one-off never bumps, so -Part minor changes nothing - which the build has to say, as it
+        // does for -NoShortcut and -Clean.
+        using var repo = new FakeRepo("1.2.2.8");
+
+        var result = repo.Build($"-InstallDir '{Path.Combine(repo.Outside, "StoryForgeX-test")}' -Part minor");
+
+        Assert.True(result.ExitCode == 0, result.Output);
+        Assert.Contains("-Part has nothing to do", result.Output);
+    }
+
+    [Fact]
+    public void AnyVersion_MeansAVersionedFolder_NotAnyFolderWithTheAppsName()
+    {
+        // StoryForgeX-backup is a copy somebody made by hand. A build that reports it as "the old
+        // version, still running" is wrong about what runs.
+        using var temp = new TempFolder();
+        var root = Directory.CreateDirectory(Path.Combine(temp.Path, "root")).FullName;
+        var running = new[] { "StoryForgeX-1.2.2.9", "StoryForgeX-backup", "StoryForgeX-old" }
+            .Select(folder => Directory.CreateDirectory(Path.Combine(root, folder)).FullName + "\\StoryForge.App.exe");
+        var fakeProcesses =
+            "function Get-CimInstance { " +
+            string.Join("; ", running.Select((exe, i) => $"[pscustomobject]@{{ ProcessId = {i + 1}; ExecutablePath = '{exe}' }}")) +
+            " }";
+
+        var result = Pwsh.RunCommon($"{fakeProcesses}; (Get-AppProcess -AnyVersion -InstallRoot '{root}').ProcessId");
+
+        Assert.Equal(["1"], Lines(result.Output));
+    }
+
+    [Fact]
     public void AOneOffBuild_ThroughAnAliasOfTheStableRoot_IsRefused()
     {
         // The folder does not exist yet, so there is no marker to read: only the real path can tell
@@ -706,6 +766,7 @@ public sealed class BuildScriptTests
                 switch ($rest[0]) {
                     'rev-parse' { if ($rest -contains '--short') { 'abc1234' } else { 'main' } }
                     'rev-list'  { "0`t0" }
+                    'status'    { if ($env:FAKE_DIRTY) { ' M StoryForge.App/App.xaml.cs' } }
                     'push'      { if ($env:FAKE_PUSH_FAILS) { $global:LASTEXITCODE = 1 } }
                 }
             }
