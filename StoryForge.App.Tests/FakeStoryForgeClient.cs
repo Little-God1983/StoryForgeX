@@ -44,7 +44,9 @@ internal sealed class FakeStoryForgeClient : IStoryForgeClient
     }
 
     public Task<IReadOnlyList<ProjectSummary>> GetRecentProjectsAsync(CancellationToken cancellationToken = default) =>
-        Task.FromResult<IReadOnlyList<ProjectSummary>>(RecentProjects);
+        RecentProjectsFailure is not null
+            ? Task.FromException<IReadOnlyList<ProjectSummary>>(RecentProjectsFailure)
+            : Task.FromResult<IReadOnlyList<ProjectSummary>>([.. RecentProjects]);
 
     public Task<EngineSettings> GetSettingsAsync(CancellationToken cancellationToken = default) => Task.FromResult(Settings);
 
@@ -236,4 +238,29 @@ internal sealed class FakeStoryForgeClient : IStoryForgeClient
         }
         return Task.FromResult<IReadOnlyList<string>>([.. WorkflowTemplates]);
     }
+    public List<Project> Projects { get; } = [];
+
+    /// <summary>When set, creating a project throws it.</summary>
+    public Exception? ProjectCreateFailure { get; set; }
+
+    /// <summary>When set, reading the recent projects throws it.</summary>
+    public Exception? RecentProjectsFailure { get; set; }
+
+    public Task<Project> CreateProjectAsync(ProjectSetup setup, CancellationToken cancellationToken = default)
+    {
+        if (ProjectCreateFailure is not null)
+        {
+            return Task.FromException<Project>(ProjectCreateFailure);
+        }
+        var project = new Project(Guid.NewGuid(), DateTimeOffset.UtcNow, setup,
+            [.. Enum.GetValues<PipelineStage>().Select(stage => new StageStatus(stage, StageState.NotStarted))]);
+        Projects.Add(project);
+        RecentProjects.Insert(0, new ProjectSummary(project.Id, setup.Name, "Not started"));
+        return Task.FromResult(project);
+    }
+
+    public Task<Project> GetProjectAsync(Guid projectId, CancellationToken cancellationToken = default) =>
+        Projects.FirstOrDefault(p => p.Id == projectId) is { } project
+            ? Task.FromResult(project)
+            : Task.FromException<Project>(new KeyNotFoundException($"There is no project {projectId}."));
 }

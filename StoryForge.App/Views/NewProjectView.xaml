@@ -1,0 +1,379 @@
+<UserControl x:Class="StoryForge.App.Views.NewProjectView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:pages="clr-namespace:StoryForge.App.ViewModels.Pages"
+             xmlns:np="clr-namespace:StoryForge.App.ViewModels.NewProject"
+             xmlns:client="clr-namespace:StoryForge.Client;assembly=StoryForge.Client"
+             xmlns:views="clr-namespace:StoryForge.App.Views"
+             mc:Ignorable="d"
+             d:DataContext="{d:DesignInstance Type=pages:NewProjectPageViewModel}">
+
+  <UserControl.Resources>
+    <BooleanToVisibilityConverter x:Key="Visible" />
+
+    <Style x:Key="CardStyle" TargetType="Border">
+      <Setter Property="Background" Value="{StaticResource CardBrush}" />
+      <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="CornerRadius" Value="12" />
+      <Setter Property="Padding" Value="16" />
+    </Style>
+
+    <Style x:Key="CardTitleStyle" TargetType="TextBlock">
+      <Setter Property="FontSize" Value="12" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+      <Setter Property="Foreground" Value="{StaticResource AccentBrush}" />
+      <Setter Property="Margin" Value="0,0,0,10" />
+    </Style>
+
+    <Style x:Key="SectionTitleStyle" TargetType="TextBlock">
+      <Setter Property="FontSize" Value="13" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+      <Setter Property="Foreground" Value="{StaticResource TextSoftBrush}" />
+    </Style>
+
+    <Style x:Key="CardFieldStyle" TargetType="StackPanel">
+      <Setter Property="Margin" Value="0,0,0,10" />
+    </Style>
+
+    <Style x:Key="SmallButtonStyle" TargetType="Button" BasedOn="{StaticResource SecondaryButtonStyle}">
+      <Setter Property="FontSize" Value="12" />
+      <Setter Property="Padding" Value="6,5" />
+    </Style>
+
+    <!-- "Lore explainer · v4" in a profile picker. -->
+    <DataTemplate x:Key="ProfileChoiceTemplate" DataType="{x:Type client:ProfileSummary}">
+      <TextBlock TextTrimming="CharacterEllipsis">
+        <Run Text="{Binding Name, Mode=OneWay}" /><Run Text=" · v" /><Run Text="{Binding LatestVersion, Mode=OneWay}" />
+      </TextBlock>
+    </DataTemplate>
+
+    <!-- What every provider card has: provider, model, a profile picker per stage. -->
+    <DataTemplate x:Key="CardCommonTemplate" DataType="{x:Type np:StageCardViewModel}">
+      <StackPanel>
+        <TextBlock Text="{Binding Title, Converter={views:UpperCaseConverter}}" Style="{StaticResource CardTitleStyle}" />
+        <StackPanel Style="{StaticResource CardFieldStyle}">
+          <TextBlock Text="Provider" Style="{StaticResource FieldLabelStyle}" />
+          <ComboBox ItemsSource="{Binding ProviderChoices}" SelectedValuePath="Value" DisplayMemberPath="Label" SelectedValue="{Binding Provider}"
+                    AutomationProperties.Name="{Binding Title, StringFormat='{}{0} provider'}" />
+        </StackPanel>
+        <StackPanel Style="{StaticResource CardFieldStyle}">
+          <TextBlock Text="Model" Style="{StaticResource FieldLabelStyle}" />
+          <ComboBox ItemsSource="{Binding ModelChoices}" SelectedValuePath="Value" DisplayMemberPath="Label" SelectedValue="{Binding Model}"
+                    AutomationProperties.Name="{Binding Title, StringFormat='{}{0} model'}" />
+        </StackPanel>
+        <ItemsControl ItemsSource="{Binding Slots}" Focusable="False">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate DataType="{x:Type np:ProfileSlotViewModel}">
+              <StackPanel Style="{StaticResource CardFieldStyle}">
+                <TextBlock Text="{Binding Label}" Style="{StaticResource FieldLabelStyle}" />
+                <ComboBox ItemsSource="{Binding Choices}" SelectedItem="{Binding Selected}" ItemTemplate="{StaticResource ProfileChoiceTemplate}"
+                          AutomationProperties.Name="{Binding Label}"
+                          Visibility="{Binding HasChoices, Converter={StaticResource Visible}}" />
+                <TextBlock Text="{Binding MissingText}" FontSize="12" TextWrapping="Wrap" Foreground="{StaticResource PillOffTextBrush}">
+                  <TextBlock.Style>
+                    <Style TargetType="TextBlock">
+                      <Style.Triggers>
+                        <DataTrigger Binding="{Binding HasChoices}" Value="True">
+                          <Setter Property="Visibility" Value="Collapsed" />
+                        </DataTrigger>
+                      </Style.Triggers>
+                    </Style>
+                  </TextBlock.Style>
+                </TextBlock>
+              </StackPanel>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+      </StackPanel>
+    </DataTemplate>
+
+    <!-- "1344 × 768 · profile default" / "Custom…" with width × height boxes. -->
+    <DataTemplate x:Key="SizeTemplate" DataType="{x:Type np:GenerationSizeViewModel}">
+      <StackPanel>
+        <ComboBox ItemsSource="{Binding Options}" DisplayMemberPath="Label" SelectedIndex="{Binding SelectedIndex}" FontFamily="{StaticResource MonoFont}"
+                  AutomationProperties.Name="{Binding Tag, RelativeSource={RelativeSource AncestorType=ContentPresenter}}" />
+        <Grid Margin="0,6,0,0" Visibility="{Binding IsCustom, Converter={StaticResource Visible}}">
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*" />
+            <ColumnDefinition Width="Auto" />
+            <ColumnDefinition Width="*" />
+          </Grid.ColumnDefinitions>
+          <TextBox Text="{Binding CustomWidth, UpdateSourceTrigger=PropertyChanged}" AutomationProperties.Name="Custom width" />
+          <TextBlock Grid.Column="1" Text="×" Margin="6,0" VerticalAlignment="Center" Foreground="{StaticResource TextMutedBrush}" />
+          <TextBox Grid.Column="2" Text="{Binding CustomHeight, UpdateSourceTrigger=PropertyChanged}" AutomationProperties.Name="Custom height" />
+        </Grid>
+      </StackPanel>
+    </DataTemplate>
+  </UserControl.Resources>
+
+  <Grid>
+    <Grid.ColumnDefinitions>
+      <ColumnDefinition Width="*" />
+      <ColumnDefinition Width="360" />
+    </Grid.ColumnDefinitions>
+
+    <ScrollViewer Grid.Column="0" VerticalScrollBarVisibility="Auto" Focusable="False">
+      <StackPanel Margin="32,28,32,28">
+        <DockPanel Margin="0,0,0,22">
+          <TextBlock DockPanel.Dock="Right" Text="Every choice here is stored with the run, so a rerun reproduces it." FontSize="13"
+                     Foreground="{StaticResource TextMutedBrush}" VerticalAlignment="Bottom" />
+          <TextBlock Text="New project" FontSize="26" FontWeight="Bold" />
+        </DockPanel>
+
+        <!-- Name, brief and research sources. -->
+        <TextBlock Text="Project name" Style="{StaticResource SectionTitleStyle}" Margin="0,0,0,8" />
+        <TextBox Text="{Binding Name, UpdateSourceTrigger=PropertyChanged}" FontFamily="{StaticResource SansFont}" FontSize="15" Padding="14,10"
+                 Background="{StaticResource CardBrush}" AutomationProperties.Name="Project name" Margin="0,0,0,18" />
+
+        <DockPanel Margin="0,0,0,8">
+          <TextBlock Text="Brief" Style="{StaticResource SectionTitleStyle}" VerticalAlignment="Center" />
+          <WrapPanel HorizontalAlignment="Right" VerticalAlignment="Center">
+            <TextBlock Text="Research sources" FontSize="12" Foreground="{StaticResource TextMutedBrush}" VerticalAlignment="Center" Margin="0,0,8,0" />
+            <ItemsControl ItemsSource="{Binding ResearchSources}" Focusable="False" AutomationProperties.Name="Research sources">
+              <ItemsControl.ItemsPanel>
+                <ItemsPanelTemplate>
+                  <WrapPanel />
+                </ItemsPanelTemplate>
+              </ItemsControl.ItemsPanel>
+              <ItemsControl.ItemTemplate>
+                <DataTemplate>
+                  <Border Background="{StaticResource FieldBrush}" BorderBrush="{StaticResource FieldBorderBrush}" BorderThickness="1"
+                          CornerRadius="999" Padding="10,2,4,2" Margin="0,2,6,2">
+                    <StackPanel Orientation="Horizontal">
+                      <TextBlock Text="{Binding}" FontFamily="{StaticResource MonoFont}" FontSize="12" Foreground="{StaticResource TextSoftBrush}"
+                                 VerticalAlignment="Center" />
+                      <Button Content="×" Margin="4,0,0,0" Padding="4,0" FontSize="12" Background="Transparent" BorderThickness="0"
+                              Foreground="{StaticResource TextMutedBrush}" Cursor="Hand"
+                              Command="{Binding DataContext.RemoveSourceCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                              CommandParameter="{Binding}" AutomationProperties.Name="{Binding StringFormat='Remove {0}'}">
+                        <Button.Template>
+                          <ControlTemplate TargetType="Button">
+                            <ContentPresenter Margin="{TemplateBinding Padding}" />
+                          </ControlTemplate>
+                        </Button.Template>
+                      </Button>
+                    </StackPanel>
+                  </Border>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+            <TextBox Text="{Binding NewSource, UpdateSourceTrigger=PropertyChanged}" Width="170" FontSize="12" Padding="8,3"
+                     AutomationProperties.Name="New research source" VerticalAlignment="Center">
+              <TextBox.InputBindings>
+                <KeyBinding Key="Enter" Command="{Binding AddSourceCommand}" />
+              </TextBox.InputBindings>
+            </TextBox>
+            <Button Content="+ Add source" Style="{StaticResource SmallButtonStyle}" Margin="6,0,0,0" Command="{Binding AddSourceCommand}" />
+          </WrapPanel>
+        </DockPanel>
+        <TextBox Text="{Binding Brief, UpdateSourceTrigger=PropertyChanged}" AcceptsReturn="True" TextWrapping="Wrap" Height="86"
+                 VerticalContentAlignment="Top" FontFamily="{StaticResource SansFont}" FontSize="15" Padding="14,12"
+                 Background="{StaticResource CardBrush}" AutomationProperties.Name="Brief" Margin="0,0,0,22" />
+
+        <!-- Providers: one card per stage group. -->
+        <DockPanel Margin="0,0,0,10">
+          <TextBlock DockPanel.Dock="Right" FontSize="12" Foreground="{StaticResource TextMutedBrush}" TextWrapping="Wrap" MaxWidth="560"
+                     Text="→ copies a stage's provider, model and same-named profiles to other stages; stages without a match stay as they are." />
+          <TextBlock Text="Providers" Style="{StaticResource SectionTitleStyle}" />
+        </DockPanel>
+        <Grid Margin="0,0,0,22">
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*" />
+            <ColumnDefinition Width="14" />
+            <ColumnDefinition Width="*" />
+            <ColumnDefinition Width="14" />
+            <ColumnDefinition Width="*" />
+            <ColumnDefinition Width="14" />
+            <ColumnDefinition Width="*" />
+          </Grid.ColumnDefinitions>
+
+          <Border Grid.Column="0" Style="{StaticResource CardStyle}">
+            <DockPanel>
+              <UniformGrid DockPanel.Dock="Bottom" Columns="2" Margin="0,6,0,0">
+                <Button Content="→ Later stages" Style="{StaticResource SmallButtonStyle}" Margin="0,0,3,0"
+                        Command="{Binding ApplyToLaterStagesCommand}" CommandParameter="{Binding Writing}"
+                        ToolTip="Copy provider, model and matching profiles to every later stage" />
+                <Button Content="→ All" Style="{StaticResource SmallButtonStyle}" Margin="3,0,0,0"
+                        Command="{Binding ApplyToAllCommand}" CommandParameter="{Binding Writing}"
+                        ToolTip="Copy provider, model and matching profiles to every stage" />
+              </UniformGrid>
+              <ContentPresenter Content="{Binding Writing}" ContentTemplate="{StaticResource CardCommonTemplate}" />
+            </DockPanel>
+          </Border>
+
+          <Border Grid.Column="2" Style="{StaticResource CardStyle}">
+            <DockPanel>
+              <UniformGrid DockPanel.Dock="Bottom" Columns="2" Margin="0,6,0,0">
+                <Button Content="→ Later stages" Style="{StaticResource SmallButtonStyle}" Margin="0,0,3,0"
+                        Command="{Binding ApplyToLaterStagesCommand}" CommandParameter="{Binding Voice}"
+                        ToolTip="Copy provider, model and matching profiles to every later stage" />
+                <Button Content="→ All" Style="{StaticResource SmallButtonStyle}" Margin="3,0,0,0"
+                        Command="{Binding ApplyToAllCommand}" CommandParameter="{Binding Voice}"
+                        ToolTip="Copy provider, model and matching profiles to every stage" />
+              </UniformGrid>
+              <ContentPresenter Content="{Binding Voice}" ContentTemplate="{StaticResource CardCommonTemplate}" />
+            </DockPanel>
+          </Border>
+
+          <Border Grid.Column="4" Style="{StaticResource CardStyle}">
+            <DockPanel>
+              <UniformGrid DockPanel.Dock="Bottom" Columns="2" Margin="0,6,0,0">
+                <Button Content="→ Later stages" Style="{StaticResource SmallButtonStyle}" Margin="0,0,3,0"
+                        Command="{Binding ApplyToLaterStagesCommand}" CommandParameter="{Binding Stills}"
+                        ToolTip="Copy provider, model and matching profiles to every later stage" />
+                <Button Content="→ All" Style="{StaticResource SmallButtonStyle}" Margin="3,0,0,0"
+                        Command="{Binding ApplyToAllCommand}" CommandParameter="{Binding Stills}"
+                        ToolTip="Copy provider, model and matching profiles to every stage" />
+              </UniformGrid>
+              <StackPanel>
+                <ContentPresenter Content="{Binding Stills}" ContentTemplate="{StaticResource CardCommonTemplate}" />
+                <StackPanel Style="{StaticResource CardFieldStyle}">
+                  <TextBlock Text="Consistency" Style="{StaticResource FieldLabelStyle}" />
+                  <ComboBox ItemsSource="{x:Static pages:NewProjectPageViewModel.ConsistencyChoices}" SelectedValuePath="Value" DisplayMemberPath="Label"
+                            SelectedValue="{Binding Consistency}" AutomationProperties.Name="Consistency" />
+                </StackPanel>
+                <StackPanel Style="{StaticResource CardFieldStyle}">
+                  <TextBlock Text="Generation size" Style="{StaticResource FieldLabelStyle}" />
+                  <ContentPresenter Content="{Binding StillSize}" ContentTemplate="{StaticResource SizeTemplate}" Tag="Still image generation size" />
+                </StackPanel>
+              </StackPanel>
+            </DockPanel>
+          </Border>
+
+          <Border Grid.Column="6" Style="{StaticResource CardStyle}">
+            <DockPanel>
+              <Button DockPanel.Dock="Bottom" Content="→ All" Style="{StaticResource SmallButtonStyle}" Margin="0,6,0,0"
+                      Command="{Binding ApplyToAllCommand}" CommandParameter="{Binding Clips}"
+                      ToolTip="Copy provider, model and matching profiles to every stage" />
+              <StackPanel>
+                <ContentPresenter Content="{Binding Clips}" ContentTemplate="{StaticResource CardCommonTemplate}" />
+                <StackPanel Style="{StaticResource CardFieldStyle}">
+                  <TextBlock Text="Max clip length" Style="{StaticResource FieldLabelStyle}" />
+                  <ComboBox ItemsSource="{Binding MaxClip.Options}" DisplayMemberPath="Label" SelectedIndex="{Binding MaxClip.SelectedIndex}" AutomationProperties.Name="Max clip length" />
+                  <TextBox Text="{Binding MaxClip.CustomSeconds, UpdateSourceTrigger=PropertyChanged}" Margin="0,6,0,0"
+                           Visibility="{Binding MaxClip.IsCustom, Converter={StaticResource Visible}}" AutomationProperties.Name="Custom max clip length in seconds" />
+                </StackPanel>
+                <StackPanel Style="{StaticResource CardFieldStyle}">
+                  <TextBlock Text="Generation size" Style="{StaticResource FieldLabelStyle}" />
+                  <ContentPresenter Content="{Binding ClipSize}" ContentTemplate="{StaticResource SizeTemplate}" Tag="Video clip generation size" />
+                </StackPanel>
+              </StackPanel>
+            </DockPanel>
+          </Border>
+        </Grid>
+
+        <!-- Output. -->
+        <TextBlock Text="Output" Style="{StaticResource SectionTitleStyle}" Margin="0,0,0,10" />
+        <Border Style="{StaticResource CardStyle}">
+          <DockPanel>
+            <TextBlock DockPanel.Dock="Right" Width="220" FontSize="12" Foreground="{StaticResource TextMutedBrush}" TextWrapping="Wrap"
+                       VerticalAlignment="Bottom" Text="Stills and clips generate at their own sizes above; the finished clip is upscaled to delivery." />
+            <WrapPanel>
+              <StackPanel Margin="0,0,14,0">
+                <TextBlock Text="Aspect" Style="{StaticResource FieldLabelStyle}" />
+                <Border BorderBrush="{StaticResource FieldBorderBrush}" BorderThickness="1" CornerRadius="8" ClipToBounds="True">
+                  <StackPanel Orientation="Horizontal" AutomationProperties.Name="Aspect">
+                    <RadioButton Content="16:9" GroupName="Aspect" Style="{StaticResource SegmentStyle}"
+                                 IsChecked="{Binding Aspect, Converter={views:ValueEqualsConverter}, ConverterParameter='16:9'}" />
+                    <RadioButton Content="9:16" GroupName="Aspect" Style="{StaticResource SegmentStyle}"
+                                 IsChecked="{Binding Aspect, Converter={views:ValueEqualsConverter}, ConverterParameter='9:16'}" />
+                    <RadioButton Content="1:1" GroupName="Aspect" Style="{StaticResource SegmentStyle}"
+                                 IsChecked="{Binding Aspect, Converter={views:ValueEqualsConverter}, ConverterParameter='1:1'}" />
+                  </StackPanel>
+                </Border>
+              </StackPanel>
+              <StackPanel Margin="0,0,14,0" MinWidth="150">
+                <TextBlock Text="Delivery resolution" Style="{StaticResource FieldLabelStyle}" />
+                <ComboBox ItemsSource="{Binding DeliveryChoices}" SelectedItem="{Binding SelectedDelivery}" DisplayMemberPath="Label"
+                          FontFamily="{StaticResource MonoFont}" AutomationProperties.Name="Delivery resolution" />
+              </StackPanel>
+              <StackPanel Margin="0,0,14,0" MinWidth="120">
+                <TextBlock Text="Target length" Style="{StaticResource FieldLabelStyle}" />
+                <ComboBox ItemsSource="{x:Static pages:NewProjectPageViewModel.TargetChoices}" SelectedValuePath="Value" DisplayMemberPath="Label"
+                          SelectedValue="{Binding TargetSeconds}" AutomationProperties.Name="Target length" />
+                <TextBox Text="{Binding CustomTargetMinutes, UpdateSourceTrigger=PropertyChanged}" Margin="0,6,0,0"
+                         Visibility="{Binding IsCustomTarget, Converter={StaticResource Visible}}" AutomationProperties.Name="Custom target length in minutes"
+                         ToolTip="Minutes, e.g. 2.5" />
+              </StackPanel>
+              <StackPanel Margin="0,0,14,0" MinWidth="120">
+                <TextBlock Text="Language" Style="{StaticResource FieldLabelStyle}" />
+                <ComboBox ItemsSource="{x:Static pages:NewProjectPageViewModel.Languages}" SelectedItem="{Binding Language}" AutomationProperties.Name="Language" />
+              </StackPanel>
+              <StackPanel Margin="0,0,14,0" MinWidth="190">
+                <TextBlock Text="Assembly" Style="{StaticResource FieldLabelStyle}" />
+                <ComboBox ItemsSource="{x:Static pages:NewProjectPageViewModel.AssemblyChoices}" SelectedValuePath="Value" DisplayMemberPath="Label"
+                          SelectedValue="{Binding Assembly}" AutomationProperties.Name="Assembly" />
+              </StackPanel>
+            </WrapPanel>
+          </DockPanel>
+        </Border>
+      </StackPanel>
+    </ScrollViewer>
+
+    <!-- Run plan, mode and Start. -->
+    <Border Grid.Column="1" Background="{StaticResource NavBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1,0,0,0" Padding="24,28">
+      <DockPanel>
+        <StackPanel DockPanel.Dock="Bottom">
+          <TextBlock Text="{Binding MissingText}" FontSize="12" Foreground="{StaticResource TextMutedBrush}" TextWrapping="Wrap" Margin="0,0,0,10"
+                     Visibility="{Binding MissingText, Converter={views:NullToCollapsedConverter}}" AutomationProperties.AutomationId="MissingText" />
+          <Border Background="{StaticResource PillErrorBackBrush}" CornerRadius="8" Padding="12,8" Margin="0,0,0,10"
+                  Visibility="{Binding Error, Converter={views:NullToCollapsedConverter}}">
+            <TextBlock Text="{Binding Error}" Foreground="{StaticResource PillErrorTextBrush}" FontSize="13" TextWrapping="Wrap" />
+          </Border>
+          <Button Content="Start run" Command="{Binding StartCommand}" Style="{StaticResource PrimaryButtonStyle}" MinHeight="48" FontSize="15" />
+        </StackPanel>
+
+        <ScrollViewer VerticalScrollBarVisibility="Auto" Focusable="False" Margin="0,0,0,12">
+          <StackPanel>
+            <TextBlock Text="Run plan" FontSize="17" FontWeight="Bold" />
+            <TextBlock Text="Tick a gate to pause for your approval after that stage." FontSize="12" Foreground="{StaticResource TextMutedBrush}"
+                       TextWrapping="Wrap" Margin="0,6,0,14" />
+            <ItemsControl ItemsSource="{Binding RunPlan}" Focusable="False" AutomationProperties.Name="Run plan">
+              <ItemsControl.ItemTemplate>
+                <DataTemplate DataType="{x:Type np:RunStageViewModel}">
+                  <Border Background="{StaticResource CardBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1"
+                          CornerRadius="10" Padding="12,9" Margin="0,0,0,6">
+                    <DockPanel>
+                      <Border DockPanel.Dock="Left" Width="24" Height="24" CornerRadius="12" Background="{StaticResource BorderBrush}" Margin="0,0,12,0">
+                        <TextBlock Text="{Binding Number}" FontFamily="{StaticResource MonoFont}" FontSize="12" Foreground="{StaticResource TextSoftBrush}"
+                                   HorizontalAlignment="Center" VerticalAlignment="Center" />
+                      </Border>
+                      <CheckBox DockPanel.Dock="Right" IsChecked="{Binding IsGated}" IsEnabled="{Binding CanChangeGate}" VerticalAlignment="Center"
+                                AutomationProperties.Name="{Binding Name, StringFormat='Gate after {0}'}">
+                        <CheckBox.Style>
+                          <Style TargetType="CheckBox" BasedOn="{StaticResource {x:Type CheckBox}}">
+                            <Style.Triggers>
+                              <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="ToolTip" Value="Always on: this stage is always reviewed" />
+                                <Setter Property="Opacity" Value="0.6" />
+                              </Trigger>
+                            </Style.Triggers>
+                          </Style>
+                        </CheckBox.Style>
+                      </CheckBox>
+                      <StackPanel>
+                        <TextBlock Text="{Binding Name}" FontSize="14" FontWeight="SemiBold" />
+                        <TextBlock Text="{Binding Via}" FontSize="12" Foreground="{StaticResource TextMutedBrush}" TextTrimming="CharacterEllipsis" />
+                      </StackPanel>
+                    </DockPanel>
+                  </Border>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+
+            <Border BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="10" Padding="14,12" Margin="0,10,0,0">
+              <StackPanel>
+                <TextBlock Text="Mode" Style="{StaticResource FieldLabelStyle}" Margin="0,0,0,8" />
+                <RadioButton Content="Stop at ticked gates" GroupName="Mode" IsChecked="{Binding StopAtGates}" Margin="0,0,0,8" />
+                <RadioButton Content="Run through to the end" GroupName="Mode" IsChecked="{Binding RunThrough}" />
+              </StackPanel>
+            </Border>
+          </StackPanel>
+        </ScrollViewer>
+      </DockPanel>
+    </Border>
+  </Grid>
+</UserControl>

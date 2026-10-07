@@ -47,4 +47,11 @@ public interface IStoryForgeClient
 
     /// <summary>The workflow files (*.json) in the ComfyUI templates folder, by name; empty if none is set.</summary>
     Task<IReadOnlyList<string>> GetWorkflowTemplatesAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>Saves a new project with every choice; nothing runs yet.</summary>
+    /// <exception cref="ArgumentException">A required choice is missing or out of range, or a profile version does not exist.</exception>
+    Task<Project> CreateProjectAsync(ProjectSetup setup, CancellationToken cancellationToken = default);
+
+    /// <exception cref="KeyNotFoundException">No such project.</exception>
+    Task<Project> GetProjectAsync(Guid projectId, CancellationToken cancellationToken = default);
 }

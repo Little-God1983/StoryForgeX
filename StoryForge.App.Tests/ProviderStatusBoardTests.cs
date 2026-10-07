@@ -77,5 +77,7 @@ public sealed class ProviderStatusBoardTests
         public Task<ProfileVersion> SaveProfileVersionAsync(Guid profileId, ProfileContent content, CancellationToken cancellationToken = default) => _inner.SaveProfileVersionAsync(profileId, content, cancellationToken);
         public Task<string> ImportReferenceFileAsync(string sourcePath, CancellationToken cancellationToken = default) => _inner.ImportReferenceFileAsync(sourcePath, cancellationToken);
         public Task<IReadOnlyList<string>> GetWorkflowTemplatesAsync(CancellationToken cancellationToken = default) => _inner.GetWorkflowTemplatesAsync(cancellationToken);
+        public Task<Project> CreateProjectAsync(ProjectSetup setup, CancellationToken cancellationToken = default) => _inner.CreateProjectAsync(setup, cancellationToken);
+        public Task<Project> GetProjectAsync(Guid projectId, CancellationToken cancellationToken = default) => _inner.GetProjectAsync(projectId, cancellationToken);
     }
 }
