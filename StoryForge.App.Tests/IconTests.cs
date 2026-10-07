@@ -1,7 +1,6 @@
 using System.Collections;
 using System.IO;
 using System.Resources;
-using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using StoryForge.App.ViewModels;
 
@@ -44,7 +43,8 @@ public sealed class IconTests
     {
         // Windows reads a PNG frame reliably only at 256 px. With PNG frames at the small sizes the
         // window and Explorer showed the icon, and the taskbar a blank tile.
-        var icon = File.ReadAllBytes(Path.Combine(RepoRoot(), "StoryForge.App", "Assets", "StoryForge.ico"));
+        var repoRoot = Path.GetDirectoryName(BuildScriptTests.Pwsh.ScriptsFolder)!;
+        var icon = File.ReadAllBytes(Path.Combine(repoRoot, "StoryForge.App", "Assets", "StoryForge.ico"));
         var count = BitConverter.ToUInt16(icon, 4);
 
         var pngBelow256 = Enumerable.Range(0, count)
@@ -55,8 +55,6 @@ public sealed class IconTests
 
         Assert.Empty(pngBelow256);
     }
-
-    private static string RepoRoot([CallerFilePath] string thisFile = "") => Path.GetDirectoryName(Path.GetDirectoryName(thisFile))!;
 
     // With index -1 and no buffers it returns how many icons the file holds.
     [DllImport("shell32.dll", CharSet = CharSet.Unicode)]

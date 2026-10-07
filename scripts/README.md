@@ -30,7 +30,8 @@ stamped `<version>-oneoff.g<commit>`, with `.dirty` on the end when it holds unc
 nothing is bumped, committed or pushed, and no shortcut is written.
 
 A running StoryForge X is not closed, because it may be in the middle of a run. It keeps running the
-version it was started from, and the script says so at the end. The one exception is a one-off build
+version it was started from, and the script says so at the end. Close it before you start the new
+version: both use the same database, and a new version may update it when it starts. The one exception is a one-off build
 into a folder StoryForge X is running from: that build refuses to start until you close it.
 
 A stable folder that was made current is never republished over. If the bump of the last build was

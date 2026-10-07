@@ -292,7 +292,10 @@ Write-Host ""
 if ($stable) { Write-Host "  Build complete - StoryForgeX $version" -ForegroundColor Green }
 else         { Write-Host "  Build complete - StoryForgeX $version (one-off)" -ForegroundColor Green }
 foreach ($proc in $running) {
-    Write-Warn "StoryForgeX is still running from $($proc.ExecutablePath) (PID $($proc.ProcessId)) - the old version; restart it for $version"
+    # Every version opens the same database in %LOCALAPPDATA%\StoryForgeX, and a new one may migrate
+    # it on start - under the old one, which keeps working on the schema it knows.
+    Write-Warn "StoryForgeX is still running from $($proc.ExecutablePath) (PID $($proc.ProcessId)) - the old version."
+    Write-Warn "Close it before you start $version - both use the same database."
 }
 if ($stable -and -not $NoShortcut) { Write-Host "  Start it from the Start Menu (StoryForge X), or: " -NoNewline }
 else                               { Write-Host "  Start it: " -NoNewline }

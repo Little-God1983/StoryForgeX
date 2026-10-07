@@ -501,6 +501,20 @@ public sealed class BuildScriptTests
     }
 
     [Fact]
+    public void AnOldVersionLeftRunning_IsToBeClosedBeforeTheNewOneStarts()
+    {
+        // Every version opens the same database in %LOCALAPPDATA%\StoryForgeX, and a new one may
+        // migrate it on start - under the old one, which keeps running on the schema it knows.
+        using var repo = new FakeRepo("1.2.2.8");
+        var old = Path.Combine(repo.VersionFolder("1.2.2.8"), "StoryForge.App.exe");
+
+        var result = repo.Build(before: $"$env:FAKE_RUNNING_FROM = '{old}'");
+
+        Assert.True(result.ExitCode == 0, result.Output);
+        Assert.Contains("Close it before you start 1.2.2.9", result.Output);
+    }
+
+    [Fact]
     public void AnEmptyInstallDir_IsRefused_NotTakenForAStableBuild()
     {
         // -InstallDir $env:TEST_DIR with the variable unset passes an empty string. Read as "no
