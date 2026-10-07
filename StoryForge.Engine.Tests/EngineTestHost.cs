@@ -1,7 +1,9 @@
 using Microsoft.Data.Sqlite;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using StoryForge.Client;
+using StoryForge.Engine.Data;
 
 namespace StoryForge.Engine.Tests;
 
@@ -33,6 +35,10 @@ internal sealed class EngineTestHost : IDisposable
         _hosts.Add(host);
         return host;
     }
+
+    /// <summary>The database of the last host started, for tests that set up what the client cannot.</summary>
+    public Task<StoryForgeDbContext> DbAsync() =>
+        _hosts[^1].Services.GetRequiredService<IDbContextFactory<StoryForgeDbContext>>().CreateDbContextAsync();
 
     public async Task<IStoryForgeClient> StartClientAsync(Action<IServiceCollection>? replace = null) =>
         (await StartAsync(replace)).Services.GetRequiredService<IStoryForgeClient>();

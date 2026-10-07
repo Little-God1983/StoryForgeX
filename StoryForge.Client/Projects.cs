@@ -14,10 +14,17 @@ public enum PipelineStage
     Publish,
 }
 
-/// <summary>Where one stage of a project stands. More states arrive with the stages that set them (#5 on).</summary>
+/// <summary>Where one stage of a project stands.</summary>
 public enum StageState
 {
     NotStarted,
+    Running,
+    /// <summary>Done and waiting at its gate for you to approve it.</summary>
+    NeedsReview,
+    Approved,
+    Failed,
+    /// <summary>Something it was made from changed since (set from #11 on).</summary>
+    Stale,
 }
 
 public enum RunMode

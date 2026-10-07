@@ -7,6 +7,18 @@ using System.Windows.Media.Imaging;
 
 namespace StoryForge.App.Views;
 
+/// <summary>A moment as the local time of day, "15:40:02"; for activity logs.</summary>
+public sealed class LocalTimeConverter : MarkupExtension, IValueConverter
+{
+    public object Convert(object? value, Type targetType, object? parameter, CultureInfo culture) =>
+        value is DateTimeOffset moment ? moment.ToLocalTime().ToString("HH:mm:ss", CultureInfo.InvariantCulture) : "";
+
+    public object ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture) =>
+        throw new NotSupportedException();
+
+    public override object ProvideValue(IServiceProvider serviceProvider) => this;
+}
+
 /// <summary>Collapsed for null (or an empty string), visible otherwise; for error banners.</summary>
 public sealed class NullToCollapsedConverter : MarkupExtension, IValueConverter
 {

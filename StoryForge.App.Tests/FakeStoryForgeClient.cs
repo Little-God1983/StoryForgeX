@@ -270,4 +270,109 @@ internal sealed class FakeStoryForgeClient : IStoryForgeClient
         Projects.FirstOrDefault(p => p.Id == projectId) is { } project
             ? Task.FromResult(project)
             : Task.FromException<Project>(new KeyNotFoundException($"There is no project {projectId}."));
+
+    public event EventHandler<StageUpdate>? StageUpdated;
+
+    /// <summary>Raises <see cref="StageUpdated"/> as the engine would, and keeps the project's stage state in step.</summary>
+    public void Raise(StageUpdate update)
+    {
+        var index = Projects.FindIndex(p => p.Id == update.ProjectId);
+        if (index >= 0)
+        {
+            Projects[index] = Projects[index] with
+            {
+                Stages = [.. Projects[index].Stages.Select(s => s.Stage == update.Stage ? s with { State = update.State } : s)],
+            };
+        }
+        if (FactSheets.TryGetValue(update.ProjectId, out var view) && update.Stage == PipelineStage.Research)
+        {
+            FactSheets[update.ProjectId] = view with { State = update.State };
+        }
+        StageUpdated?.Invoke(this, update);
+    }
+
+    public List<Guid> StartedRuns { get; } = [];
+
+    public List<(Guid ProjectId, PipelineStage Stage)> Regenerated { get; } = [];
+
+    public List<(Guid ProjectId, PipelineStage Stage)> Cancelled { get; } = [];
+
+    public List<(Guid ProjectId, PipelineStage Stage, int Version)> Approved { get; } = [];
+
+    public List<(Guid ProjectId, int Version, string FactId, FactChange Change)> FactChanges { get; } = [];
+
+    /// <summary>The fact sheet per project; a project without one has an empty, not started sheet.</summary>
+    public Dictionary<Guid, FactSheetView> FactSheets { get; } = [];
+
+    /// <summary>When set, the next call that acts on a stage (start, approve, change a fact …) throws it.</summary>
+    public Exception? StageFailure { get; set; }
+
+    public Task StartRunAsync(Guid projectId, CancellationToken cancellationToken = default)
+    {
+        ThrowIfFailing();
+        StartedRuns.Add(projectId);
+        return Task.CompletedTask;
+    }
+
+    public Task RegenerateAsync(Guid projectId, PipelineStage stage, CancellationToken cancellationToken = default)
+    {
+        ThrowIfFailing();
+        Regenerated.Add((projectId, stage));
+        return Task.CompletedTask;
+    }
+
+    public Task CancelAsync(Guid projectId, PipelineStage stage, CancellationToken cancellationToken = default)
+    {
+        Cancelled.Add((projectId, stage));
+        return Task.CompletedTask;
+    }
+
+    public Task ApproveAsync(Guid projectId, PipelineStage stage, int version, CancellationToken cancellationToken = default)
+    {
+        ThrowIfFailing();
+        Approved.Add((projectId, stage, version));
+        if (FactSheets.TryGetValue(projectId, out var view))
+        {
+            FactSheets[projectId] = view with { State = StageState.Approved, ApprovedVersion = version, Version = version };
+        }
+        return Task.CompletedTask;
+    }
+
+    public Task<FactSheetView> GetFactSheetAsync(Guid projectId, int? version = null, CancellationToken cancellationToken = default)
+    {
+        var view = FactSheets.GetValueOrDefault(projectId) ?? new FactSheetView(projectId, StageState.NotStarted, null, [], null, null, null, []);
+        if (version is not null && SheetVersions.TryGetValue((projectId, version.Value), out var older))
+        {
+            view = view with { Version = version, Sheet = older };
+        }
+        return Task.FromResult(view);
+    }
+
+    /// <summary>Older versions' sheets, for showing a version other than the current one.</summary>
+    public Dictionary<(Guid ProjectId, int Version), FactSheet> SheetVersions { get; } = [];
+
+    /// <summary>Changes the fact in the stored sheet, in the same version (enough to show it on screen).</summary>
+    public Task<FactSheetView> ChangeFactAsync(Guid projectId, int version, string factId, FactChange change, CancellationToken cancellationToken = default)
+    {
+        ThrowIfFailing();
+        FactChanges.Add((projectId, version, factId, change));
+        var view = FactSheets[projectId];
+        var facts = view.Sheet!.Facts.Select(f => f.Id != factId ? f : f with
+        {
+            Statement = change.Statement ?? f.Statement,
+            Weight = change.Weight ?? f.Weight,
+            LeftOut = change.LeftOut ?? f.LeftOut,
+        });
+        FactSheets[projectId] = view = view with { Sheet = new FactSheet([.. facts]) };
+        return Task.FromResult(view);
+    }
+
+    private void ThrowIfFailing()
+    {
+        if (StageFailure is { } failure)
+        {
+            StageFailure = null;
+            throw failure;
+        }
+    }
 }

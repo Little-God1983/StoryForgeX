@@ -467,7 +467,7 @@ public sealed class NewProjectPageTests
     }
 
     [Fact]
-    public async Task Starting_opens_the_project_in_the_result_matrix_and_lists_it()
+    public async Task Starting_opens_the_project_on_its_fact_sheet_starts_the_run_and_lists_it()
     {
         AddOneOfEach();
         var main = new MainViewModel(_client, new ProviderStatusBoard(_client), TimeSpan.Zero);
@@ -484,7 +484,9 @@ public sealed class NewProjectPageTests
         Assert.Equal("16:9 · 1920×1080 · target 4:00", matrix.Summary);
         Assert.Equal(9, matrix.Stages.Count);
         Assert.All(matrix.Stages, s => Assert.Equal("not started", s.StateText));
-        Assert.Equal("Projects / Soul Coins – BG3 lore", main.Breadcrumb);
+        Assert.True(matrix.ShowsFactSheet);
+        Assert.Equal("Projects / Soul Coins – BG3 lore / Research", main.Breadcrumb);
+        Assert.Equal([_client.Projects.Single().Id], _client.StartedRuns);
         Assert.Equal(["Soul Coins – BG3 lore"], main.RecentProjects.Select(p => p.Name));
     }
 
@@ -519,7 +521,7 @@ public sealed class NewProjectPageTests
         await matrix.OpenAsync(Guid.NewGuid());   // a stale entry
 
         Assert.Equal("Soul Coins – BG3 lore", matrix.Name);
-        Assert.Equal("Projects / Soul Coins – BG3 lore", matrix.Breadcrumb);
+        Assert.Equal("Projects / Soul Coins – BG3 lore / Research", matrix.Breadcrumb);
         Assert.NotNull(matrix.LoadError);
     }
 

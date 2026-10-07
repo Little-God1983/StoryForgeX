@@ -79,5 +79,16 @@ public sealed class ProviderStatusBoardTests
         public Task<IReadOnlyList<string>> GetWorkflowTemplatesAsync(CancellationToken cancellationToken = default) => _inner.GetWorkflowTemplatesAsync(cancellationToken);
         public Task<Project> CreateProjectAsync(ProjectSetup setup, CancellationToken cancellationToken = default) => _inner.CreateProjectAsync(setup, cancellationToken);
         public Task<Project> GetProjectAsync(Guid projectId, CancellationToken cancellationToken = default) => _inner.GetProjectAsync(projectId, cancellationToken);
+        public event EventHandler<StageUpdate>? StageUpdated
+        {
+            add => _inner.StageUpdated += value;
+            remove => _inner.StageUpdated -= value;
+        }
+        public Task StartRunAsync(Guid projectId, CancellationToken cancellationToken = default) => _inner.StartRunAsync(projectId, cancellationToken);
+        public Task RegenerateAsync(Guid projectId, PipelineStage stage, CancellationToken cancellationToken = default) => _inner.RegenerateAsync(projectId, stage, cancellationToken);
+        public Task CancelAsync(Guid projectId, PipelineStage stage, CancellationToken cancellationToken = default) => _inner.CancelAsync(projectId, stage, cancellationToken);
+        public Task ApproveAsync(Guid projectId, PipelineStage stage, int version, CancellationToken cancellationToken = default) => _inner.ApproveAsync(projectId, stage, version, cancellationToken);
+        public Task<FactSheetView> GetFactSheetAsync(Guid projectId, int? version = null, CancellationToken cancellationToken = default) => _inner.GetFactSheetAsync(projectId, version, cancellationToken);
+        public Task<FactSheetView> ChangeFactAsync(Guid projectId, int version, string factId, FactChange change, CancellationToken cancellationToken = default) => _inner.ChangeFactAsync(projectId, version, factId, change, cancellationToken);
     }
 }

@@ -19,6 +19,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\StoryForge.Engine\StoryForge.Engine.csproj" />
+    <ProjectReference Include="..\StoryForge.ResearchServer\StoryForge.ResearchServer.csproj" />
   </ItemGroup>
 
 </Project>

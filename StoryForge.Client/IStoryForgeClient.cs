@@ -54,4 +54,43 @@ public interface IStoryForgeClient
 
     /// <exception cref="KeyNotFoundException">No such project.</exception>
     Task<Project> GetProjectAsync(Guid projectId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// A stage changed state or reported activity, for any project. Raised on an engine thread;
+    /// the UI moves it to its own.
+    /// </summary>
+    event EventHandler<StageUpdate>? StageUpdated;
+
+    /// <summary>
+    /// Runs the project from its first stage that is not approved yet. Returns once the run is
+    /// queued; <see cref="StageUpdated"/> reports how it goes.
+    /// </summary>
+    /// <exception cref="KeyNotFoundException">No such project.</exception>
+    Task StartRunAsync(Guid projectId, CancellationToken cancellationToken = default);
+
+    /// <summary>Runs a stage again: Regenerate after a result, Retry after a failure. The earlier versions stay.</summary>
+    /// <exception cref="KeyNotFoundException">No such project.</exception>
+    Task RegenerateAsync(Guid projectId, PipelineStage stage, CancellationToken cancellationToken = default);
+
+    /// <summary>Stops a stage that is running or waiting to run; it goes back to where it stood before.</summary>
+    Task CancelAsync(Guid projectId, PipelineStage stage, CancellationToken cancellationToken = default);
+
+    /// <summary>Approves one version of a stage's result, and the run goes on with the next stage.</summary>
+    /// <exception cref="KeyNotFoundException">No such project or version.</exception>
+    /// <exception cref="InvalidOperationException">The stage is running.</exception>
+    Task ApproveAsync(Guid projectId, PipelineStage stage, int version, CancellationToken cancellationToken = default);
+
+    /// <summary>The fact sheet screen's content; <paramref name="version"/> null means the current version.</summary>
+    /// <exception cref="KeyNotFoundException">No such project or version.</exception>
+    Task<FactSheetView> GetFactSheetAsync(Guid projectId, int? version = null, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Changes one fact of <paramref name="version"/>: its wording, weight, or whether it is left out.
+    /// Your changes collect in one edited version until you approve it; a generated or approved
+    /// version is never changed, so the first change after one makes a new version.
+    /// </summary>
+    /// <exception cref="KeyNotFoundException">No such project, version or fact.</exception>
+    /// <exception cref="ArgumentException">The wording is empty or the weight is outside 1 to 10.</exception>
+    /// <exception cref="InvalidOperationException">The stage is running.</exception>
+    Task<FactSheetView> ChangeFactAsync(Guid projectId, int version, string factId, FactChange change, CancellationToken cancellationToken = default);
 }

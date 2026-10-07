@@ -14,6 +14,9 @@
   <ItemGroup>
     <ProjectReference Include="..\StoryForge.Client\StoryForge.Client.csproj" />
     <ProjectReference Include="..\StoryForge.Engine\StoryForge.Engine.csproj" />
+    <!-- Not used by the app's code: referenced so its exe ships next to StoryForge.App.exe, where the
+         engine starts it for the Research stage. -->
+    <ProjectReference Include="..\StoryForge.ResearchServer\StoryForge.ResearchServer.csproj" />
   </ItemGroup>
 
   <ItemGroup>
