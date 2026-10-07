@@ -204,9 +204,10 @@ function Get-AppProcess {
     if ($AnyVersion) {
         # Exactly our folders, not a neighbour whose name happens to start the same way
         # (StoryForgeX_old, StoryForgeX-backup): the current link itself, or a versioned folder, which
-        # always has a dash and a version number after the app name.
+        # always has a dash and nothing but a version number after the app name (StoryForgeX-1.2.2.9,
+        # not StoryForgeX-1.2.2.9-copy).
         $current   = Get-CurrentLinkPath $InstallRoot
-        $versioned = '^' + [regex]::Escape((Join-Path (Resolve-RealPath $InstallRoot) $AppName) + '-') + '\d[^\\]*\\'
+        $versioned = '^' + [regex]::Escape((Join-Path (Resolve-RealPath $InstallRoot) $AppName) + '-') + '\d+(\.\d+){2,3}\\'
         return @($all | Where-Object {
             (Test-PathUnder $_.ExecutablePath $current) -or
             ((Resolve-RealPath $_.ExecutablePath) -match $versioned)

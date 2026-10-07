@@ -515,6 +515,22 @@ public sealed class BuildScriptTests
     }
 
     [Fact]
+    public void AShortcutThatCannotBeWritten_StillLetsTheVersionBeRecorded()
+    {
+        // The shortcut comes after the folder is made current and marked finished. Had its failure
+        // ended the run, the bump would never be recorded, and the next run would refuse the same
+        // number as "already published".
+        using var repo = new FakeRepo("1.2.2.8");
+
+        var result = repo.Build(before: "$env:FAKE_SHORTCUT_FAILS = '1'");
+
+        Assert.True(result.ExitCode == 0, result.Output);
+        Assert.Equal("1.2.2.9", repo.Version);
+        Assert.Contains("git push --quiet origin main", repo.Calls);
+        Assert.Contains("Start Menu shortcut could not be written", result.Output);
+    }
+
+    [Fact]
     public void AnEmptyInstallDir_IsRefused_NotTakenForAStableBuild()
     {
         // -InstallDir $env:TEST_DIR with the variable unset passes an empty string. Read as "no
@@ -562,7 +578,7 @@ public sealed class BuildScriptTests
         // version, still running" is wrong about what runs.
         using var temp = new TempFolder();
         var root = Directory.CreateDirectory(Path.Combine(temp.Path, "root")).FullName;
-        var running = new[] { "StoryForgeX-1.2.2.9", "StoryForgeX-backup", "StoryForgeX-old" }
+        var running = new[] { "StoryForgeX-1.2.2.9", "StoryForgeX-backup", "StoryForgeX-old", "StoryForgeX-1.2.2.9-copy", "StoryForgeX-2024-backup" }
             .Select(folder => Directory.CreateDirectory(Path.Combine(root, folder)).FullName + "\\StoryForge.App.exe");
         var fakeProcesses =
             "function Get-CimInstance { " +
@@ -792,7 +808,11 @@ public sealed class BuildScriptTests
                 $out = $args[[array]::IndexOf($args, '--output') + 1]
                 New-Item -ItemType File -Path (Join-Path $out $AppExeName) -Force | Out-Null
             }
-            function Write-StartMenuShortcut { param([string]$InstallDir) Write-FakeCall "shortcut $InstallDir"; return 'fake.lnk' }
+            function Write-StartMenuShortcut {
+                param([string]$InstallDir)
+                if ($env:FAKE_SHORTCUT_FAILS) { throw 'Access to the Programs folder is denied.' }
+                Write-FakeCall "shortcut $InstallDir"; return 'fake.lnk'
+            }
             function Get-AppProcess {
                 param([string]$InstallDir, [switch]$AnyVersion, [string]$InstallRoot)
                 if (-not $env:FAKE_RUNNING_FROM) { return @() }

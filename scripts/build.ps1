@@ -269,9 +269,17 @@ if ($stable) {
         }
     }
     else {
-        $linkPath = Write-StartMenuShortcut $shortcutDir
-        Write-Ok "Start Menu shortcut at $linkPath"
-        Write-Note "right-click it in the Start Menu and choose 'Pin to taskbar'"
+        # The folder is current and finished by now, so a failure here must not end the run: the bump
+        # would never be recorded, and the next run would refuse this number as already published.
+        try {
+            $linkPath = Write-StartMenuShortcut $shortcutDir
+            Write-Ok "Start Menu shortcut at $linkPath"
+            Write-Note "right-click it in the Start Menu and choose 'Pin to taskbar'"
+        }
+        catch {
+            Write-Warn "the Start Menu shortcut could not be written - $($_.Exception.Message)"
+            Write-Warn "the build is fine; start it from $(Join-Path $shortcutDir $AppExeName)"
+        }
     }
 
     $running = @(Get-AppProcess -AnyVersion -InstallRoot $InstallRoot)
