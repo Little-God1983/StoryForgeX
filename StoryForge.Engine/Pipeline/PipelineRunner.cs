@@ -95,10 +95,6 @@ internal sealed class PipelineRunner(
         {
             throw new InvalidOperationException($"The {stage} stage is not built yet.");
         }
-        if (!IsBusy(projectId, stage) && IsAnyBusy(projectId, stage))
-        {
-            throw new InvalidOperationException($"A segment of the {stage} stage is being written. Try again when it is done.");
-        }
         await EnqueueAsync(projectId, stage, Whole, cancellationToken);
     }
 
@@ -246,12 +242,17 @@ internal sealed class PipelineRunner(
         var job = new Job(projectId, stage, key, CancellationTokenSource.CreateLinkedTokenSource(_stopping.Token));
         lock (_lock)
         {
-            // Checked with the adding, so a whole run cannot slip in between: it would end before
-            // the segment and could take the segment away.
+            // Checked with the adding, so neither can slip in beside the other: a whole run replaces
+            // the segments, and a segment written alongside it would be lost or stale.
             if (key != Whole && _jobs.ContainsKey((projectId, stage, Whole)))
             {
                 job.Cancel.Dispose();
                 throw new InvalidOperationException($"The {stage} stage is being written. Try again when it is done.");
+            }
+            if (key == Whole && _jobs.Keys.Any(k => k.Item1 == projectId && k.Item2 == stage && k.Item3 != Whole))
+            {
+                job.Cancel.Dispose();
+                throw new InvalidOperationException($"A segment of the {stage} stage is being written. Try again when it is done.");
             }
             if (!_jobs.TryAdd((projectId, stage, key), job))
             {
@@ -454,23 +455,25 @@ internal sealed class PipelineRunner(
 
     /// <summary>
     /// The stage's state from its segments: approved when every segment is, else waiting for review.
-    /// A stage that is running or failed is left as it is. Returns the new state when it changed.
+    /// A running stage is left as it is. A failed one (its last run failed) keeps its failure until
+    /// every segment of the script before it is approved. Returns the new state when it changed.
     /// </summary>
     private async Task<StageState?> SettleAsync(StoryForgeDbContext db, Guid projectId, PipelineStage stage, CancellationToken cancellationToken)
     {
         var cell = await db.Cells.FirstOrDefaultAsync(c => c.ProjectId == projectId && c.Stage == stage && c.Key == Whole, cancellationToken);
-        if (cell is null || cell.State is not (StageState.NeedsReview or StageState.Approved))
+        if (cell is null || cell.State is not (StageState.NeedsReview or StageState.Approved or StageState.Failed))
         {
             return null;
         }
         // Tracked cells first: changes made in this context are not in the database yet.
         var segments = await db.Cells.Where(c => c.ProjectId == projectId && c.Stage == stage && c.Key != Whole).ToListAsync(cancellationToken);
         var state = segments.Count > 0 && segments.All(s => s.State == StageState.Approved) ? StageState.Approved : StageState.NeedsReview;
-        if (state == cell.State)
+        if (state == cell.State || (cell.State == StageState.Failed && (state != StageState.Approved || cell.CurrentVersion is null)))
         {
             return null;
         }
         cell.State = state;
+        cell.Error = null;
         cell.ApprovedVersion = state == StageState.Approved ? cell.CurrentVersion : cell.ApprovedVersion;
         cell.UpdatedAt = clock.GetUtcNow();
         return state;
@@ -508,6 +511,10 @@ internal sealed class PipelineRunner(
         }, CancellationToken.None);
         Forget(job);
         Publish(Update(job, StageState.Failed));
+        if (job.Key != Whole)
+        {
+            await SettleAsync(job.ProjectId, job.Stage, CancellationToken.None);   // an approved stage has a failed segment now
+        }
     }
 
     /// <summary>

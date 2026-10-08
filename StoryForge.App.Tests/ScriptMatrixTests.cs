@@ -130,6 +130,23 @@ public sealed class ScriptMatrixTests
     }
 
     [Fact]
+    public async Task A_rewording_that_does_not_go_through_stays_in_the_editor()
+    {
+        var (matrix, project) = await OpenAsync();
+        await WrittenAsync(matrix, project);
+        var script = matrix.Script!;
+        script.StartEditCommand.Execute(null);
+        script.EditNarration = "A long new narration.";
+        _client.StageFailure = new InvalidOperationException("S01 is being written. Try again when it is done.");
+
+        await script.SaveEditCommand.ExecuteAsync(null);
+
+        Assert.True(script.IsEditing);
+        Assert.Equal("A long new narration.", script.EditNarration);
+        Assert.StartsWith("Could not save the segment", script.ActionError);
+    }
+
+    [Fact]
     public async Task A_version_chip_switches_the_segment_to_that_version()
     {
         var (matrix, project) = await OpenAsync();
@@ -182,6 +199,25 @@ public sealed class ScriptMatrixTests
 
         await script.CancelSegmentCommand.ExecuteAsync(null);
         Assert.Equal([(project.Id, "S02")], _client.CancelledSegments);
+    }
+
+    [Fact]
+    public async Task A_load_with_an_older_log_does_not_take_lines_from_the_segment_shown()
+    {
+        var (matrix, project) = await OpenAsync();
+        await WrittenAsync(matrix, project);
+        var script = matrix.Script!;
+        var view = _client.Scripts[project.Id];
+        _client.Scripts[project.Id] = view with { Segments = [.. view.Segments.Select(s => s.Id == "S01" ? s with { State = StageState.Running } : s)] };
+        _client.Raise(new StageUpdate(project.Id, PipelineStage.Script, StageState.Running, Key: "S01"));
+        await matrix.Updating;
+
+        _client.Raise(new StageUpdate(project.Id, PipelineStage.Script, StageState.Running, new ActivityLine(At, ActivityKind.Model, "asking Claude"), Key: "S01"));
+        _client.Raise(new StageUpdate(project.Id, PipelineStage.Script, StageState.Running, new ActivityLine(At, ActivityKind.Check, "checking"), Key: "S01"));
+        _client.Raise(new StageUpdate(project.Id, PipelineStage.Script, StageState.Approved, Key: "S03"));   // its load still has no lines of S01
+        await matrix.Updating;
+
+        Assert.Equal(["asking Claude", "checking"], script.SelectedActivity.Select(a => a.Text));
     }
 
     [Fact]

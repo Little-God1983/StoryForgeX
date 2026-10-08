@@ -225,6 +225,9 @@ public sealed partial class ScriptMatrixViewModel(IStoryForgeClient client, Guid
             Activity.Add(line);
         }
 
+        var shown = Selected?.Id;
+        var wasRunning = Selected?.State == StageState.Running;
+
         // Rows that are still there keep their place and selection; the rest come and go.
         for (var i = Rows.Count - 1; i >= 0; i--)
         {
@@ -253,7 +256,7 @@ public sealed partial class ScriptMatrixViewModel(IStoryForgeClient client, Guid
         {
             Select(Rows.FirstOrDefault());
         }
-        RefreshSelection();
+        RefreshSelection(keepLive: wasRunning && Selected?.Id == shown);
 
         var approved = view.Segments.Count(s => s.State == StageState.Approved);
         ApprovedSummary = $"{approved} of {view.Segments.Count} segments approved.";
@@ -279,9 +282,9 @@ public sealed partial class ScriptMatrixViewModel(IStoryForgeClient client, Guid
     }
 
     /// <summary>The selected row's segment changed in place: the panel reads it again.</summary>
-    private void RefreshSelection()
+    private void RefreshSelection(bool keepLive)
     {
-        ShowSelectedActivity();
+        ShowSelectedActivity(keepLive);
         foreach (var name in new[] { nameof(SelectedHeading), nameof(SelectedStatus), nameof(SelectedNarration), nameof(SelectedFacts), nameof(SelectedVersions), nameof(SelectedError), nameof(SelectedIsRunning), nameof(SelectedShowsLog) })
         {
             OnPropertyChanged(name);
@@ -292,12 +295,21 @@ public sealed partial class ScriptMatrixViewModel(IStoryForgeClient client, Guid
         CancelSegmentCommand.NotifyCanExecuteChanged();
     }
 
-    partial void OnSelectedChanged(SegmentRowViewModel? value) => ShowSelectedActivity();
+    partial void OnSelectedChanged(SegmentRowViewModel? value) => ShowSelectedActivity(keepLive: false);
 
-    private void ShowSelectedActivity()
+    /// <param name="keepLive">
+    /// The segment ran before this load and runs still: a load with fewer lines than came live since
+    /// is older than they are, and they stay.
+    /// </param>
+    private void ShowSelectedActivity(bool keepLive)
     {
+        var lines = Selected?.Segment.Activity ?? [];
+        if (keepLive && Selected?.State == StageState.Running && lines.Count < SelectedActivity.Count)
+        {
+            return;
+        }
         SelectedActivity.Clear();
-        foreach (var line in Selected?.Segment.Activity ?? [])
+        foreach (var line in lines)
         {
             SelectedActivity.Add(line);
         }
@@ -349,8 +361,11 @@ public sealed partial class ScriptMatrixViewModel(IStoryForgeClient client, Guid
     private async Task SaveEditAsync()
     {
         var id = Selected!.Id;
-        IsEditing = false;
         await ActAsync("save the segment", () => client.EditSegmentAsync(ProjectId, id, EditTitle.Trim(), EditNarration.Trim()));
+        if (ActionError is null)
+        {
+            IsEditing = false;   // saved; when it was not, your text stays to try again
+        }
     }
 
     [RelayCommand]

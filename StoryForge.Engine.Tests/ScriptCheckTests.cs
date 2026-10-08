@@ -93,6 +93,15 @@ public sealed class ScriptCheckTests
     }
 
     [Fact]
+    public void A_must_fact_no_segment_uses_is_not_asked_of_a_rewrite()
+    {
+        // S01 was switched back to a version without F01: no segment carries it any more.
+        IReadOnlyList<Segment> script = [new("S01", "Hook", "x", ["F02"]), new("S02", "Money", "y", ["F02"])];
+
+        Assert.Empty(ScriptCheck.SegmentProblems(Part("Money", 10, "F04"), "S02", Sheet, script));
+    }
+
+    [Fact]
     public void Fact_ids_with_spaces_around_them_still_count()
     {
         IReadOnlyList<Segment> script = [new("S01", "Hook", "x", ["F01"]), new("S02", "Money", "y", ["F02"])];

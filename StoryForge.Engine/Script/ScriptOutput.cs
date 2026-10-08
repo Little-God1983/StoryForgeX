@@ -65,7 +65,8 @@ internal static class ScriptCheck
 
     /// <summary>
     /// Checks one rewritten segment. The facts marked must that only this segment carried must still
-    /// be in it: the rest of the script does not change.
+    /// be in it: the rest of the script does not change. A must fact no segment carries is not asked
+    /// of it; the prompt never names one.
     /// </summary>
     public static IReadOnlyList<string> SegmentProblems(ScriptPart? part, string id, FactSheet sheet, IReadOnlyList<Segment> others)
     {
@@ -74,9 +75,10 @@ internal static class ScriptCheck
         {
             return problems;
         }
+        var before = others.FirstOrDefault(s => s.Id == id)?.FactIds ?? [];
         var elsewhere = others.Where(s => s.Id != id).SelectMany(s => s.FactIds).ToHashSet();
         var own = Ids(part.FactIds).ToHashSet();
-        foreach (var must in sheet.Facts.Where(f => !f.LeftOut && f.Weight >= Fact.MustWeight && !elsewhere.Contains(f.Id) && !own.Contains(f.Id)))
+        foreach (var must in sheet.Facts.Where(f => !f.LeftOut && f.Weight >= Fact.MustWeight && before.Contains(f.Id) && !elsewhere.Contains(f.Id) && !own.Contains(f.Id)))
         {
             problems.Add($"{must.Id} is marked must and no other segment uses it, so {id} has to keep it.");
         }

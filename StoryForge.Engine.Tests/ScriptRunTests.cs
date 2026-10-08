@@ -244,6 +244,41 @@ public sealed class ScriptRunTests : IDisposable
     }
 
     [Fact]
+    public async Task A_segment_that_fails_to_be_written_again_takes_the_approved_script_back_to_review()
+    {
+        _script.Answer(Good());
+        _script.FailSegment("Claude CLI did not answer in time.");
+        var client = await StartAsync();
+        var project = await ApprovedFactsAsync(client);
+        await ScriptAsync(client, project.Id, StageState.NeedsReview);
+        await client.ApproveScriptAsync(project.Id);
+
+        await client.RegenerateSegmentAsync(project.Id, "S02");
+        var script = await WaitForAsync(() => client.GetScriptAsync(project.Id), v => v.Segments[1].State == StageState.Failed);
+
+        Assert.Equal(StageState.NeedsReview, script.State);
+        Assert.Equal(StageState.NeedsReview, (await client.GetProjectAsync(project.Id)).Stages[1].State);
+    }
+
+    [Fact]
+    public async Task After_a_failed_rewrite_of_the_whole_script_the_script_before_it_can_still_be_approved()
+    {
+        var bad = new ScriptOutput([Part("War", "F99")], "");
+        _script.Answer(Good()).Answer(bad).Answer(bad).Answer(bad);
+        var client = await StartAsync();
+        var project = await ApprovedFactsAsync(client);
+        await ScriptAsync(client, project.Id, StageState.NeedsReview);
+        await client.RegenerateAsync(project.Id, PipelineStage.Script);
+        await ScriptAsync(client, project.Id, StageState.Failed);
+
+        await client.ApproveScriptAsync(project.Id);
+
+        var script = await client.GetScriptAsync(project.Id);
+        Assert.Equal((StageState.Approved, null), (script.State, script.Error));
+        Assert.Equal(StageState.Approved, (await client.GetProjectAsync(project.Id)).Stages[1].State);
+    }
+
+    [Fact]
     public async Task Writing_the_whole_script_again_replaces_its_segments()
     {
         _script.Answer(Good()).Answer(new([Part("Hook", "F01"), Part("Money", "F02", "F03")], ""));
