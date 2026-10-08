@@ -38,6 +38,9 @@ public sealed partial class FactSheetViewModel : ObservableObject
 
     public Guid ProjectId { get; }
 
+    /// <summary>"Approve and continue" went through; the screen goes back to the matrix.</summary>
+    public event EventHandler? Approved;
+
     /// <summary>The project's sources, for "Only … can be reached".</summary>
     public IReadOnlyList<string> Sources { get; }
 
@@ -309,6 +312,7 @@ public sealed partial class FactSheetViewModel : ObservableObject
         if (await RunAsync("approve the fact sheet", () => _client.ApproveAsync(ProjectId, PipelineStage.Research, Version!.Value)))
         {
             await LoadAsync();
+            Approved?.Invoke(this, EventArgs.Empty);
         }
     }
 

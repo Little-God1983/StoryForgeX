@@ -31,4 +31,5 @@ public enum VersionOrigin
 public sealed record ResultVersion(int Version, VersionOrigin Origin, DateTimeOffset CreatedAt, int? BasedOn);
 
 /// <summary>A stage changed: its state, or a new line of activity while it runs.</summary>
-public sealed record StageUpdate(Guid ProjectId, PipelineStage Stage, StageState State, ActivityLine? Activity = null);
+/// <param name="Key">The segment (or later the shot) the update is about; null for the stage as a whole.</param>
+public sealed record StageUpdate(Guid ProjectId, PipelineStage Stage, StageState State, ActivityLine? Activity = null, string? Key = null);

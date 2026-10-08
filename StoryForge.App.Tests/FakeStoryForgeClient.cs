@@ -387,6 +387,87 @@ internal sealed class FakeStoryForgeClient : IStoryForgeClient
         return view;
     }
 
+    /// <summary>The script per project; a project without one has an empty, not started script.</summary>
+    public Dictionary<Guid, ScriptView> Scripts { get; } = [];
+
+    public List<(Guid ProjectId, string SegmentId, int Version)> ApprovedSegments { get; } = [];
+
+    public List<Guid> ApprovedScripts { get; } = [];
+
+    public List<(Guid ProjectId, string SegmentId)> RegeneratedSegments { get; } = [];
+
+    public List<(Guid ProjectId, string SegmentId, string Title, string Narration)> EditedSegments { get; } = [];
+
+    public List<(Guid ProjectId, string SegmentId)> CancelledSegments { get; } = [];
+
+    public Task CancelSegmentAsync(Guid projectId, string segmentId, CancellationToken cancellationToken = default)
+    {
+        CancelledSegments.Add((projectId, segmentId));
+        return Task.CompletedTask;
+    }
+
+    public List<(Guid ProjectId, string SegmentId, int Version)> SelectedSegmentVersions { get; } = [];
+
+    public Task<ScriptView> GetScriptAsync(Guid projectId, CancellationToken cancellationToken = default) =>
+        Task.FromResult(Scripts.GetValueOrDefault(projectId) ?? new ScriptView(projectId, StageState.NotStarted, null, [], [], "", 0, 240, []));
+
+    public Task ApproveSegmentAsync(Guid projectId, string segmentId, int version, CancellationToken cancellationToken = default)
+    {
+        ThrowIfFailing();
+        ApprovedSegments.Add((projectId, segmentId, version));
+        ChangeSegment(projectId, segmentId, s => s with { State = StageState.Approved, ApprovedVersion = version });
+        return Task.CompletedTask;
+    }
+
+    public Task ApproveScriptAsync(Guid projectId, CancellationToken cancellationToken = default)
+    {
+        ThrowIfFailing();
+        ApprovedScripts.Add(projectId);
+        if (Scripts.TryGetValue(projectId, out var view))
+        {
+            Scripts[projectId] = view with { State = StageState.Approved, Segments = [.. view.Segments.Select(s => s with { State = StageState.Approved, ApprovedVersion = s.Version })] };
+        }
+        return Task.CompletedTask;
+    }
+
+    public Task RegenerateSegmentAsync(Guid projectId, string segmentId, CancellationToken cancellationToken = default)
+    {
+        ThrowIfFailing();
+        RegeneratedSegments.Add((projectId, segmentId));
+        return Task.CompletedTask;
+    }
+
+    public Task EditSegmentAsync(Guid projectId, string segmentId, string title, string narration, CancellationToken cancellationToken = default)
+    {
+        ThrowIfFailing();
+        EditedSegments.Add((projectId, segmentId, title, narration));
+        ChangeSegment(projectId, segmentId, s => s with
+        {
+            Title = title,
+            Narration = narration,
+            Version = s.Versions.Count + 1,
+            State = StageState.NeedsReview,
+            Versions = [.. s.Versions, new ResultVersion(s.Versions.Count + 1, VersionOrigin.Edited, DateTimeOffset.UtcNow, s.Version)],
+        });
+        return Task.CompletedTask;
+    }
+
+    public Task SelectSegmentVersionAsync(Guid projectId, string segmentId, int version, CancellationToken cancellationToken = default)
+    {
+        ThrowIfFailing();
+        SelectedSegmentVersions.Add((projectId, segmentId, version));
+        ChangeSegment(projectId, segmentId, s => s with { Version = version });
+        return Task.CompletedTask;
+    }
+
+    private void ChangeSegment(Guid projectId, string segmentId, Func<SegmentView, SegmentView> change)
+    {
+        if (Scripts.TryGetValue(projectId, out var view))
+        {
+            Scripts[projectId] = view with { Segments = [.. view.Segments.Select(s => s.Id == segmentId ? change(s) : s)] };
+        }
+    }
+
     private void ThrowIfFailing()
     {
         if (StageFailure is { } failure)

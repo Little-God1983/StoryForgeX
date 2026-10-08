@@ -21,6 +21,18 @@ internal sealed record ResearchFact(
 
 internal static class ResearchSchema
 {
+    /// <summary>The schema as one line of JSON, for --json-schema.</summary>
+    public static string Json { get; } = OutputSchema.Json<ResearchOutput>();
+
+    public static ResearchOutput? Read(JsonElement element) => OutputSchema.Read<ResearchOutput>(element);
+}
+
+/// <summary>
+/// The JSON schema Claude CLI enforces for a model's answer, generated from the C# record it is read
+/// into, with each property's [Description] as its description; and the reading back.
+/// </summary>
+internal static class OutputSchema
+{
     private static readonly JsonSerializerOptions Options = new(JsonSerializerDefaults.Web)
     {
         RespectNullableAnnotations = true,
@@ -28,14 +40,12 @@ internal static class ResearchSchema
         TypeInfoResolver = new DefaultJsonTypeInfoResolver(),
     };
 
+    public static T? Read<T>(JsonElement element) => element.Deserialize<T>(Options);
+
     /// <summary>The schema as one line of JSON, for --json-schema.</summary>
-    public static string Json { get; } = Build();
-
-    public static ResearchOutput? Read(JsonElement element) => element.Deserialize<ResearchOutput>(Options);
-
-    private static string Build()
+    public static string Json<T>()
     {
-        var schema = Options.GetJsonSchemaAsNode(typeof(ResearchOutput), new JsonSchemaExporterOptions
+        var schema = Options.GetJsonSchemaAsNode(typeof(T), new JsonSchemaExporterOptions
         {
             TreatNullObliviousAsNonNullable = true,
             TransformSchemaNode = (context, node) =>

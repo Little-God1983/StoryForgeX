@@ -90,5 +90,12 @@ public sealed class ProviderStatusBoardTests
         public Task ApproveAsync(Guid projectId, PipelineStage stage, int version, CancellationToken cancellationToken = default) => _inner.ApproveAsync(projectId, stage, version, cancellationToken);
         public Task<FactSheetView> GetFactSheetAsync(Guid projectId, int? version = null, CancellationToken cancellationToken = default) => _inner.GetFactSheetAsync(projectId, version, cancellationToken);
         public Task<FactSheetView> ChangeFactAsync(Guid projectId, int version, string factId, FactChange change, CancellationToken cancellationToken = default) => _inner.ChangeFactAsync(projectId, version, factId, change, cancellationToken);
+        public Task<ScriptView> GetScriptAsync(Guid projectId, CancellationToken cancellationToken = default) => _inner.GetScriptAsync(projectId, cancellationToken);
+        public Task ApproveSegmentAsync(Guid projectId, string segmentId, int version, CancellationToken cancellationToken = default) => _inner.ApproveSegmentAsync(projectId, segmentId, version, cancellationToken);
+        public Task ApproveScriptAsync(Guid projectId, CancellationToken cancellationToken = default) => _inner.ApproveScriptAsync(projectId, cancellationToken);
+        public Task RegenerateSegmentAsync(Guid projectId, string segmentId, CancellationToken cancellationToken = default) => _inner.RegenerateSegmentAsync(projectId, segmentId, cancellationToken);
+        public Task CancelSegmentAsync(Guid projectId, string segmentId, CancellationToken cancellationToken = default) => _inner.CancelSegmentAsync(projectId, segmentId, cancellationToken);
+        public Task EditSegmentAsync(Guid projectId, string segmentId, string title, string narration, CancellationToken cancellationToken = default) => _inner.EditSegmentAsync(projectId, segmentId, title, narration, cancellationToken);
+        public Task SelectSegmentVersionAsync(Guid projectId, string segmentId, int version, CancellationToken cancellationToken = default) => _inner.SelectSegmentVersionAsync(projectId, segmentId, version, cancellationToken);
     }
 }

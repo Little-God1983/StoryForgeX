@@ -126,29 +126,9 @@
       <views:FactSheetView DataContext="{Binding FactSheet}" Margin="28,20"
                            Visibility="{Binding DataContext.ShowsFactSheet, RelativeSource={RelativeSource AncestorType=UserControl}, Converter={StaticResource Visible}}" />
 
-      <StackPanel Margin="28,20" Visibility="{Binding ShowsMatrix, Converter={StaticResource Visible}}">
-        <!-- Column headers, as on the canvas. -->
-        <Grid Margin="4,0,4,8">
-          <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="220" />
-            <ColumnDefinition Width="*" />
-            <ColumnDefinition Width="*" />
-            <ColumnDefinition Width="*" />
-            <ColumnDefinition Width="*" />
-            <ColumnDefinition Width="*" />
-          </Grid.ColumnDefinitions>
-          <TextBlock Grid.Column="0" Text="SEGMENT · SHOT" Style="{StaticResource SectionLabelStyle}" />
-          <TextBlock Grid.Column="1" Text="SCRIPT" Style="{StaticResource SectionLabelStyle}" />
-          <TextBlock Grid.Column="2" Text="VOICE" Style="{StaticResource SectionLabelStyle}" />
-          <TextBlock Grid.Column="3" Text="BOARD" Style="{StaticResource SectionLabelStyle}" />
-          <TextBlock Grid.Column="4" Text="STILL" Style="{StaticResource SectionLabelStyle}" />
-          <TextBlock Grid.Column="5" Text="CLIP" Style="{StaticResource SectionLabelStyle}" />
-        </Grid>
-        <Border Background="{StaticResource CardBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="10" Padding="20,28">
-          <TextBlock HorizontalAlignment="Center" TextAlignment="Center" TextWrapping="Wrap" FontSize="13" Foreground="{StaticResource TextMutedBrush}"
-                     Text="No shots yet. The script and storyboard fill in this matrix once the run starts." />
-        </Border>
-      </StackPanel>
+      <!-- The matrix: one row per segment of the script, its cells by stage. -->
+      <views:ScriptMatrixView DataContext="{Binding Script}" Margin="28,20"
+                              Visibility="{Binding DataContext.ShowsMatrix, RelativeSource={RelativeSource AncestorType=UserControl}, Converter={StaticResource Visible}}" />
       </Grid>
     </DockPanel>
   </Grid>

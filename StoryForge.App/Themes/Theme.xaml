@@ -4,7 +4,8 @@
 -->
 <ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-                    xmlns:client="clr-namespace:StoryForge.Client;assembly=StoryForge.Client">
+                    xmlns:client="clr-namespace:StoryForge.Client;assembly=StoryForge.Client"
+                    xmlns:views="clr-namespace:StoryForge.App.Views">
 
   <FontFamily x:Key="SansFont">pack://application:,,,/Assets/Fonts/#IBM Plex Sans</FontFamily>
   <FontFamily x:Key="MonoFont">pack://application:,,,/Assets/Fonts/#IBM Plex Mono</FontFamily>
@@ -426,5 +427,40 @@
     <Setter Property="FontWeight" Value="SemiBold" />
     <Setter Property="Foreground" Value="{StaticResource TextMutedBrush}" />
   </Style>
+
+  <!-- The kind of an activity line, coloured as on the canvas. -->
+  <Style x:Key="ActivityKindStyle" TargetType="TextBlock">
+    <Setter Property="Width" Value="76" />
+    <Setter Property="Foreground" Value="{StaticResource TextSoftBrush}" />
+    <Style.Triggers>
+      <DataTrigger Binding="{Binding Kind}" Value="{x:Static client:ActivityKind.Search}">
+        <Setter Property="Foreground" Value="#6FB3EE" />
+      </DataTrigger>
+      <DataTrigger Binding="{Binding Kind}" Value="{x:Static client:ActivityKind.Fetch}">
+        <Setter Property="Foreground" Value="{StaticResource PillOkTextBrush}" />
+      </DataTrigger>
+      <DataTrigger Binding="{Binding Kind}" Value="{x:Static client:ActivityKind.Refused}">
+        <Setter Property="Foreground" Value="{StaticResource ErrorTextBrush}" />
+      </DataTrigger>
+      <DataTrigger Binding="{Binding Kind}" Value="{x:Static client:ActivityKind.Failed}">
+        <Setter Property="Foreground" Value="{StaticResource ErrorTextBrush}" />
+      </DataTrigger>
+      <DataTrigger Binding="{Binding Kind}" Value="{x:Static client:ActivityKind.Model}">
+        <Setter Property="Foreground" Value="#B4A8F5" />
+      </DataTrigger>
+      <DataTrigger Binding="{Binding Kind}" Value="{x:Static client:ActivityKind.Check}">
+        <Setter Property="Foreground" Value="{StaticResource AccentTextBrush}" />
+      </DataTrigger>
+    </Style.Triggers>
+  </Style>
+
+  <DataTemplate x:Key="ActivityLineTemplate" DataType="{x:Type client:ActivityLine}">
+    <DockPanel Margin="0,1">
+      <TextBlock DockPanel.Dock="Left" Width="72" Foreground="{StaticResource TextDimBrush}"
+                 Text="{Binding At, Converter={views:LocalTimeConverter}}" />
+      <TextBlock DockPanel.Dock="Left" Text="{Binding Kind}" Style="{StaticResource ActivityKindStyle}" />
+      <TextBlock Text="{Binding Text}" Foreground="{StaticResource TextSoftBrush}" TextWrapping="Wrap" />
+    </DockPanel>
+  </DataTemplate>
 
 </ResourceDictionary>

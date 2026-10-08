@@ -334,7 +334,8 @@ public sealed class FactSheetTests
 
         Assert.True(matrix.ShowsFactSheet);
         Assert.True(matrix.Stages[0].CanOpen);
-        Assert.All(matrix.Stages.Skip(1), chip => Assert.False(chip.CanOpen));   // their screens come with their stages
+        Assert.True(matrix.Stages[1].CanOpen);   // Script: the matrix
+        Assert.All(matrix.Stages.Skip(2), chip => Assert.False(chip.CanOpen));   // their screens come with their stages
     }
 
     [Fact]
