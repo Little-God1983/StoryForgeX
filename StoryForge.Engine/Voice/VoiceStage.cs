@@ -50,7 +50,15 @@ internal sealed class VoiceStage(
         {
             var (segment, version) = segments[i];
             Report(context, ActivityKind.Model, $"{segment.Id} ({i + 1} of {segments.Count}): {segment.Title}");
-            var clip = await SpeakAsync(context, speaker, segment, version, cancellationToken);
+            VoiceClip clip;
+            try
+            {
+                clip = await SpeakAsync(context, speaker, segment, version, cancellationToken);
+            }
+            catch (StageFailedException ex)
+            {
+                throw new StageFailedException($"{segment.Id}: {ex.Message}");   // the bar says which segment
+            }
             var result = new CellResult(segment.Id, StoredJson.Write(clip), VoiceClip.SchemaVersion, Hash(context.Project.Setup, segment, version));
             // Stored at once: a segment takes minutes, and you listen to it while the next is spoken.
             if (context.StoreSegment is { } store)

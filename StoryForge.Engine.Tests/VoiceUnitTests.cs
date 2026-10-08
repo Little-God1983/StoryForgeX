@@ -134,6 +134,18 @@ public sealed class NarrationPartsTests
     }
 
     [Fact]
+    public void A_part_cut_at_a_dash_ends_with_it_and_the_next_does_not_start_with_it()
+    {
+        var narration = Sentence(100, "") + " — " + Sentence(50);
+
+        var parts = NarrationParts.Split(narration, "English");
+
+        Assert.Equal(2, parts.Count);
+        Assert.EndsWith("—", parts[0]);
+        Assert.StartsWith("word", parts[1]);
+    }
+
+    [Fact]
     public void Quotes_after_the_full_stop_stay_with_their_sentence()
     {
         var narration = Sentence(60) + "\" " + Sentence(60);
@@ -244,6 +256,20 @@ public sealed class WorkflowTemplateTests : IDisposable
             WorkflowTemplate.Apply(Api(), [new("text", node)], new Dictionary<string, JsonNode> { ["text"] = "x" }));
 
         Assert.Contains(expected, ex.Message);
+    }
+
+    [Fact]
+    public void A_value_mapped_onto_a_wire_says_which_node_the_wire_comes_from()
+    {
+        var workflow = (JsonObject)JsonNode.Parse("""
+            { "2": { "class_type": "LoadAudio", "inputs": { "audio": "Amira.mp3" } },
+              "11": { "class_type": "ITLBreezeTTSVoiceDirection", "inputs": { "reference_audio": ["2", 0], "text": "" } } }
+            """)!;
+
+        var ex = Assert.Throws<StageFailedException>(() => WorkflowTemplate.Apply(workflow, [new("reference_audio", "#11.reference_audio")],
+            new Dictionary<string, JsonNode> { ["reference_audio"] = "storyforge-0123.mp3" }));
+
+        Assert.Equal("The profile puts 'reference_audio' into #11.reference_audio, which the workflow wires from node 2 (LoadAudio). Map it to an input of that node instead, e.g. #2.audio.", ex.Message);
     }
 
     [Fact]

@@ -56,7 +56,7 @@ internal static partial class NarrationParts
     [GeneratedRegex(@"(?<=[.!?…][""'”’)\]]?)\s+")]
     private static partial Regex Sentences();
 
-    // After , ; : or a dash that stands between words.
-    [GeneratedRegex(@"(?<=[,;:])\s+|\s+(?=[–—]\s)")]
+    // After , ; : or a dash that stands between words; the dash stays with the words before it.
+    [GeneratedRegex(@"(?<=[,;:])\s+|(?<=\s[–—])\s+")]
     private static partial Regex Pauses();
 }

@@ -96,7 +96,7 @@
       </Border>
 
       <Border Style="{StaticResource BarStyle}" Background="{StaticResource PillOkBackBrush}" BorderBrush="#2F5A50"
-              Visibility="{Binding ShowsScriptApproved, Converter={StaticResource Visible}}">
+              Visibility="{Binding IsApproved, Converter={StaticResource Visible}}">
         <DockPanel>
           <Button DockPanel.Dock="Right" Content="Regenerate script" Style="{StaticResource SecondaryButtonStyle}" Command="{Binding RegenerateScriptCommand}" />
           <TextBlock Text="Script approved" FontSize="14" FontWeight="SemiBold" Foreground="{StaticResource PillOkTextBrush}" VerticalAlignment="Center" Margin="0,0,14,0" />

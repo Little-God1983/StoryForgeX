@@ -42,7 +42,8 @@ public sealed partial class VoiceCellViewModel(string id, Action<VoiceCellViewMo
 
     public bool HasVoice => Segment is not null;
 
-    public StageState State => Segment?.State ?? (StageState is StageState.Running or StageState.Failed ? StageState : StageState.NotStarted);
+    // A segment the run never got to stays "—" when the run failed: the bar says where it failed.
+    public StageState State => Segment?.State ?? (StageState == StageState.Running ? StageState.Running : StageState.NotStarted);
 
     public string StateText => ScriptMatrixViewModel.Word(State);
 
@@ -112,7 +113,7 @@ public sealed partial class ScriptMatrixViewModel(IStoryForgeClient client, Guid
     public VoicePlaybackViewModel Playback { get; } = new(player ?? new NoAudio());
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(IsRunning), nameof(IsReview), nameof(IsApproved), nameof(IsFailed), nameof(IsNotStarted), nameof(ShowsLog), nameof(HasSegments), nameof(ShowsScriptApproved))]
+    [NotifyPropertyChangedFor(nameof(IsRunning), nameof(IsReview), nameof(IsApproved), nameof(IsFailed), nameof(IsNotStarted), nameof(ShowsLog), nameof(HasSegments))]
     [NotifyCanExecuteChangedFor(nameof(ApproveRemainingCommand), nameof(RegenerateScriptCommand), nameof(CancelCommand), nameof(ApproveSegmentCommand), nameof(RegenerateSegmentCommand), nameof(StartEditCommand))]
     private StageState _state;
 
@@ -125,9 +126,6 @@ public sealed partial class ScriptMatrixViewModel(IStoryForgeClient client, Guid
     public bool IsFailed => State == StageState.Failed;
 
     public bool IsNotStarted => State == StageState.NotStarted;
-
-    /// <summary>The script's "approved" bar, with Regenerate script; the voice's bar shows below it.</summary>
-    public bool ShowsScriptApproved => IsApproved;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsVoiceRunning), nameof(IsVoiceReview), nameof(IsVoiceApproved), nameof(IsVoiceFailed))]
@@ -334,6 +332,7 @@ public sealed partial class ScriptMatrixViewModel(IStoryForgeClient client, Guid
             {
                 _loads++;   // a load still on its way would show the state from before this run
                 VoiceActivity.Clear();
+                VoiceProgress = "";
                 VoiceState = StageState.Running;
                 VoiceError = null;
                 foreach (var row in Rows)
@@ -418,6 +417,7 @@ public sealed partial class ScriptMatrixViewModel(IStoryForgeClient client, Guid
         OnPropertyChanged(nameof(HasSegments));
         ApproveRemainingCommand.NotifyCanExecuteChanged();
         ApproveRemainingVoiceCommand.NotifyCanExecuteChanged();
+        RegenerateVoiceCommand.NotifyCanExecuteChanged();
     }
 
     private void ApplyVoice(VoiceView voice)
@@ -576,7 +576,7 @@ public sealed partial class ScriptMatrixViewModel(IStoryForgeClient client, Guid
     [RelayCommand(CanExecute = nameof(CanApproveRemainingVoice))]
     private Task ApproveRemainingVoiceAsync() => ActAsync("approve the voice", () => client.ApproveSegmentsAsync(ProjectId, PipelineStage.Voice));
 
-    private bool CanRegenerateVoice() => !IsVoiceRunning && IsApproved;
+    private bool CanRegenerateVoice() => !IsVoiceRunning && IsApproved && Rows.All(r => r.Voice.State != StageState.Running);
 
     /// <summary>Regenerate the whole voice; Retry after a failure.</summary>
     [RelayCommand(CanExecute = nameof(CanRegenerateVoice))]

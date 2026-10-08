@@ -186,7 +186,7 @@ public sealed class VoiceRunTests : IDisposable
         var voice = await VoiceAsync(client, project.Id, StageState.Failed, StageState.Approved);
 
         Assert.Equal(StageState.Failed, voice.State);
-        Assert.Equal("ComfyUI is not reachable at 127.0.0.1:8188. Start it, or check Settings → ComfyUI.", voice.Error);
+        Assert.Equal("S02: ComfyUI is not reachable at 127.0.0.1:8188. Start it, or check Settings → ComfyUI.", voice.Error);
         var s01 = Assert.Single(voice.Segments);   // spoken before S02 failed: minutes of work, kept
         Assert.Equal(StageState.Approved, s01.State);
         var folder = Path.Combine(_projects, $"Soul Coins – BG3 lore ({project.Id.ToString("N")[..8]})", "voice");

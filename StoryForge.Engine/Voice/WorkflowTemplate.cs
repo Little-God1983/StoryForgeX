@@ -71,6 +71,10 @@ internal static class WorkflowTemplate
             {
                 target["inputs"] = fields = [];
             }
+            if (fields[name] is JsonArray { Count: > 0 } wire && value is not JsonArray)
+            {
+                throw new StageFailedException(Wired(copy, input, node, name, wire[0]?.ToString() ?? "?"));
+            }
             fields[name] = value.DeepClone();
         }
         return copy;
@@ -79,6 +83,16 @@ internal static class WorkflowTemplate
     /// <summary>Whether the profile maps <paramref name="key"/> to a node.</summary>
     public static bool Maps(IReadOnlyList<WorkflowInput> inputs, string key) =>
         inputs.Any(i => i.Key.Trim() == key && !string.IsNullOrWhiteSpace(i.Node));
+
+    /// <summary>"…which the workflow wires from node 2 (LoadAudio). Map it to an input of that node instead, e.g. #2.audio."</summary>
+    private static string Wired(JsonObject workflow, WorkflowInput input, string node, string name, string from)
+    {
+        var source = workflow[from] as JsonObject;
+        var type = source?["class_type"]?.GetValue<string>();
+        var example = (source?["inputs"] as JsonObject)?.FirstOrDefault(i => i.Value is not JsonArray).Key;
+        return $"The profile puts '{input.Key}' into #{node}.{name}, which the workflow wires from node {from}{(type is null ? "" : $" ({type})")}. "
+            + $"Map it to an input of that node instead{(example is null ? "" : $", e.g. #{from}.{example}")}.";
+    }
 
     private static (string Node, string Input) Parse(WorkflowInput input)
     {

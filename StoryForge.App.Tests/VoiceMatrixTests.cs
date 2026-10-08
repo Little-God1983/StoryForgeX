@@ -65,7 +65,7 @@ public sealed class VoiceMatrixTests
         Assert.Equal("script about 3:52 · voice total 1:30 · target 4:00", script.LengthSummary);
         Assert.Equal("1 of 3 segments approved.", script.VoiceApprovedSummary);
         Assert.True(script.IsVoiceReview);
-        Assert.True(script.ShowsScriptApproved);   // above the voice's bar: Regenerate script stays at hand
+        Assert.True(script.IsApproved);   // above the voice's bar: Regenerate script stays at hand
         Assert.True(script.RegenerateScriptCommand.CanExecute(null));
         Assert.Equal("S02 voice: approved, 0:29", script.Rows[1].Voice.AccessibleName);
     }
@@ -78,7 +78,7 @@ public sealed class VoiceMatrixTests
         var script = matrix.Script!;
         Assert.Equal("—", script.Rows[0].Voice.StateText);
         Assert.False(script.Rows[0].Voice.SelectCommand.CanExecute(null));
-        Assert.True(script.ShowsScriptApproved);
+        Assert.True(script.IsApproved);
         Assert.Equal("script about 3:52 · target 4:00", script.LengthSummary);
     }
 
@@ -257,6 +257,35 @@ public sealed class VoiceMatrixTests
     }
 
     [Fact]
+    public async Task A_new_voice_run_does_not_show_the_last_line_of_the_one_before()
+    {
+        var (matrix, project) = await OpenAsync();
+        _client.Voices[project.Id] = new VoiceView(project.Id, StageState.Approved, null,
+            [new ActivityLine(At, ActivityKind.Check, "3 segments spoken, voice total 1:30 (target 4:00)")], [Voice("S01", 30, StageState.Approved)], 30, 240);
+        _client.Raise(new StageUpdate(project.Id, PipelineStage.Voice, StageState.Approved));
+        await matrix.Updating;
+
+        _client.Raise(new StageUpdate(project.Id, PipelineStage.Voice, StageState.Running));
+        await matrix.Updating;
+
+        Assert.Equal("", matrix.Script!.VoiceProgress);
+    }
+
+    [Fact]
+    public async Task Regenerate_voice_waits_while_one_segment_is_spoken_again()
+    {
+        var (matrix, project) = await OpenAsync();
+        await SpokenAsync(matrix, project, StageState.Approved);
+        var voice = _client.Voices[project.Id];
+        _client.Voices[project.Id] = voice with { Segments = [.. voice.Segments.Select(s => s.Id == "S02" ? s with { State = StageState.Running } : s)] };
+
+        _client.Raise(new StageUpdate(project.Id, PipelineStage.Voice, StageState.Running, Key: "S02"));
+        await matrix.Updating;
+
+        Assert.False(matrix.Script!.RegenerateVoiceCommand.CanExecute(null));
+    }
+
+    [Fact]
     public async Task Speaking_the_whole_voice_again_shows_every_cell_running_at_once()
     {
         var (matrix, project) = await OpenAsync();
@@ -380,7 +409,7 @@ public sealed class VoiceMatrixTests
 
         Assert.True(script.IsVoiceFailed);
         Assert.Equal("ComfyUI is not reachable at 127.0.0.1:8188.", script.VoiceError);
-        Assert.Equal("failed", script.Rows[0].Voice.StateText);
+        Assert.Equal("—", script.Rows[0].Voice.StateText);   // never tried: the bar says what failed
         Assert.Equal([(project.Id, PipelineStage.Voice)], _client.Regenerated);
     }
 
