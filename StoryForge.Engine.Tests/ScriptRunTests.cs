@@ -254,7 +254,8 @@ public sealed class ScriptRunTests : IDisposable
         await client.ApproveScriptAsync(project.Id);
 
         await client.RegenerateSegmentAsync(project.Id, "S02");
-        var script = await WaitForAsync(() => client.GetScriptAsync(project.Id), v => v.Segments[1].State == StageState.Failed);
+        // The segment fails first, and the stage settles right after it.
+        var script = await WaitForAsync(() => client.GetScriptAsync(project.Id), v => v.Segments[1].State == StageState.Failed && v.State != StageState.Approved);
 
         Assert.Equal(StageState.NeedsReview, script.State);
         Assert.Equal(StageState.NeedsReview, (await client.GetProjectAsync(project.Id)).Stages[1].State);
