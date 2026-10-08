@@ -248,14 +248,14 @@
                       <TextBlock Text="{Binding Id}" FontFamily="{StaticResource MonoFont}" FontSize="13" FontWeight="SemiBold" />
                       <TextBlock Text="{Binding Title}" FontSize="12" Foreground="{StaticResource TextMutedBrush}" TextTrimming="CharacterEllipsis" ToolTip="{Binding Title}" />
                     </StackPanel>
-                    <Button Grid.Column="1" Style="{StaticResource CellStyle}" Command="{Binding SelectCommand}" AutomationProperties.Name="{Binding}">
+                    <Button Grid.Column="1" Style="{StaticResource CellStyle}" Command="{Binding SelectCommand}" AutomationProperties.Name="{Binding AccessibleName}">
                       <DockPanel>
                         <TextBlock DockPanel.Dock="Right" Text="{Binding VersionText}" FontFamily="{StaticResource MonoFont}" />
                         <TextBlock Text="{Binding StateText}" FontWeight="SemiBold" />
                       </DockPanel>
                     </Button>
                     <Button Grid.Column="2" DataContext="{Binding Voice}" Style="{StaticResource CellStyle}" Margin="6,0,0,0"
-                            Command="{Binding SelectCommand}" AutomationProperties.Name="{Binding}">
+                            Command="{Binding SelectCommand}" AutomationProperties.Name="{Binding AccessibleName}">
                       <DockPanel>
                         <TextBlock DockPanel.Dock="Right" Text="{Binding LengthText}" FontFamily="{StaticResource MonoFont}" />
                         <TextBlock Text="{Binding StateText}" FontWeight="SemiBold" />

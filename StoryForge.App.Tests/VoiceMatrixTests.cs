@@ -66,7 +66,7 @@ public sealed class VoiceMatrixTests
         Assert.Equal("1 of 3 segments approved.", script.VoiceApprovedSummary);
         Assert.True(script.IsVoiceReview);
         Assert.False(script.ShowsScriptApproved);   // the voice's bar takes its place
-        Assert.Equal("S02 voice: approved, 0:29", script.Rows[1].Voice.ToString());
+        Assert.Equal("S02 voice: approved, 0:29", script.Rows[1].Voice.AccessibleName);
     }
 
     [Fact]
@@ -115,6 +115,33 @@ public sealed class VoiceMatrixTests
         script.Rows[0].Voice.SelectCommand.Execute(null);
         Assert.True(script.Playback.PlayPauseCommand.CanExecute(null));
         Assert.False(script.RegenerateSegmentCommand.CanExecute(null));   // not while the whole voice is spoken
+    }
+
+    [Fact]
+    public async Task A_cells_name_for_screen_readers_follows_the_cell_as_it_changes()
+    {
+        var (matrix, project) = await OpenAsync();
+        var cell = matrix.Script!.Rows[0].Voice;
+        var row = matrix.Script.Rows[0];
+        var renamed = new List<string?>();
+        cell.PropertyChanged += (_, e) => renamed.Add(e.PropertyName);
+        row.PropertyChanged += (_, e) => renamed.Add("row." + e.PropertyName);
+        Assert.Equal("S01 voice: —", cell.AccessibleName);
+
+        await SpokenAsync(matrix, project, StageState.Approved);
+        renamed.Clear();
+        // Only the segments change: the voice stays approved, S01 is spoken again and waits for review.
+        var voice = _client.Voices[project.Id];
+        _client.Voices[project.Id] = voice with { Segments = [Voice("S01", 30.6, version: 3), .. voice.Segments.Skip(1)] };
+        _client.Scripts[project.Id] = _client.Scripts[project.Id] with { Segments = [.. _client.Scripts[project.Id].Segments.Select(s => s with { Version = 2 })] };
+        _client.Raise(new StageUpdate(project.Id, PipelineStage.Script, StageState.Approved, Key: "S01"));
+        await matrix.Updating;
+
+        // The button's name is bound to it: WPF only reads it again when it says it changed.
+        Assert.Contains(nameof(VoiceCellViewModel.AccessibleName), renamed);
+        Assert.Contains("row." + nameof(SegmentRowViewModel.AccessibleName), renamed);
+        Assert.Equal("S01 voice: review, 0:31", cell.AccessibleName);   // 30.6 s
+        Assert.Equal("S01 script: approved, version 2", row.AccessibleName);
     }
 
     [Fact]

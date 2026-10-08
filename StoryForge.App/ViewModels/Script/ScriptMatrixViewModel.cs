@@ -26,13 +26,13 @@ public sealed record SegmentVersionChoice(int Version, bool IsShown, bool IsAppr
 public sealed partial class VoiceCellViewModel(string id, Action<VoiceCellViewModel> select) : ObservableObject
 {
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(State), nameof(StateText), nameof(LengthText), nameof(HasVoice))]
+    [NotifyPropertyChangedFor(nameof(State), nameof(StateText), nameof(LengthText), nameof(HasVoice), nameof(AccessibleName))]
     [NotifyCanExecuteChangedFor(nameof(SelectCommand))]
     private VoiceSegmentView? _segment;
 
     /// <summary>The Voice stage as a whole.</summary>
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(State), nameof(StateText))]
+    [NotifyPropertyChangedFor(nameof(State), nameof(StateText), nameof(AccessibleName))]
     private StageState _stageState;
 
     [ObservableProperty]
@@ -52,15 +52,17 @@ public sealed partial class VoiceCellViewModel(string id, Action<VoiceCellViewMo
     [RelayCommand(CanExecute = nameof(HasVoice))]
     private void Select() => select(this);
 
-    // What screen readers announce for the cell.
-    public override string ToString() => HasVoice ? $"{Id} voice: {StateText}, {LengthText}" : $"{Id} voice: {StateText}";
+    /// <summary>What screen readers announce for the cell; it follows the cell as it changes.</summary>
+    public string AccessibleName => HasVoice ? $"{Id} voice: {StateText}, {LengthText}" : $"{Id} voice: {StateText}";
+
+    public override string ToString() => AccessibleName;
 }
 
 /// <summary>One row of the matrix: a segment, with its Script cell and its Voice cell.</summary>
 public sealed partial class SegmentRowViewModel(SegmentView segment, Action<SegmentRowViewModel> select, Action<VoiceCellViewModel> selectVoice) : ObservableObject
 {
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(Id), nameof(Title), nameof(State), nameof(StateText), nameof(VersionText))]
+    [NotifyPropertyChangedFor(nameof(Id), nameof(Title), nameof(State), nameof(StateText), nameof(VersionText), nameof(AccessibleName))]
     private SegmentView _segment = segment;
 
     /// <summary>The Script cell is the one selected.</summary>
@@ -83,8 +85,10 @@ public sealed partial class SegmentRowViewModel(SegmentView segment, Action<Segm
     [RelayCommand]
     private void Select() => select(this);
 
-    // What screen readers announce for the cell.
-    public override string ToString() => $"{Id} script: {StateText}, version {Segment.Version}";
+    /// <summary>What screen readers announce for the Script cell; it follows the cell as it changes.</summary>
+    public string AccessibleName => $"{Id} script: {StateText}, version {Segment.Version}";
+
+    public override string ToString() => AccessibleName;
 }
 
 /// <summary>
