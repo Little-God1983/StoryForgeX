@@ -227,6 +227,9 @@
                 <Button Content="Regenerate" Style="{StaticResource SecondaryButtonStyle}" MinHeight="44" Margin="4,0,0,0" Command="{Binding RegenerateSegmentCommand}" />
               </UniformGrid>
               <Button Content="Edit text…" Style="{StaticResource SecondaryButtonStyle}" MinHeight="44" Margin="0,8,0,0" Command="{Binding StartEditCommand}" />
+              <Button Content="Cancel" Style="{StaticResource SecondaryButtonStyle}" MinHeight="44" Margin="0,8,0,0" Command="{Binding CancelSegmentCommand}"
+                      AutomationProperties.Name="Cancel the segment"
+                      Visibility="{Binding SelectedIsRunning, Converter={StaticResource Visible}}" />
             </StackPanel>
 
             <ScrollViewer VerticalScrollBarVisibility="Auto">
@@ -236,6 +239,11 @@
                 <TextBlock Text="{Binding SelectedStatus}" FontSize="13" Foreground="{StaticResource TextSoftBrush}" Margin="0,2,0,10" />
                 <TextBlock Text="{Binding SelectedError}" FontSize="13" Foreground="{StaticResource ErrorTextBrush}" TextWrapping="Wrap" Margin="0,0,0,10"
                            Visibility="{Binding SelectedError, Converter={views:NullToCollapsedConverter}}" />
+                <Border Background="{StaticResource CardBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="8" Padding="12,8" Margin="0,0,0,12"
+                        Visibility="{Binding SelectedShowsLog, Converter={StaticResource Visible}}">
+                  <ItemsControl ItemsSource="{Binding SelectedActivity}" ItemTemplate="{StaticResource ActivityLineTemplate}"
+                                FontFamily="{StaticResource MonoFont}" FontSize="12" Focusable="False" AutomationProperties.Name="Segment activity" />
+                </Border>
 
                 <ItemsControl ItemsSource="{Binding SelectedVersions}" Focusable="False" Margin="0,0,0,12" AutomationProperties.Name="Versions">
                   <ItemsControl.ItemsPanel>

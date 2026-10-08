@@ -72,12 +72,13 @@ public sealed class ScriptCheckTests
     [Fact]
     public void A_checked_script_becomes_numbered_segments()
     {
-        var script = ScriptCheck.ToSheet(new([new(" Hook ", " Narration. ", ["F01", " F01 "]), new("Outro", "Bye.", ["F02"])], " "));
+        var script = ScriptCheck.ToSheet(new([new(" Hook ", " Narration. ", ["F01", " F01 "]), new("Outro", "Bye.", ["F02"])], " "), factsVersion: 3);
 
         Assert.Equal(["S01", "S02"], script.Segments.Select(s => s.Id));
         Assert.Equal(("Hook", "Narration."), (script.Segments[0].Title, script.Segments[0].Narration));
         Assert.Equal(["F01"], script.Segments[0].FactIds);
         Assert.Equal("", script.LengthNote);
+        Assert.Equal(3, script.FactsVersion);
     }
 
     [Fact]
@@ -89,6 +90,15 @@ public sealed class ScriptCheckTests
             ["F01 is marked must and no other segment uses it, so S01 has to keep it."],
             ScriptCheck.SegmentProblems(Part("Hook", 10, "F04"), "S01", Sheet, script));
         Assert.Empty(ScriptCheck.SegmentProblems(Part("Money", 10, "F04"), "S02", Sheet, script));
+    }
+
+    [Fact]
+    public void Fact_ids_with_spaces_around_them_still_count()
+    {
+        IReadOnlyList<Segment> script = [new("S01", "Hook", "x", ["F01"]), new("S02", "Money", "y", ["F02"])];
+
+        Assert.Empty(Problems(new([Part("Hook", 20, " F01 "), Part("Money", 30, "F02")], "")));
+        Assert.Empty(ScriptCheck.SegmentProblems(Part("Hook", 10, "F01 "), "S01", Sheet, script));
     }
 
     [Theory]

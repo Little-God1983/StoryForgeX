@@ -30,7 +30,7 @@ public sealed class ScriptMatrixTests
     private static SegmentView Segment(string id, string title, StageState state = StageState.NeedsReview, int version = 1, params string[] facts) =>
         new(id, title, state, version, state == StageState.Approved ? version : null,
             [.. Enumerable.Range(1, version).Select(v => new ResultVersion(v, VersionOrigin.Generated, At, null))],
-            $"Narration of {id}.", facts.Length > 0 ? facts : ["F01"], 48, null);
+            $"Narration of {id}.", facts.Length > 0 ? facts : ["F01"], 48, null, []);
 
     /// <summary>The script was written: three segments wait for review.</summary>
     private async Task WrittenAsync(ResultMatrixPageViewModel matrix, Project project, string lengthNote = "")
@@ -152,6 +152,36 @@ public sealed class ScriptMatrixTests
         await matrix.Script!.RegenerateSegmentCommand.ExecuteAsync(null);
 
         Assert.Equal([(project.Id, "S01")], _client.RegeneratedSegments);
+    }
+
+    [Fact]
+    public async Task A_segment_written_again_shows_its_log_in_the_panel_and_Cancel_stops_it()
+    {
+        var (matrix, project) = await OpenAsync();
+        await WrittenAsync(matrix, project);
+        var script = matrix.Script!;
+        script.Rows[1].SelectCommand.Execute(null);
+        Assert.False(script.SelectedShowsLog);
+        Assert.False(script.CancelSegmentCommand.CanExecute(null));
+
+        var view = _client.Scripts[project.Id];
+        _client.Scripts[project.Id] = view with
+        {
+            Segments = [.. view.Segments.Select(s => s.Id == "S02" ? s with { State = StageState.Running, Activity = [new ActivityLine(At, ActivityKind.Model, "rewriting S02")] } : s)],
+        };
+        _client.Raise(new StageUpdate(project.Id, PipelineStage.Script, StageState.Running, Key: "S02"));
+        await matrix.Updating;
+        _client.Raise(new StageUpdate(project.Id, PipelineStage.Script, StageState.Running, new ActivityLine(At, ActivityKind.Check, "S02 rewritten"), Key: "S02"));
+        _client.Raise(new StageUpdate(project.Id, PipelineStage.Script, StageState.Running, new ActivityLine(At, ActivityKind.Check, "S03 line"), Key: "S03"));
+        await matrix.Updating;
+
+        Assert.True(script.SelectedShowsLog);
+        Assert.Equal(["rewriting S02", "S02 rewritten"], script.SelectedActivity.Select(a => a.Text));
+        Assert.DoesNotContain(script.Activity, a => a.Text.StartsWith('S'));
+        Assert.Equal("Script – review", matrix.Stages[1].Label);
+
+        await script.CancelSegmentCommand.ExecuteAsync(null);
+        Assert.Equal([(project.Id, "S02")], _client.CancelledSegments);
     }
 
     [Fact]

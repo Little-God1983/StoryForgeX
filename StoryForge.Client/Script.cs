@@ -7,7 +7,8 @@ public sealed record Segment(string Id, string Title, string Narration, IReadOnl
 
 /// <summary>The Script stage's result: its segments, and a word on the length when it cannot meet the target.</summary>
 /// <param name="LengthNote">Why the script is longer than the target, e.g. "The facts marked must need about 5:10."; empty when it fits.</param>
-public sealed record ScriptSheet(IReadOnlyList<Segment> Segments, string LengthNote)
+/// <param name="FactsVersion">The version of the approved fact sheet it was written from; its segments use that version's fact ids.</param>
+public sealed record ScriptSheet(IReadOnlyList<Segment> Segments, string LengthNote, int FactsVersion)
 {
     /// <summary>Raised whenever the stored shape changes, so older scripts can still be read.</summary>
     public const int SchemaVersion = 1;
@@ -32,6 +33,7 @@ public sealed record ScriptSheet(IReadOnlyList<Segment> Segments, string LengthN
 /// <param name="Version">The version shown and used; switching to an older one makes it current again.</param>
 /// <param name="Error">Why the last regeneration of this segment failed; null unless the state is Failed.</param>
 /// <param name="Seconds">How long the narration takes to speak.</param>
+/// <param name="Activity">What writing this segment again did: live while it runs, kept after it failed.</param>
 public sealed record SegmentView(
     string Id,
     string Title,
@@ -42,12 +44,14 @@ public sealed record SegmentView(
     string Narration,
     IReadOnlyList<string> FactIds,
     int Seconds,
-    string? Error);
+    string? Error,
+    IReadOnlyList<ActivityLine> Activity);
 
 /// <summary>Everything the result matrix shows of the Script stage.</summary>
 /// <param name="Error">Why the last run of the whole script failed; null unless the state is Failed.</param>
 /// <param name="Seconds">How long all segments together take to speak.</param>
-/// <param name="Facts">The approved fact sheet the script was written from, to show what a segment uses.</param>
+/// <param name="LengthNote">Why the script is longer than the target; empty once it is not.</param>
+/// <param name="Facts">The fact sheet the script was written from, to show what a segment uses.</param>
 public sealed record ScriptView(
     Guid ProjectId,
     StageState State,

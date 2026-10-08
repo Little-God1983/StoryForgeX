@@ -23,7 +23,11 @@ internal sealed class ScriptSegments(
     public async Task<ScriptView> GetAsync(Guid projectId, CancellationToken cancellationToken)
     {
         var setup = (await projects.GetAsync(projectId, cancellationToken)).Setup;
-        var facts = (await cells.ApprovedFactSheetAsync(projectId, cancellationToken))?.Sheet.Facts ?? [];
+        var script = await cells.CurrentScriptAsync(projectId, cancellationToken);
+        // The sheet the script was written from: its segments name that sheet's facts.
+        var facts = (script is { FactsVersion: > 0 } ? await cells.FactSheetAsync(projectId, script.FactsVersion, cancellationToken) : null)?.Facts
+            ?? (await cells.ApprovedFactSheetAsync(projectId, cancellationToken))?.Sheet.Facts
+            ?? [];
         await using var db = await contextFactory.CreateDbContextAsync(cancellationToken);
         var stageCells = await db.Cells.AsNoTracking().Where(c => c.ProjectId == projectId && c.Stage == Stage).ToListAsync(cancellationToken);
         var versions = await db.CellVersions.AsNoTracking().Where(v => v.ProjectId == projectId && v.Stage == Stage).ToListAsync(cancellationToken);
@@ -33,13 +37,14 @@ internal sealed class ScriptSegments(
             return new ScriptView(projectId, StageState.NotStarted, null, [], [], "", 0, setup.Output.TargetSeconds, facts);
         }
 
-        var script = versions.FirstOrDefault(v => v.Key == "" && v.Version == whole.CurrentVersion) is { } current
-            ? StoredJson.Read<ScriptSheet>(current.OutputJson)
-            : null;
         var segments = stageCells.Where(c => c.Key != "").OrderBy(c => c.Key, StringComparer.Ordinal).Select(cell =>
         {
             var own = versions.Where(v => v.Key == cell.Key).OrderBy(v => v.Version).ToList();
-            var shown = StoredJson.Read<Segment>(own.First(v => v.Version == cell.CurrentVersion).OutputJson);
+            if (own.FirstOrDefault(v => v.Version == cell.CurrentVersion) is not { } current)
+            {
+                return null;   // never written: nothing to show
+            }
+            var shown = StoredJson.Read<Segment>(current.OutputJson);
             return new SegmentView(
                 cell.Key,
                 shown.Title,
@@ -50,17 +55,20 @@ internal sealed class ScriptSegments(
                 shown.Narration,
                 shown.FactIds,
                 ScriptSheet.Seconds(shown.Narration, setup.Output.Language),
-                cell.State == StageState.Failed ? cell.Error : null);
-        }).ToList();
+                cell.State == StageState.Failed ? cell.Error : null,
+                runner.LiveActivity(projectId, Stage, cell.Key) ?? StoredJson.Read<List<ActivityLine>>(cell.ActivityJson));
+        }).OfType<SegmentView>().ToList();
         var activity = runner.LiveActivity(projectId, Stage) ?? StoredJson.Read<List<ActivityLine>>(whole.ActivityJson);
+        var seconds = segments.Sum(s => s.Seconds);
         return new ScriptView(
             projectId,
             whole.State,
             whole.State == StageState.Failed ? whole.Error : null,
             activity,
             segments,
-            script?.LengthNote ?? "",
-            segments.Sum(s => s.Seconds),
+            // Why it is longer than the target: said of the script as written, gone once the segments fit.
+            seconds > setup.Output.TargetSeconds ? script?.LengthNote ?? "" : "",
+            seconds,
             setup.Output.TargetSeconds,
             facts);
     }

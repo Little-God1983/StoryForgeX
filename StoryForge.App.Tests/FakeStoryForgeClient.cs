@@ -398,6 +398,14 @@ internal sealed class FakeStoryForgeClient : IStoryForgeClient
 
     public List<(Guid ProjectId, string SegmentId, string Title, string Narration)> EditedSegments { get; } = [];
 
+    public List<(Guid ProjectId, string SegmentId)> CancelledSegments { get; } = [];
+
+    public Task CancelSegmentAsync(Guid projectId, string segmentId, CancellationToken cancellationToken = default)
+    {
+        CancelledSegments.Add((projectId, segmentId));
+        return Task.CompletedTask;
+    }
+
     public List<(Guid ProjectId, string SegmentId, int Version)> SelectedSegmentVersions { get; } = [];
 
     public Task<ScriptView> GetScriptAsync(Guid projectId, CancellationToken cancellationToken = default) =>

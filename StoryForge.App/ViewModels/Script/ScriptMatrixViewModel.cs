@@ -109,8 +109,8 @@ public sealed partial class ScriptMatrixViewModel(IStoryForgeClient client, Guid
     private string _lengthNote = "";
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(HasSelection), nameof(SelectedHeading), nameof(SelectedStatus), nameof(SelectedNarration), nameof(SelectedFacts), nameof(SelectedVersions), nameof(SelectedError))]
-    [NotifyCanExecuteChangedFor(nameof(ApproveSegmentCommand), nameof(RegenerateSegmentCommand), nameof(StartEditCommand))]
+    [NotifyPropertyChangedFor(nameof(HasSelection), nameof(SelectedHeading), nameof(SelectedStatus), nameof(SelectedNarration), nameof(SelectedFacts), nameof(SelectedVersions), nameof(SelectedError), nameof(SelectedIsRunning), nameof(SelectedShowsLog))]
+    [NotifyCanExecuteChangedFor(nameof(ApproveSegmentCommand), nameof(RegenerateSegmentCommand), nameof(StartEditCommand), nameof(CancelSegmentCommand))]
     private SegmentRowViewModel? _selected;
 
     public bool HasSelection => Selected is not null;
@@ -126,6 +126,15 @@ public sealed partial class ScriptMatrixViewModel(IStoryForgeClient client, Guid
     public string SelectedNarration => Selected?.Segment.Narration ?? "";
 
     public string? SelectedError => Selected?.Segment.Error;
+
+    /// <summary>The selected segment is being written again.</summary>
+    public bool SelectedIsRunning => Selected?.State == StageState.Running;
+
+    /// <summary>Its log shows while it is written again, and after that failed.</summary>
+    public bool SelectedShowsLog => SelectedIsRunning || (Selected?.State == StageState.Failed && SelectedActivity.Count > 0);
+
+    /// <summary>What writing the selected segment again did.</summary>
+    public ObservableCollection<ActivityLine> SelectedActivity { get; } = [];
 
     public IReadOnlyList<UsedFact> SelectedFacts => Selected is null
         ? []
@@ -192,9 +201,15 @@ public sealed partial class ScriptMatrixViewModel(IStoryForgeClient client, Guid
             }
             return;
         }
-        if (update.Key is not null && update.Activity is not null)
+        if (update.Key is not null && update.Activity is { } segmentLine)
         {
-            return;   // a segment's own log lines; its state changes come as their own updates
+            // A segment's own log line: the panel shows it when that segment is selected. Its state
+            // changes come as updates of their own.
+            if (update.Key == Selected?.Id)
+            {
+                SelectedActivity.Add(segmentLine);
+            }
+            return;
         }
         await LoadAsync();
     }
@@ -266,13 +281,26 @@ public sealed partial class ScriptMatrixViewModel(IStoryForgeClient client, Guid
     /// <summary>The selected row's segment changed in place: the panel reads it again.</summary>
     private void RefreshSelection()
     {
-        foreach (var name in new[] { nameof(SelectedHeading), nameof(SelectedStatus), nameof(SelectedNarration), nameof(SelectedFacts), nameof(SelectedVersions), nameof(SelectedError) })
+        ShowSelectedActivity();
+        foreach (var name in new[] { nameof(SelectedHeading), nameof(SelectedStatus), nameof(SelectedNarration), nameof(SelectedFacts), nameof(SelectedVersions), nameof(SelectedError), nameof(SelectedIsRunning), nameof(SelectedShowsLog) })
         {
             OnPropertyChanged(name);
         }
         ApproveSegmentCommand.NotifyCanExecuteChanged();
         RegenerateSegmentCommand.NotifyCanExecuteChanged();
         StartEditCommand.NotifyCanExecuteChanged();
+        CancelSegmentCommand.NotifyCanExecuteChanged();
+    }
+
+    partial void OnSelectedChanged(SegmentRowViewModel? value) => ShowSelectedActivity();
+
+    private void ShowSelectedActivity()
+    {
+        SelectedActivity.Clear();
+        foreach (var line in Selected?.Segment.Activity ?? [])
+        {
+            SelectedActivity.Add(line);
+        }
     }
 
     private bool SegmentIdle() => Selected is not null && !IsRunning && Selected.State != StageState.Running;
@@ -299,6 +327,9 @@ public sealed partial class ScriptMatrixViewModel(IStoryForgeClient client, Guid
 
     [RelayCommand(CanExecute = nameof(IsRunning))]
     private Task CancelAsync() => ActAsync("cancel the script", () => client.CancelAsync(ProjectId, PipelineStage.Script));
+
+    [RelayCommand(CanExecute = nameof(SelectedIsRunning))]
+    private Task CancelSegmentAsync() => ActAsync("cancel the segment", () => client.CancelSegmentAsync(ProjectId, Selected!.Id));
 
     [RelayCommand]
     private Task ShowVersionAsync(int version) =>

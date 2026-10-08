@@ -19,12 +19,13 @@ public sealed class ScriptRunTests : IDisposable
 
     private readonly EngineTestHost _engine = new();
     private readonly FakeScriptAgent _script = new();
+    private readonly ThreeFacts _research = new();
 
     public void Dispose() => _engine.Dispose();
 
     private Task<IStoryForgeClient> StartAsync() => _engine.StartClientAsync(services =>
     {
-        services.Replace(ServiceDescriptor.Singleton<IResearchAgent>(new ThreeFacts()));
+        services.Replace(ServiceDescriptor.Singleton<IResearchAgent>(_research));
         services.Replace(ServiceDescriptor.Singleton<IScriptAgent>(_script));
     });
 
@@ -275,6 +276,116 @@ public sealed class ScriptRunTests : IDisposable
     }
 
     [Fact]
+    public async Task Approving_the_fact_sheet_again_keeps_the_script_already_written()
+    {
+        _script.Answer(Good());
+        var client = await StartAsync();
+        var project = await ApprovedFactsAsync(client);
+        await ScriptAsync(client, project.Id, StageState.NeedsReview);
+        await client.ApproveSegmentAsync(project.Id, "S02", 1);
+        await client.EditSegmentAsync(project.Id, "S01", "Hook - mine", "My words.");
+
+        await ApproveNewResearchAsync(client, project.Id);
+
+        var script = await client.GetScriptAsync(project.Id);
+        Assert.Equal(StageState.NeedsReview, script.State);
+        Assert.Equal(("Hook - mine", 2), (script.Segments[0].Title, script.Segments[0].Version));
+        Assert.Equal(StageState.Approved, script.Segments[1].State);
+        Assert.Single(_script.Requests);
+    }
+
+    [Fact]
+    public async Task The_script_keeps_to_the_fact_sheet_it_was_written_from()
+    {
+        _script.Answer(Good());
+        _script.AnswerSegment(Part("Hook - a coin that whispers", "F01"));
+        var client = await StartAsync();
+        var project = await ApprovedFactsAsync(client);
+        await ScriptAsync(client, project.Id, StageState.NeedsReview);
+
+        _research.First = "Soul coins scream when spent.";
+        await ApproveNewResearchAsync(client, project.Id);
+
+        var script = await client.GetScriptAsync(project.Id);
+        Assert.Equal(("Soul coins hold one soul.", Fact.MustWeight), (script.Facts[0].Statement, script.Facts[0].Weight));
+
+        await client.RegenerateSegmentAsync(project.Id, "S01");
+        await WaitForAsync(() => client.GetScriptAsync(project.Id), v => v.Segments[0].Version == 2 || v.Segments[0].State == StageState.Failed);
+        Assert.Equal("Soul coins hold one soul.", _script.RewriteRequests.Single().Facts.Facts[0].Statement);
+    }
+
+    [Fact]
+    public async Task The_length_note_shows_only_while_the_script_runs_over_the_target()
+    {
+        var longer = new ScriptPart("Part", string.Join(' ', Enumerable.Repeat("word", 190)), ["F01"]);
+        _script.Answer(new([longer, longer with { FactIds = ["F02"] }, longer, longer with { FactIds = ["F03"] }], "The must facts need about 5:00."));
+        var client = await StartAsync();
+        var project = await ApprovedFactsAsync(client);
+        var script = await ScriptAsync(client, project.Id, StageState.NeedsReview, StageState.Failed);
+        Assert.Equal("The must facts need about 5:00.", script.LengthNote);
+
+        await client.EditSegmentAsync(project.Id, "S01", "Hook", "A coin screams.");
+
+        Assert.Equal("", (await client.GetScriptAsync(project.Id)).LengthNote);
+    }
+
+    [Fact]
+    public async Task A_segment_being_written_shows_its_log_and_can_be_cancelled()
+    {
+        _script.Answer(Good());
+        _script.HoldSegment();
+        var client = await StartAsync();
+        var project = await ApprovedFactsAsync(client);
+        await ScriptAsync(client, project.Id, StageState.NeedsReview);
+
+        await client.RegenerateSegmentAsync(project.Id, "S02");
+        var running = await WaitForAsync(() => client.GetScriptAsync(project.Id), v => v.Segments[1].Activity.Count > 0);
+        Assert.Equal(StageState.Running, running.Segments[1].State);
+        Assert.Equal(["rewriting S02"], running.Segments[1].Activity.Select(a => a.Text));
+        Assert.DoesNotContain(running.Activity, a => a.Text == "rewriting S02");   // the whole script's log is not this segment's
+
+        await client.CancelSegmentAsync(project.Id, "S02");
+
+        var back = await WaitForAsync(() => client.GetScriptAsync(project.Id), v => v.Segments[1].State != StageState.Running);
+        Assert.Equal((StageState.NeedsReview, 1), (back.Segments[1].State, back.Segments[1].Version));
+    }
+
+    [Fact]
+    public async Task A_segment_that_is_gone_when_its_rewrite_ends_stays_gone()
+    {
+        _script.Answer(Good());
+        _script.HoldSegment();
+        var client = await StartAsync();
+        var project = await ApprovedFactsAsync(client);
+        await ScriptAsync(client, project.Id, StageState.NeedsReview);
+        await client.RegenerateSegmentAsync(project.Id, "S04");
+        await WaitForAsync(() => client.GetScriptAsync(project.Id), v => v.Segments[3].Activity.Count > 0);
+
+        // A whole new script without S04 landed meanwhile.
+        await using (var db = await _engine.DbAsync())
+        {
+            db.Cells.Remove(db.Cells.Single(c => c.ProjectId == project.Id && c.Key == "S04"));
+            await db.SaveChangesAsync();
+        }
+        await client.CancelSegmentAsync(project.Id, "S04");
+
+        Assert.Equal(["S01", "S02", "S03"], (await client.GetScriptAsync(project.Id)).Segments.Select(s => s.Id));
+        await using (var db = await _engine.DbAsync())
+        {
+            Assert.DoesNotContain(db.Cells, c => c.ProjectId == project.Id && c.Key == "S04");   // no empty cell to hold up the approval
+        }
+    }
+
+    /// <summary>Researches the fact sheet again and approves the new version as it comes.</summary>
+    private static async Task ApproveNewResearchAsync(IStoryForgeClient client, Guid projectId)
+    {
+        var before = (await client.GetFactSheetAsync(projectId)).Version;
+        await client.RegenerateAsync(projectId, PipelineStage.Research);
+        var sheet = await WaitForAsync(() => client.GetFactSheetAsync(projectId), v => v.Version > before && v.State != StageState.Running);
+        await client.ApproveAsync(projectId, PipelineStage.Research, sheet.Version!.Value);
+    }
+
+    [Fact]
     public async Task Without_an_approved_fact_sheet_the_script_says_so()
     {
         var client = await StartAsync();
@@ -304,6 +415,9 @@ public sealed class ScriptRunTests : IDisposable
     /// <summary>Research that always finds the same three facts on one page.</summary>
     private sealed class ThreeFacts : IResearchAgent
     {
+        /// <summary>What the first fact says; a test changes it to research something new.</summary>
+        public string First { get; set; } = "Soul coins hold one soul.";
+
         public Task<ResearchAnswer> AskAsync(ResearchRequest request, ResearchAnswer? previous, IReadOnlyList<string> problems,
             IProgress<ActivityLine> activity, CancellationToken cancellationToken)
         {
@@ -311,7 +425,7 @@ public sealed class ScriptRunTests : IDisposable
             pages.Add(Page, null, PageText);
             return Task.FromResult(new ResearchAnswer("r", new ResearchOutput(
             [
-                new ResearchFact("Soul coins hold one soul.", Page, "a single mortal soul is bound"),
+                new ResearchFact(First, Page, "a single mortal soul is bound"),
                 new ResearchFact("Soul coins are forged of infernal iron.", Page, "forged of infernal iron"),
                 new ResearchFact("Soul coins are small.", Page, "Soul Coins are small"),
             ]), pages));
@@ -329,6 +443,8 @@ public sealed class ScriptRunTests : IDisposable
         public List<IReadOnlyList<string>> Problems { get; } = [];
 
         public List<string> Rewrites { get; } = [];
+
+        public List<ScriptRequest> RewriteRequests { get; } = [];
 
         public FakeScriptAgent Answer(ScriptOutput output)
         {
@@ -367,8 +483,10 @@ public sealed class ScriptRunTests : IDisposable
             lock (Requests)
             {
                 Rewrites.Add(segmentId);
+                RewriteRequests.Add(request);
                 Problems.Add(problems);
             }
+            activity.Report(new ActivityLine(DateTimeOffset.UtcNow, ActivityKind.Model, $"rewriting {segmentId}"));
             return new ScriptAnswer<ScriptPart>("s", await _segments.Dequeue()(cancellationToken));
         }
     }

@@ -42,7 +42,7 @@ internal static class ScriptCheck
         {
             problems.AddRange(PartProblems(output.Segments[i], Id(i), sheet));
         }
-        var used = output.Segments.Where(s => s?.FactIds is not null).SelectMany(s => s.FactIds).ToHashSet();
+        var used = output.Segments.Where(s => s?.FactIds is not null).SelectMany(s => Ids(s.FactIds)).ToHashSet();
         foreach (var must in sheet.Facts.Where(f => !f.LeftOut && f.Weight >= Fact.MustWeight && !used.Contains(f.Id)))
         {
             problems.Add($"{must.Id} is marked must, but no segment uses it.");
@@ -75,7 +75,8 @@ internal static class ScriptCheck
             return problems;
         }
         var elsewhere = others.Where(s => s.Id != id).SelectMany(s => s.FactIds).ToHashSet();
-        foreach (var must in sheet.Facts.Where(f => !f.LeftOut && f.Weight >= Fact.MustWeight && !elsewhere.Contains(f.Id) && !part.FactIds.Contains(f.Id)))
+        var own = Ids(part.FactIds).ToHashSet();
+        foreach (var must in sheet.Facts.Where(f => !f.LeftOut && f.Weight >= Fact.MustWeight && !elsewhere.Contains(f.Id) && !own.Contains(f.Id)))
         {
             problems.Add($"{must.Id} is marked must and no other segment uses it, so {id} has to keep it.");
         }
@@ -83,11 +84,11 @@ internal static class ScriptCheck
     }
 
     /// <summary>The script from a checked answer: segments numbered S01, S02, … in order.</summary>
-    public static ScriptSheet ToSheet(ScriptOutput output) =>
-        new([.. output.Segments.Select((s, i) => ToSegment(s, Id(i)))], output.LengthNote?.Trim() ?? "");
+    public static ScriptSheet ToSheet(ScriptOutput output, int factsVersion) =>
+        new([.. output.Segments.Select((s, i) => ToSegment(s, Id(i)))], output.LengthNote?.Trim() ?? "", factsVersion);
 
     public static Segment ToSegment(ScriptPart part, string id) =>
-        new(id, part.Title.Trim(), part.Narration.Trim(), [.. part.FactIds.Select(f => f.Trim()).Distinct()]);
+        new(id, part.Title.Trim(), part.Narration.Trim(), [.. Ids(part.FactIds)]);
 
     public static string Id(int index) => $"S{index + 1:00}";
 
@@ -114,7 +115,7 @@ internal static class ScriptCheck
             yield return $"{id} names no facts. Every segment says which facts it uses.";
             yield break;
         }
-        foreach (var factId in part.FactIds.Select(f => (f ?? "").Trim()).Distinct())
+        foreach (var factId in Ids(part.FactIds))
         {
             var fact = sheet.Facts.FirstOrDefault(f => f.Id == factId);
             if (fact is null)
@@ -127,4 +128,7 @@ internal static class ScriptCheck
             }
         }
     }
+
+    /// <summary>The fact ids as the sheet has them: "F01", whatever spaces came around them.</summary>
+    private static IEnumerable<string> Ids(IEnumerable<string> factIds) => factIds.Select(f => (f ?? "").Trim()).Distinct();
 }

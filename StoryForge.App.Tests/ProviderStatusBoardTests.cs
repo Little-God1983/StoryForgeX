@@ -94,6 +94,7 @@ public sealed class ProviderStatusBoardTests
         public Task ApproveSegmentAsync(Guid projectId, string segmentId, int version, CancellationToken cancellationToken = default) => _inner.ApproveSegmentAsync(projectId, segmentId, version, cancellationToken);
         public Task ApproveScriptAsync(Guid projectId, CancellationToken cancellationToken = default) => _inner.ApproveScriptAsync(projectId, cancellationToken);
         public Task RegenerateSegmentAsync(Guid projectId, string segmentId, CancellationToken cancellationToken = default) => _inner.RegenerateSegmentAsync(projectId, segmentId, cancellationToken);
+        public Task CancelSegmentAsync(Guid projectId, string segmentId, CancellationToken cancellationToken = default) => _inner.CancelSegmentAsync(projectId, segmentId, cancellationToken);
         public Task EditSegmentAsync(Guid projectId, string segmentId, string title, string narration, CancellationToken cancellationToken = default) => _inner.EditSegmentAsync(projectId, segmentId, title, narration, cancellationToken);
         public Task SelectSegmentVersionAsync(Guid projectId, string segmentId, int version, CancellationToken cancellationToken = default) => _inner.SelectSegmentVersionAsync(projectId, segmentId, version, cancellationToken);
     }

@@ -113,6 +113,9 @@ public interface IStoryForgeClient
     /// <exception cref="InvalidOperationException">The script is being written.</exception>
     Task RegenerateSegmentAsync(Guid projectId, string segmentId, CancellationToken cancellationToken = default);
 
+    /// <summary>Stops writing one segment again; it goes back to the version it had.</summary>
+    Task CancelSegmentAsync(Guid projectId, string segmentId, CancellationToken cancellationToken = default);
+
     /// <summary>Your own wording of a segment, saved as its next version, to review and approve like any other.</summary>
     /// <exception cref="KeyNotFoundException">No such project or segment.</exception>
     /// <exception cref="ArgumentException">The title or the narration is empty.</exception>

@@ -110,6 +110,9 @@ internal sealed class InProcessStoryForgeClient(
     public Task RegenerateSegmentAsync(Guid projectId, string segmentId, CancellationToken cancellationToken = default) =>
         runner.RegenerateSegmentAsync(projectId, PipelineStage.Script, segmentId, cancellationToken);
 
+    public Task CancelSegmentAsync(Guid projectId, string segmentId, CancellationToken cancellationToken = default) =>
+        runner.CancelAsync(projectId, PipelineStage.Script, segmentId);
+
     public Task EditSegmentAsync(Guid projectId, string segmentId, string title, string narration, CancellationToken cancellationToken = default) =>
         script.EditAsync(projectId, segmentId, title, narration, cancellationToken);
 

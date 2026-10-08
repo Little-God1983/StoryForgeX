@@ -10,16 +10,37 @@ internal sealed class CellReader(IDbContextFactory<StoryForgeDbContext> contextF
     /// <summary>The approved fact sheet and its version; null while none is approved.</summary>
     public async Task<(FactSheet Sheet, int Version)?> ApprovedFactSheetAsync(Guid projectId, CancellationToken cancellationToken)
     {
-        await using var db = await contextFactory.CreateDbContextAsync(cancellationToken);
-        var cell = await db.Cells.AsNoTracking()
-            .FirstOrDefaultAsync(c => c.ProjectId == projectId && c.Stage == PipelineStage.Research && c.Key == "", cancellationToken);
-        if (cell?.ApprovedVersion is not { } version)
+        int? version;
+        await using (var db = await contextFactory.CreateDbContextAsync(cancellationToken))
         {
-            return null;
+            version = await db.Cells.AsNoTracking()
+                .Where(c => c.ProjectId == projectId && c.Stage == PipelineStage.Research && c.Key == "")
+                .Select(c => c.ApprovedVersion)
+                .FirstOrDefaultAsync(cancellationToken);
         }
-        var entry = await db.CellVersions.AsNoTracking().FirstAsync(
+        return version is { } approved && await FactSheetAsync(projectId, approved, cancellationToken) is { } sheet ? (sheet, approved) : null;
+    }
+
+    /// <summary>One version of the fact sheet; null when there is no such version.</summary>
+    public async Task<FactSheet?> FactSheetAsync(Guid projectId, int version, CancellationToken cancellationToken)
+    {
+        await using var db = await contextFactory.CreateDbContextAsync(cancellationToken);
+        var entry = await db.CellVersions.AsNoTracking().FirstOrDefaultAsync(
             v => v.ProjectId == projectId && v.Stage == PipelineStage.Research && v.Key == "" && v.Version == version, cancellationToken);
-        return (StoredJson.Read<FactSheet>(entry.OutputJson), version);
+        return entry is null ? null : StoredJson.Read<FactSheet>(entry.OutputJson);
+    }
+
+    /// <summary>The whole script as it was last written; null before it was.</summary>
+    public async Task<ScriptSheet?> CurrentScriptAsync(Guid projectId, CancellationToken cancellationToken)
+    {
+        await using var db = await contextFactory.CreateDbContextAsync(cancellationToken);
+        var version = await db.Cells.AsNoTracking()
+            .Where(c => c.ProjectId == projectId && c.Stage == PipelineStage.Script && c.Key == "")
+            .Select(c => c.CurrentVersion)
+            .FirstOrDefaultAsync(cancellationToken);
+        var entry = version is null ? null : await db.CellVersions.AsNoTracking().FirstOrDefaultAsync(
+            v => v.ProjectId == projectId && v.Stage == PipelineStage.Script && v.Key == "" && v.Version == version, cancellationToken);
+        return entry is null ? null : StoredJson.Read<ScriptSheet>(entry.OutputJson);
     }
 
     /// <summary>The script's segments as they stand: each segment's current version, in order.</summary>

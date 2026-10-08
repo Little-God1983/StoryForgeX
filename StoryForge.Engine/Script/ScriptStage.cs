@@ -20,7 +20,7 @@ internal sealed class ScriptStage(IScriptAgent agent, CellReader cells, ProfileS
 
     public async Task<StageResult> RunAsync(StageContext context, CancellationToken cancellationToken)
     {
-        var (request, factsVersion) = await RequestAsync(context, cancellationToken);
+        var (request, factsVersion) = await RequestAsync(context, null, cancellationToken);
         var setup = context.Project.Setup;
         string? session = null;
         IReadOnlyList<string> problems = [];
@@ -33,7 +33,7 @@ internal sealed class ScriptStage(IScriptAgent agent, CellReader cells, ProfileS
             problems = ScriptCheck.Problems(answer.Output, request.Facts, setup.Output.Language, setup.Output.TargetSeconds);
             if (problems.Count == 0)
             {
-                var script = ScriptCheck.ToSheet(answer.Output!);
+                var script = ScriptCheck.ToSheet(answer.Output!, factsVersion);
                 var seconds = script.Segments.Sum(s => ScriptSheet.Seconds(s.Narration, setup.Output.Language));
                 Report(context, $"{script.Segments.Count} segments, about {ScriptCheck.Clock(seconds)} (target {ScriptCheck.Clock(setup.Output.TargetSeconds)})");
                 if (script.LengthNote.Length > 0)
@@ -59,7 +59,8 @@ internal sealed class ScriptStage(IScriptAgent agent, CellReader cells, ProfileS
 
     public async Task<CellResult> RunSegmentAsync(StageContext context, string key, CancellationToken cancellationToken)
     {
-        var (request, factsVersion) = await RequestAsync(context, cancellationToken);
+        var written = await cells.CurrentScriptAsync(context.Project.Id, cancellationToken);
+        var (request, factsVersion) = await RequestAsync(context, written?.FactsVersion, cancellationToken);
         var script = await cells.CurrentSegmentsAsync(context.Project.Id, cancellationToken);
         if (script.All(s => s.Id != key))
         {
@@ -104,7 +105,11 @@ internal sealed class ScriptStage(IScriptAgent agent, CellReader cells, ProfileS
         target = setup.Output.TargetSeconds,
     });
 
-    private async Task<(ScriptRequest Request, int FactsVersion)> RequestAsync(StageContext context, CancellationToken cancellationToken)
+    /// <summary>
+    /// What the model is asked from: the fact sheet of <paramref name="factsVersion"/> (a segment keeps
+    /// to the sheet its script was written from), else the approved one.
+    /// </summary>
+    private async Task<(ScriptRequest Request, int FactsVersion)> RequestAsync(StageContext context, int? factsVersion, CancellationToken cancellationToken)
     {
         var setup = context.Project.Setup;
         if (setup.Writing.Provider != ResearchStage.ClaudeCli)
@@ -112,9 +117,17 @@ internal sealed class ScriptStage(IScriptAgent agent, CellReader cells, ProfileS
             throw new StageFailedException(
                 $"The script is written through Claude CLI for now, and this project uses {setup.Writing.Provider}. LM Studio follows with #19.");
         }
-        var approved = await cells.ApprovedFactSheetAsync(context.Project.Id, cancellationToken)
-            ?? throw new StageFailedException("The fact sheet is not approved yet. Approve it, and the script is written from it.");
-        if (approved.Sheet.Facts.All(f => f.LeftOut))
+        (FactSheet Sheet, int Version) facts;
+        if (factsVersion is { } wanted && await cells.FactSheetAsync(context.Project.Id, wanted, cancellationToken) is { } written)
+        {
+            facts = (written, wanted);
+        }
+        else
+        {
+            facts = await cells.ApprovedFactSheetAsync(context.Project.Id, cancellationToken)
+                ?? throw new StageFailedException("The fact sheet is not approved yet. Approve it, and the script is written from it.");
+        }
+        if (facts.Sheet.Facts.All(f => f.LeftOut))
         {
             throw new StageFailedException("Every fact on the approved fact sheet is left out, so there is nothing to write from.");
         }
@@ -122,11 +135,11 @@ internal sealed class ScriptStage(IScriptAgent agent, CellReader cells, ProfileS
         return (new ScriptRequest(
             context.Project.Id,
             setup.Brief,
-            approved.Sheet,
+            facts.Sheet,
             profile.Content.Instructions,
             setup.Writing.Model,
             setup.Output.Language,
-            setup.Output.TargetSeconds), approved.Version);
+            setup.Output.TargetSeconds), facts.Version);
     }
 
     private void Fail(StageContext context, int attempt, IReadOnlyList<string> problems, bool last)

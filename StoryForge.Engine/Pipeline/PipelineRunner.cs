@@ -110,13 +110,9 @@ internal sealed class PipelineRunner(
         {
             throw new InvalidOperationException($"The {stage} stage has no segments to write one by one.");
         }
-        if (IsBusy(projectId, stage))
-        {
-            throw new InvalidOperationException($"The {stage} stage is being written. Try again when it is done.");
-        }
         await using (var db = await contextFactory.CreateDbContextAsync(cancellationToken))
         {
-            if (!await db.Cells.AnyAsync(c => c.ProjectId == projectId && c.Stage == stage && c.Key == key, cancellationToken))
+            if (!await db.Cells.AnyAsync(c => c.ProjectId == projectId && c.Stage == stage && c.Key == key && c.CurrentVersion != null, cancellationToken))
             {
                 throw new KeyNotFoundException($"The {stage} stage has no segment {key}.");
             }
@@ -224,13 +220,25 @@ internal sealed class PipelineRunner(
     internal static bool IsGated(ProjectSetup setup, PipelineStage stage) =>
         setup.Gates.Contains(stage) && (setup.Mode == RunMode.StopAtGates || ProjectSetup.RequiredGates.Contains(stage));
 
+    /// <summary>
+    /// Queues the next stage unless it has a result already: approving a stage again does not throw
+    /// away what came after it. Regenerate writes that again (#11 marks it out of date).
+    /// </summary>
     private async Task ContinueAsync(Guid projectId, PipelineStage stage, CancellationToken cancellationToken)
     {
         var next = stage + 1;
-        if (Enum.IsDefined(next) && _workers.ContainsKey(next))
+        if (!Enum.IsDefined(next) || !_workers.ContainsKey(next))
         {
-            await EnqueueAsync(projectId, next, Whole, cancellationToken);
+            return;
         }
+        await using (var db = await contextFactory.CreateDbContextAsync(cancellationToken))
+        {
+            if (await db.Cells.AnyAsync(c => c.ProjectId == projectId && c.Stage == next && c.Key == Whole && c.CurrentVersion != null, cancellationToken))
+            {
+                return;
+            }
+        }
+        await EnqueueAsync(projectId, next, Whole, cancellationToken);
     }
 
     private async Task EnqueueAsync(Guid projectId, PipelineStage stage, string key, CancellationToken cancellationToken)
@@ -238,8 +246,16 @@ internal sealed class PipelineRunner(
         var job = new Job(projectId, stage, key, CancellationTokenSource.CreateLinkedTokenSource(_stopping.Token));
         lock (_lock)
         {
+            // Checked with the adding, so a whole run cannot slip in between: it would end before
+            // the segment and could take the segment away.
+            if (key != Whole && _jobs.ContainsKey((projectId, stage, Whole)))
+            {
+                job.Cancel.Dispose();
+                throw new InvalidOperationException($"The {stage} stage is being written. Try again when it is done.");
+            }
             if (!_jobs.TryAdd((projectId, stage, key), job))
             {
+                job.Cancel.Dispose();
                 return;   // already running or waiting to run
             }
         }
@@ -510,11 +526,18 @@ internal sealed class PipelineRunner(
         Publish(Update(job, job.PreviousState));
     }
 
-    /// <summary>Changes the cell (made on first use), and the project's "last changed" with it.</summary>
+    /// <summary>
+    /// Changes the cell, and the project's "last changed" with it. A stage's cell is made on first use;
+    /// a segment's is not: one a new script took away stays away.
+    /// </summary>
     private async Task ChangeCellAsync(Guid projectId, PipelineStage stage, string key, Action<CellEntry> change, CancellationToken cancellationToken)
     {
         await using var db = await contextFactory.CreateDbContextAsync(cancellationToken);
         var cell = await db.Cells.FirstOrDefaultAsync(c => c.ProjectId == projectId && c.Stage == stage && c.Key == key, cancellationToken);
+        if (cell is null && key != Whole)
+        {
+            return;
+        }
         if (cell is null)
         {
             cell = new CellEntry { ProjectId = projectId, Stage = stage, Key = key, State = StageState.NotStarted };
