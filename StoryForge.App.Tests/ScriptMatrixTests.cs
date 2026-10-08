@@ -110,6 +110,20 @@ public sealed class ScriptMatrixTests
     }
 
     [Fact]
+    public async Task Approve_remaining_settles_a_script_whose_segments_are_all_approved()
+    {
+        var (matrix, project) = await OpenAsync();
+        await WrittenAsync(matrix, project);
+        var view = _client.Scripts[project.Id];
+        _client.Scripts[project.Id] = view with { Segments = [.. view.Segments.Select(s => s with { State = StageState.Approved, ApprovedVersion = s.Version })] };
+        _client.Raise(new StageUpdate(project.Id, PipelineStage.Script, StageState.Approved, Key: "S03"));
+        await matrix.Updating;
+
+        Assert.True(matrix.Script!.IsReview);
+        Assert.True(matrix.Script.ApproveRemainingCommand.CanExecute(null));
+    }
+
+    [Fact]
     public async Task A_segment_is_reworded_in_the_panel_as_a_new_version()
     {
         var (matrix, project) = await OpenAsync();

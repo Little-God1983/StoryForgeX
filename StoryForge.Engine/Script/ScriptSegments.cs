@@ -119,7 +119,10 @@ internal sealed class ScriptSegments(
         await runner.SettleAsync(projectId, Stage, cancellationToken);
     }
 
-    /// <summary>Your wording, saved as the segment's next version; it keeps the facts the segment listed.</summary>
+    /// <summary>
+    /// Your wording, saved as the segment's next version; it keeps the facts the segment listed.
+    /// Without the Script gate it is approved as it is, like a segment written again.
+    /// </summary>
     public async Task EditAsync(Guid projectId, string segmentId, string title, string narration, CancellationToken cancellationToken)
     {
         title = (title ?? "").Trim();
@@ -129,6 +132,7 @@ internal sealed class ScriptSegments(
             throw new ArgumentException("A segment needs a title and a narration.");
         }
         RequireIdle(projectId, segmentId);
+        var gated = await GatedAsync(projectId, cancellationToken);
         await ChangeAsync(projectId, segmentId, async (db, cell) =>
         {
             var versions = await db.CellVersions.Where(v => v.ProjectId == projectId && v.Stage == Stage && v.Key == segmentId).ToListAsync(cancellationToken);
@@ -153,24 +157,33 @@ internal sealed class ScriptSegments(
                 CreatedAt = clock.GetUtcNow(),
             });
             cell.CurrentVersion = next;
-            cell.State = StageState.NeedsReview;
+            cell.State = gated ? StageState.NeedsReview : StageState.Approved;
+            cell.ApprovedVersion = gated ? cell.ApprovedVersion : next;
             cell.Error = null;
         }, cancellationToken);
     }
 
-    /// <summary>Makes another version current again: approved if it is the approved one, else to review.</summary>
+    /// <summary>
+    /// Makes another version current again: approved if it is the approved one, else to review.
+    /// Without the Script gate it is approved as it is.
+    /// </summary>
     public async Task SelectAsync(Guid projectId, string segmentId, int version, CancellationToken cancellationToken)
     {
         RequireIdle(projectId, segmentId);
+        var gated = await GatedAsync(projectId, cancellationToken);
         await ChangeAsync(projectId, segmentId, (db, cell) =>
         {
             RequireVersion(db, cell, version);
             cell.CurrentVersion = version;
+            cell.ApprovedVersion = gated ? cell.ApprovedVersion : version;
             cell.State = version == cell.ApprovedVersion ? StageState.Approved : StageState.NeedsReview;
             cell.Error = null;
             return Task.CompletedTask;
         }, cancellationToken);
     }
+
+    private async Task<bool> GatedAsync(Guid projectId, CancellationToken cancellationToken) =>
+        PipelineRunner.IsGated((await projects.GetAsync(projectId, cancellationToken)).Setup, Stage);
 
     private void RequireIdle(Guid projectId, string segmentId)
     {

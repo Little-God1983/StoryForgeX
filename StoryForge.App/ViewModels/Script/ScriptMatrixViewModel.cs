@@ -323,7 +323,8 @@ public sealed partial class ScriptMatrixViewModel(IStoryForgeClient client, Guid
     private Task ApproveSegmentAsync() =>
         ActAsync("approve the segment", () => client.ApproveSegmentAsync(ProjectId, Selected!.Id, Selected.Segment.Version));
 
-    private bool CanApproveRemaining() => IsReview && Rows.Any(r => r.State != StageState.Approved) && Rows.All(r => r.State != StageState.Running);
+    // With every segment approved and the stage still in review, it settles the stage.
+    private bool CanApproveRemaining() => IsReview && Rows.Count > 0 && Rows.All(r => r.State != StageState.Running);
 
     [RelayCommand(CanExecute = nameof(CanApproveRemaining))]
     private Task ApproveRemainingAsync() => ActAsync("approve the script", () => client.ApproveScriptAsync(ProjectId));

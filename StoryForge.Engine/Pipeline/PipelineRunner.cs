@@ -31,6 +31,10 @@ internal sealed class PipelineRunner(
     private readonly Lock _lock = new();
     private readonly Dictionary<(Guid, PipelineStage, string), Job> _jobs = [];
     private readonly CancellationTokenSource _stopping = new();
+
+    // One settle at a time: each reads every segment, and two at once could each miss the other's
+    // change and leave a stage in review whose segments are all approved.
+    private readonly SemaphoreSlim _settling = new(1, 1);
     private Task _loop = Task.CompletedTask;
 
     public event EventHandler<StageUpdate>? StageUpdated;
@@ -183,10 +187,16 @@ internal sealed class PipelineRunner(
     public async Task SettleAsync(Guid projectId, PipelineStage stage, CancellationToken cancellationToken)
     {
         StageState? settled;
-        await using (var db = await contextFactory.CreateDbContextAsync(cancellationToken))
+        await _settling.WaitAsync(cancellationToken);
+        try
         {
+            await using var db = await contextFactory.CreateDbContextAsync(cancellationToken);
             settled = await SettleAsync(db, projectId, stage, cancellationToken);
             await db.SaveChangesAsync(cancellationToken);
+        }
+        finally
+        {
+            _settling.Release();
         }
         if (settled is { } state)
         {
@@ -440,6 +450,19 @@ internal sealed class PipelineRunner(
     /// <summary>Stores a rewritten segment and settles the stage; the stage's new state, if it changed.</summary>
     private async Task<(StageState Segment, StageState? Stage)> StoreSegmentAsync(Job job, CellResult result, bool gated, List<ActivityLine> activity)
     {
+        await _settling.WaitAsync(CancellationToken.None);
+        try
+        {
+            return await StoreSegmentSettledAsync(job, result, gated, activity);
+        }
+        finally
+        {
+            _settling.Release();
+        }
+    }
+
+    private async Task<(StageState Segment, StageState? Stage)> StoreSegmentSettledAsync(Job job, CellResult result, bool gated, List<ActivityLine> activity)
+    {
         await using var db = await contextFactory.CreateDbContextAsync(CancellationToken.None);
         var cell = await db.Cells.FirstAsync(c => c.ProjectId == job.ProjectId && c.Stage == job.Stage && c.Key == job.Key);
         AddVersion(db, cell, await NextVersionAsync(db, job.ProjectId, job.Stage, job.Key), result.OutputJson, result.SchemaVersion, result.InputHash);
@@ -566,7 +589,10 @@ internal sealed class PipelineRunner(
         }
     }
 
-    /// <summary>Stages left running when the app last closed (or crashed) are marked failed, so Retry is offered.</summary>
+    /// <summary>
+    /// Stages and segments left running when the app last closed (or crashed) are marked failed, so
+    /// Retry is offered; a stage with a failed segment is not approved.
+    /// </summary>
     private async Task RecoverAsync(CancellationToken cancellationToken)
     {
         await using var db = await contextFactory.CreateDbContextAsync(cancellationToken);
@@ -575,6 +601,10 @@ internal sealed class PipelineRunner(
         {
             cell.State = StageState.Failed;
             cell.Error = ClosedWhileRunning;
+        }
+        foreach (var (projectId, stage) in interrupted.Where(c => c.Key != Whole).Select(c => (c.ProjectId, c.Stage)).Distinct())
+        {
+            await SettleAsync(db, projectId, stage, cancellationToken);
         }
         await db.SaveChangesAsync(cancellationToken);
     }

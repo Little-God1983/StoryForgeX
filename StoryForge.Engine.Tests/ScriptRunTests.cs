@@ -279,6 +279,62 @@ public sealed class ScriptRunTests : IDisposable
     }
 
     [Fact]
+    public async Task A_segment_left_running_when_the_app_closed_takes_the_approved_script_back_to_review()
+    {
+        _script.Answer(Good());
+        var first = await StartAsync();
+        var project = await ApprovedFactsAsync(first);
+        await ScriptAsync(first, project.Id, StageState.NeedsReview);
+        await first.ApproveScriptAsync(project.Id);
+        await using (var db = await _engine.DbAsync())
+        {
+            db.Cells.Single(c => c.ProjectId == project.Id && c.Key == "S03").State = StageState.Running;
+            await db.SaveChangesAsync();
+        }
+
+        var second = await StartAsync();
+
+        var script = await second.GetScriptAsync(project.Id);
+        Assert.Equal((StageState.Failed, PipelineRunner.ClosedWhileRunning), (script.Segments[2].State, script.Segments[2].Error));
+        Assert.Equal(StageState.NeedsReview, script.State);
+    }
+
+    [Fact]
+    public async Task Without_the_script_gate_your_own_wording_and_version_switches_are_approved()
+    {
+        _script.Answer(Good());
+        var client = await StartAsync();
+        var project = await ApprovedFactsAsync(client, s => s with { Gates = [.. s.Gates.Where(g => g != PipelineStage.Script)] });
+        await ScriptAsync(client, project.Id, StageState.Approved, StageState.NeedsReview, StageState.Failed);
+
+        await client.EditSegmentAsync(project.Id, "S01", "Hook - mine", "My words.");
+        var edited = await client.GetScriptAsync(project.Id);
+        Assert.Equal((StageState.Approved, (int?)2), (edited.Segments[0].State, edited.Segments[0].ApprovedVersion));
+        Assert.Equal(StageState.Approved, edited.State);
+
+        await client.SelectSegmentVersionAsync(project.Id, "S01", 1);
+        var back = await client.GetScriptAsync(project.Id);
+        Assert.Equal((StageState.Approved, (int?)1), (back.Segments[0].State, back.Segments[0].ApprovedVersion));
+        Assert.Equal(StageState.Approved, back.State);
+    }
+
+    [Fact]
+    public async Task A_change_to_the_facts_the_script_was_written_from_makes_a_new_version()
+    {
+        _script.Answer(Good());
+        var client = await StartAsync();
+        var project = await ApprovedFactsAsync(client);   // the script is written from v2, F01 marked must
+        await ScriptAsync(client, project.Id, StageState.NeedsReview);
+        await client.ApproveAsync(project.Id, PipelineStage.Research, 1);   // v2 is the latest and not approved now
+
+        var changed = await client.ChangeFactAsync(project.Id, 2, "F02", new FactChange(Statement: "Soul coins rust."));
+
+        Assert.Equal(3, changed.Version);
+        var script = await client.GetScriptAsync(project.Id);
+        Assert.Equal(("Soul coins are forged of infernal iron.", Fact.MustWeight), (script.Facts[1].Statement, script.Facts[0].Weight));
+    }
+
+    [Fact]
     public async Task Writing_the_whole_script_again_replaces_its_segments()
     {
         _script.Answer(Good()).Answer(new([Part("Hook", "F01"), Part("Money", "F02", "F03")], ""));

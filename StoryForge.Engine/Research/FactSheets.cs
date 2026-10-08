@@ -9,7 +9,7 @@ namespace StoryForge.Engine.Research;
 /// The fact sheet screen's reads and your changes to facts. Changes collect in one edited version
 /// until you approve it; a generated or approved version is never changed.
 /// </summary>
-internal sealed class FactSheets(IDbContextFactory<StoryForgeDbContext> contextFactory, PipelineRunner runner, TimeProvider clock)
+internal sealed class FactSheets(IDbContextFactory<StoryForgeDbContext> contextFactory, PipelineRunner runner, CellReader cells, TimeProvider clock)
 {
     private const PipelineStage Stage = PipelineStage.Research;
 
@@ -37,6 +37,7 @@ internal sealed class FactSheets(IDbContextFactory<StoryForgeDbContext> contextF
             throw new InvalidOperationException("The research is running. Change facts when it is done.");
         }
 
+        var scriptFacts = (await cells.CurrentScriptAsync(projectId, cancellationToken))?.FactsVersion;
         await using var db = await contextFactory.CreateDbContextAsync(cancellationToken);
         var cell = await db.Cells.FirstOrDefaultAsync(c => c.ProjectId == projectId && c.Stage == Stage && c.Key == "", cancellationToken)
             ?? throw new KeyNotFoundException($"Project {projectId} has no fact sheet yet.");
@@ -60,11 +61,11 @@ internal sealed class FactSheets(IDbContextFactory<StoryForgeDbContext> contextF
         }
         var output = StoredJson.Write(new FactSheet([.. sheet.Facts.Select(f => f.Id == factId ? changed : f)]));
 
-        // Your edits collect in the latest version while it is yours and not approved; anything else
-        // stays as it was, and the change starts a new version.
+        // Your edits collect in the latest version while it is yours, not approved and no script was
+        // written from it; anything else stays as it was, and the change starts a new version.
         var latest = versions.Max(v => v.Version);
         var target = source;
-        if (source.Origin == VersionOrigin.Edited && source.Version == latest && cell.ApprovedVersion != source.Version)
+        if (source.Origin == VersionOrigin.Edited && source.Version == latest && cell.ApprovedVersion != source.Version && scriptFacts != source.Version)
         {
             source.OutputJson = output;
         }
