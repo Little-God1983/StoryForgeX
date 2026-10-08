@@ -145,6 +145,66 @@ public sealed class VoiceMatrixTests
     }
 
     [Fact]
+    public async Task A_segment_stored_mid_run_shows_even_when_the_next_log_line_comes_before_its_load()
+    {
+        var (matrix, project) = await OpenAsync();
+        _client.Raise(new StageUpdate(project.Id, PipelineStage.Voice, StageState.Running, new ActivityLine(At, ActivityKind.Model, "S01 (1 of 3): Hook")));
+        await matrix.Updating;
+        _client.Voices[project.Id] = new VoiceView(project.Id, StageState.Running, null, [], [Voice("S01", 31.2, StageState.Approved)], 31.2, 240);
+        var gate = new TaskCompletionSource();
+        _client.VoiceLoadGate = gate.Task;
+
+        _client.Raise(new StageUpdate(project.Id, PipelineStage.Voice, StageState.Approved, Key: "S01"));
+        var loading = matrix.Updating;
+        _client.Raise(new StageUpdate(project.Id, PipelineStage.Voice, StageState.Running, new ActivityLine(At, ActivityKind.Model, "S02 (2 of 3): Money of Hell")));
+        await matrix.Updating;
+        gate.SetResult();
+        await loading;
+
+        Assert.Equal("approved", matrix.Script!.Rows[0].Voice.StateText);
+        Assert.Equal("S02 (2 of 3): Money of Hell", matrix.Script.VoiceProgress);
+    }
+
+    [Fact]
+    public async Task While_the_whole_voice_is_spoken_a_cell_still_to_come_offers_no_cancel_of_its_own()
+    {
+        var (matrix, project) = await OpenAsync();
+        await SpokenAsync(matrix, project, StageState.Approved);
+        var script = matrix.Script!;
+        script.Rows[2].Voice.SelectCommand.Execute(null);
+
+        _client.Raise(new StageUpdate(project.Id, PipelineStage.Voice, StageState.Running, new ActivityLine(At, ActivityKind.Model, "S01 (1 of 3): Hook")));
+        await matrix.Updating;
+
+        Assert.Equal("running", script.Rows[2].Voice.StateText);
+        Assert.False(script.SelectedIsRunning);   // the whole voice runs: its bar has the Cancel
+        Assert.False(script.CancelSegmentCommand.CanExecute(null));
+        Assert.False(script.SelectedShowsLog);
+    }
+
+    [Fact]
+    public async Task A_reload_while_a_voice_is_spoken_again_keeps_the_log_lines_that_came_live()
+    {
+        var (matrix, project) = await OpenAsync();
+        await SpokenAsync(matrix, project, StageState.Approved);
+        var script = matrix.Script!;
+        script.Rows[2].Voice.SelectCommand.Execute(null);
+        var first = new ActivityLine(At, ActivityKind.Model, "S03: sent to ComfyUI");
+        var voice = _client.Voices[project.Id];
+        _client.Voices[project.Id] = voice with { Segments = [.. voice.Segments.Select(s => s.Id == "S03" ? s with { State = StageState.Running, Activity = [first] } : s)] };
+        _client.Raise(new StageUpdate(project.Id, PipelineStage.Voice, StageState.Running, Key: "S03"));
+        await matrix.Updating;
+        _client.Raise(new StageUpdate(project.Id, PipelineStage.Voice, StageState.Running, new ActivityLine(At, ActivityKind.Check, "S03: 0:30 of audio"), Key: "S03"));
+        await matrix.Updating;
+
+        // Another update reloads: its snapshot was taken before the second line.
+        _client.Raise(new StageUpdate(project.Id, PipelineStage.Voice, StageState.Approved, Key: "S01"));
+        await matrix.Updating;
+
+        Assert.Equal(["S03: sent to ComfyUI", "S03: 0:30 of audio"], script.SelectedActivity.Select(l => l.Text));
+    }
+
+    [Fact]
     public async Task Speaking_the_whole_voice_again_shows_every_cell_running_at_once()
     {
         var (matrix, project) = await OpenAsync();

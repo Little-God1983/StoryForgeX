@@ -183,6 +183,15 @@ public sealed class WordTimingsTests
     }
 
     [Fact]
+    public void A_dash_between_words_is_a_pause_not_a_word()
+    {
+        var words = WordTimings.Estimate([new VoicePart("Gold — and souls – were traded.", 4)]);
+
+        Assert.Equal(["Gold —", "and", "souls –", "were", "traded."], words.Select(w => w.Text));
+        Assert.True(words[1].Start - words[0].End > 0);
+    }
+
+    [Fact]
     public void A_very_short_part_still_gets_its_words_in()
     {
         var words = WordTimings.Estimate([new VoicePart("Yes.", 0.2)]);

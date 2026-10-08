@@ -27,8 +27,8 @@ internal static class WordTimings
         var offset = 0.0;
         foreach (var part in parts)
         {
-            var tokens = part.Text.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
-            if (tokens.Length == 0)
+            var tokens = Words(part.Text);
+            if (tokens.Count == 0)
             {
                 offset += part.Seconds;
                 continue;
@@ -40,13 +40,31 @@ internal static class WordTimings
             pauses[^1] = 0;   // the part's own end is the edge silence
             var total = spoken.Sum() + pauses.Sum();
             var at = offset + edge;
-            for (var i = 0; i < tokens.Length; i++)
+            for (var i = 0; i < tokens.Count; i++)
             {
                 var length = speaking * spoken[i] / total;
                 words.Add(new SpokenWord(tokens[i], Round(at), Round(at + length)));
                 at += length + speaking * pauses[i] / total;
             }
             offset += part.Seconds;
+        }
+        return words;
+    }
+
+    /// <summary>The part's words; a dash standing between words goes with the word before it, as its pause.</summary>
+    private static List<string> Words(string text)
+    {
+        var words = new List<string>();
+        foreach (var token in text.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries))
+        {
+            if (words.Count > 0 && !token.Any(char.IsLetterOrDigit))
+            {
+                words[^1] += " " + token;
+            }
+            else
+            {
+                words.Add(token);
+            }
         }
         return words;
     }

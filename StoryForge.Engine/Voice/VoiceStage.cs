@@ -141,6 +141,7 @@ internal sealed class VoiceStage(
         Directory.CreateDirectory(work);
 
         var scratch = new List<string>();
+        var wavs = new List<string>();
         var measured = new List<VoicePart>();
         try
         {
@@ -154,10 +155,12 @@ internal sealed class VoiceStage(
                     cancellationToken);
                 var spoken = files.FirstOrDefault(f => f.Kind == "audio")
                     ?? throw new StageFailedException("The workflow saved no audio. It needs a node that saves it, e.g. Save Audio.");
-                var raw = Path.Combine(work, $"{take}-{i + 1}{Path.GetExtension(spoken.Name)}");
+                // Named apart: a workflow that saves WAV must not have ffmpeg write over its input.
+                var raw = Path.Combine(work, $"{take}-{i + 1}-comfy{Path.GetExtension(spoken.Name)}");
                 var wav = Path.Combine(work, $"{take}-{i + 1}.wav");
                 scratch.Add(raw);
                 scratch.Add(wav);
+                wavs.Add(wav);
                 await File.WriteAllBytesAsync(raw, spoken.Content, cancellationToken);
                 await audio.ToWavAsync(raw, wav, cancellationToken);
                 var seconds = Measure(wav);
@@ -167,7 +170,7 @@ internal sealed class VoiceStage(
             Directory.CreateDirectory(Path.GetDirectoryName(target)!);
             try
             {
-                Wav.Join([.. scratch.Where(f => f.EndsWith(".wav", StringComparison.Ordinal))], target);
+                Wav.Join(wavs, target);
             }
             catch (InvalidDataException ex)
             {

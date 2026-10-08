@@ -417,8 +417,17 @@ internal sealed class FakeStoryForgeClient : IStoryForgeClient
         return Task.CompletedTask;
     }
 
-    public Task<VoiceView> GetVoiceAsync(Guid projectId, CancellationToken cancellationToken = default) =>
-        Task.FromResult(Voices.GetValueOrDefault(projectId) ?? new VoiceView(projectId, StageState.NotStarted, null, [], [], 0, 240));
+    /// <summary>While set, loading the voice waits for it: the view is read when it completes.</summary>
+    public Task? VoiceLoadGate { get; set; }
+
+    public async Task<VoiceView> GetVoiceAsync(Guid projectId, CancellationToken cancellationToken = default)
+    {
+        if (VoiceLoadGate is { } gate)
+        {
+            await gate;
+        }
+        return Voices.GetValueOrDefault(projectId) ?? new VoiceView(projectId, StageState.NotStarted, null, [], [], 0, 240);
+    }
 
     public List<(Guid ProjectId, string SegmentId, int Version)> SelectedSegmentVersions { get; } = [];
 

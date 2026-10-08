@@ -230,8 +230,14 @@ public sealed class VoiceRunTests : IDisposable
         await VoiceAsync(client, project.Id, StageState.Approved, StageState.Failed);
         var hold = _comfy.HoldAt(11);   // the second run's S02, first part
 
-        await client.RegenerateAsync(project.Id, PipelineStage.Voice);
-        await hold.Reached;
+        // The first run is stored a moment before the runner lets go of it, and a Regenerate in
+        // between is taken for the run itself: asked again until the second run is under way.
+        var reached = hold.Reached;
+        await ScriptRunTests.WaitForAsync(async () =>
+        {
+            await client.RegenerateAsync(project.Id, PipelineStage.Voice);
+            return await Task.WhenAny(reached, Task.Delay(500)) == reached;
+        }, under => under);
         var voice = await client.GetVoiceAsync(project.Id);
 
         Assert.Equal([StageState.Approved, StageState.Running, StageState.Running, StageState.Running], voice.Segments.Select(s => s.State));
@@ -239,6 +245,19 @@ public sealed class VoiceRunTests : IDisposable
         hold.Release();
         var done = await VoiceAsync(client, project.Id, StageState.Approved, StageState.Failed);
         Assert.Equal([2, 2, 2, 2], done.Segments.Select(s => s.Version));
+    }
+
+    [Fact]
+    public async Task A_workflow_that_saves_wav_files_is_converted_and_joined_like_any_other()
+    {
+        _comfy.Extension = ".wav";
+        var client = await StartAsync();
+        var project = await ScriptApprovedAsync(client);
+
+        var voice = await VoiceAsync(client, project.Id, StageState.Approved, StageState.Failed);
+
+        Assert.Null(voice.Error);
+        Assert.All(voice.Segments, s => Assert.Equal(60, s.Seconds, 3));   // each part once
     }
 
     [Fact]
@@ -303,6 +322,9 @@ public sealed class VoiceRunTests : IDisposable
 
         public List<string> Names { get; } = [];
 
+        /// <summary>What the "saved" file ends in, as the workflow's save node chose.</summary>
+        public string Extension { get; set; } = ".mp3";
+
         private int _holdAt;
         private Hold? _hold;
 
@@ -363,7 +385,7 @@ public sealed class VoiceRunTests : IDisposable
             {
                 await hold.WaitAsync(cancellationToken);
             }
-            return [new ComfyFile("audio", "BreezeTTS_00001_.mp3", Encoding.UTF8.GetBytes(text))];
+            return [new ComfyFile("audio", "BreezeTTS_00001_" + Extension, Encoding.UTF8.GetBytes(text))];
         }
     }
 
@@ -372,6 +394,10 @@ public sealed class VoiceRunTests : IDisposable
     {
         public async Task ToWavAsync(string source, string target, CancellationToken cancellationToken)
         {
+            if (string.Equals(Path.GetFullPath(source), Path.GetFullPath(target), StringComparison.OrdinalIgnoreCase))
+            {
+                throw new StageFailedException("ffmpeg could not read the audio ComfyUI gave: Output same as Input.");   // as ffmpeg refuses it
+            }
             var words = Words(await File.ReadAllTextAsync(source, cancellationToken));
             await File.WriteAllBytesAsync(target, WavTests.Silence(words * SecondsPerWord), cancellationToken);
         }

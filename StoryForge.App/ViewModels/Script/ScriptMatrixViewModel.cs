@@ -222,8 +222,11 @@ public sealed partial class ScriptMatrixViewModel(IStoryForgeClient client, Guid
 
     public string? SelectedError => IsVoicePanel ? SelectedVoice?.Error : Selected?.Segment.Error;
 
-    /// <summary>The selected cell is being made again (written or spoken).</summary>
-    public bool SelectedIsRunning => SelectedState == StageState.Running;
+    /// <summary>
+    /// The selected cell is being made again on its own (written or spoken). A Voice cell still to
+    /// come while the whole voice is spoken is not: the stage's bar has the Cancel and the log.
+    /// </summary>
+    public bool SelectedIsRunning => SelectedState == StageState.Running && !(IsVoicePanel && IsVoiceRunning);
 
     /// <summary>Its log shows while it is made again, and after that failed.</summary>
     public bool SelectedShowsLog => SelectedIsRunning || (SelectedState == StageState.Failed && SelectedActivity.Count > 0);
@@ -294,9 +297,9 @@ public sealed partial class ScriptMatrixViewModel(IStoryForgeClient client, Guid
         }
         if (update.Key is null && update.State == StageState.Running)
         {
-            _loads++;   // a load still on its way would show the state from before this run
             if (State != StageState.Running)
             {
+                _loads++;   // a load still on its way would show the state from before this run
                 Activity.Clear();
                 State = StageState.Running;
                 Error = null;
@@ -325,9 +328,11 @@ public sealed partial class ScriptMatrixViewModel(IStoryForgeClient client, Guid
     {
         if (update.Key is null && update.State == StageState.Running)
         {
-            _loads++;   // a load still on its way would show the state from before this run
+            // Only the start of the run: a log line is no reason to drop a load on its way, which
+            // may bring a segment just spoken.
             if (VoiceState != StageState.Running)
             {
+                _loads++;   // a load still on its way would show the state from before this run
                 VoiceActivity.Clear();
                 VoiceState = StageState.Running;
                 VoiceError = null;
@@ -368,8 +373,8 @@ public sealed partial class ScriptMatrixViewModel(IStoryForgeClient client, Guid
             Activity.Add(line);
         }
 
-        var shown = Selected?.Id;
-        var wasRunning = Selected?.State == StageState.Running;
+        var shown = (Selected?.Id, SelectedStage);
+        var wasRunning = SelectedState == StageState.Running;
 
         // Rows that are still there keep their place and selection; the rest come and go.
         for (var i = Rows.Count - 1; i >= 0; i--)
@@ -400,7 +405,7 @@ public sealed partial class ScriptMatrixViewModel(IStoryForgeClient client, Guid
         {
             Select(Rows.FirstOrDefault(), PipelineStage.Script);
         }
-        RefreshSelection(keepLive: wasRunning && Selected?.Id == shown);
+        RefreshSelection(keepLive: wasRunning && (Selected?.Id, SelectedStage) == shown);
 
         var approved = view.Segments.Count(s => s.State == StageState.Approved);
         ApprovedSummary = $"{approved} of {view.Segments.Count} segments approved.";
@@ -417,14 +422,19 @@ public sealed partial class ScriptMatrixViewModel(IStoryForgeClient client, Guid
 
     private void ApplyVoice(VoiceView voice)
     {
+        // A load taken before the latest lines of a run still going is older than they are: they stay.
+        var keepLive = VoiceState == StageState.Running && voice.State == StageState.Running && voice.Activity.Count < VoiceActivity.Count;
         VoiceState = voice.State;
         VoiceError = voice.Error;
-        VoiceActivity.Clear();
-        foreach (var line in voice.Activity)
+        if (!keepLive)
         {
-            VoiceActivity.Add(line);
+            VoiceActivity.Clear();
+            foreach (var line in voice.Activity)
+            {
+                VoiceActivity.Add(line);
+            }
+            VoiceProgress = voice.Activity.Count > 0 ? voice.Activity[^1].Text : "";
         }
-        VoiceProgress = voice.Activity.Count > 0 ? voice.Activity[^1].Text : "";
         foreach (var row in Rows)
         {
             row.Voice.StageState = voice.State;
