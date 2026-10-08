@@ -1,0 +1,128 @@
+{
+  "1": {
+    "inputs": {
+      "attention": "sdpa",
+      "fast_path": false
+    },
+    "class_type": "ITLBreezeTTSLoader",
+    "_meta": {
+      "title": "ITL Breeze TTS Loader"
+    }
+  },
+  "2": {
+    "inputs": {
+      "audio": "Amira - Princess 26-Apob.mp3"
+    },
+    "class_type": "LoadAudio",
+    "_meta": {
+      "title": "Load Audio"
+    }
+  },
+  "4": {
+    "inputs": {
+      "filename_prefix": "audio/2026-10-08/BreezeTTS",
+      "format": "mp3",
+      "format.quality": "V0",
+      "audio": [
+        "11",
+        0
+      ]
+    },
+    "class_type": "SaveAudioAdvanced",
+    "_meta": {
+      "title": "Save Audio (Advanced)"
+    }
+  },
+  "11": {
+    "inputs": {
+      "text": "",
+      "reference_text": [
+        "18",
+        0
+      ],
+      "instruction": "",
+      "seed": 965749749,
+      "cfg_scale": 4,
+      "unload_after": false,
+      "model": [
+        "1",
+        0
+      ],
+      "reference_audio": [
+        "2",
+        0
+      ]
+    },
+    "class_type": "ITLBreezeTTSVoiceDirection",
+    "_meta": {
+      "title": "ITL Breeze TTS Voice Direction"
+    }
+  },
+  "17": {
+    "inputs": {
+      "text_0": "I'm an American music host who loves various genres and sharing great tunes with others, passionate about music and eager to connect through the rhythm.",
+      "text": [
+        "19",
+        0
+      ]
+    },
+    "class_type": "ShowText|pysssss",
+    "_meta": {
+      "title": "Show Text 🐍"
+    }
+  },
+  "18": {
+    "inputs": {
+      "switch": true,
+      "on_false": [
+        "21",
+        0
+      ],
+      "on_true": [
+        "17",
+        0
+      ]
+    },
+    "class_type": "ComfySwitchNode",
+    "_meta": {
+      "title": "Use Whisper?"
+    }
+  },
+  "19": {
+    "inputs": {
+      "language": "auto",
+      "unload_after": false,
+      "model": [
+        "20",
+        0
+      ],
+      "audio": [
+        "2",
+        0
+      ]
+    },
+    "class_type": "ITLWhisperTranscribe",
+    "_meta": {
+      "title": "ITL Whisper Transcribe"
+    }
+  },
+  "20": {
+    "inputs": {
+      "model": "large-v3-turbo",
+      "device": "auto"
+    },
+    "class_type": "ITLWhisperLoader",
+    "_meta": {
+      "title": "ITL Whisper Loader"
+    }
+  },
+  "21": {
+    "inputs": {
+      "value": "I'm an American music host who loves various genres and sharing great tunes with others, passionate about music and eager to connect through the rhythm."
+    },
+    "class_type": "PrimitiveStringMultiline",
+    "_meta": {
+      "title": "Reference Audio-Speaker"
+    }
+  }
+}

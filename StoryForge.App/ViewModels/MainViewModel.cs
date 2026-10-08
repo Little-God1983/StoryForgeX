@@ -4,6 +4,7 @@ using System.ComponentModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using StoryForge.App.ViewModels.Pages;
+using StoryForge.App.ViewModels.Script;
 using StoryForge.Client;
 
 namespace StoryForge.App.ViewModels;
@@ -27,14 +28,15 @@ public sealed partial class MainViewModel : ObservableObject
     private readonly ResultMatrixPageViewModel _matrix;
 
     /// <param name="saveDelay">How long Settings waits after the last edit before saving.</param>
-    public MainViewModel(IStoryForgeClient client, ProviderStatusBoard board, TimeSpan saveDelay)
+    /// <param name="newPlayer">Makes the player the matrix plays a voice with; none in tests.</param>
+    public MainViewModel(IStoryForgeClient client, ProviderStatusBoard board, TimeSpan saveDelay, Func<IAudioPlayer>? newPlayer = null)
     {
         _client = client;
         _board = board;
         _settings = new SettingsPageViewModel(client, board, saveDelay);
         _profiles = new ProfilesPageViewModel(client);
         _newProject = new NewProjectPageViewModel(client);
-        _matrix = new ResultMatrixPageViewModel(client);
+        _matrix = new ResultMatrixPageViewModel(client, newPlayer: newPlayer);
         _newProject.ProjectStarted += (_, project) => PageShowing = OnProjectStartedAsync(project);
         NavItems =
         [

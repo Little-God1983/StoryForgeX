@@ -1,4 +1,3 @@
-using Microsoft.Extensions.Options;
 using StoryForge.Client;
 using StoryForge.Engine.Pipeline;
 using StoryForge.Engine.Profiles;
@@ -8,6 +7,7 @@ using StoryForge.Engine.Research;
 using StoryForge.Engine.Script;
 using StoryForge.Engine.Secrets;
 using StoryForge.Engine.Settings;
+using StoryForge.Engine.Voice;
 
 namespace StoryForge.Engine;
 
@@ -21,7 +21,9 @@ internal sealed class InProcessStoryForgeClient(
     PipelineRunner runner,
     FactSheets factSheets,
     ScriptSegments script,
-    IOptions<StoryForgeEngineOptions> options) : IStoryForgeClient
+    SegmentCells segments,
+    VoiceSegments voice,
+    ProjectFolders folders) : IStoryForgeClient
 {
     public event EventHandler<StageUpdate>? StageUpdated
     {
@@ -41,11 +43,8 @@ internal sealed class InProcessStoryForgeClient(
     public Task SaveSettingsAsync(EngineSettings value, CancellationToken cancellationToken = default) =>
         settings.SaveAsync(value, cancellationToken);
 
-    public async Task<string> GetEffectiveProjectsFolderAsync(CancellationToken cancellationToken = default)
-    {
-        var saved = (await settings.LoadAsync(cancellationToken)).Paths.ProjectsFolder;
-        return string.IsNullOrWhiteSpace(saved) ? options.Value.EffectiveDefaultProjectsFolder : saved;
-    }
+    public Task<string> GetEffectiveProjectsFolderAsync(CancellationToken cancellationToken = default) =>
+        folders.RootAsync(cancellationToken);
 
     public Task<bool> HasSecretAsync(SecretKey key, CancellationToken cancellationToken = default) =>
         Task.FromResult(!string.IsNullOrEmpty(secrets.Read(SecretName(key))));
@@ -101,23 +100,26 @@ internal sealed class InProcessStoryForgeClient(
     public Task<ScriptView> GetScriptAsync(Guid projectId, CancellationToken cancellationToken = default) =>
         script.GetAsync(projectId, cancellationToken);
 
-    public Task ApproveSegmentAsync(Guid projectId, string segmentId, int version, CancellationToken cancellationToken = default) =>
-        script.ApproveAsync(projectId, segmentId, version, cancellationToken);
+    public Task ApproveSegmentAsync(Guid projectId, PipelineStage stage, string segmentId, int version, CancellationToken cancellationToken = default) =>
+        segments.ApproveAsync(projectId, stage, segmentId, version, cancellationToken);
 
-    public Task ApproveScriptAsync(Guid projectId, CancellationToken cancellationToken = default) =>
-        script.ApproveAllAsync(projectId, cancellationToken);
+    public Task ApproveSegmentsAsync(Guid projectId, PipelineStage stage, CancellationToken cancellationToken = default) =>
+        segments.ApproveAllAsync(projectId, stage, cancellationToken);
 
-    public Task RegenerateSegmentAsync(Guid projectId, string segmentId, CancellationToken cancellationToken = default) =>
-        runner.RegenerateSegmentAsync(projectId, PipelineStage.Script, segmentId, cancellationToken);
+    public Task RegenerateSegmentAsync(Guid projectId, PipelineStage stage, string segmentId, CancellationToken cancellationToken = default) =>
+        runner.RegenerateSegmentAsync(projectId, stage, segmentId, cancellationToken);
 
-    public Task CancelSegmentAsync(Guid projectId, string segmentId, CancellationToken cancellationToken = default) =>
-        runner.CancelAsync(projectId, PipelineStage.Script, segmentId);
+    public Task CancelSegmentAsync(Guid projectId, PipelineStage stage, string segmentId, CancellationToken cancellationToken = default) =>
+        runner.CancelAsync(projectId, stage, segmentId);
 
     public Task EditSegmentAsync(Guid projectId, string segmentId, string title, string narration, CancellationToken cancellationToken = default) =>
         script.EditAsync(projectId, segmentId, title, narration, cancellationToken);
 
-    public Task SelectSegmentVersionAsync(Guid projectId, string segmentId, int version, CancellationToken cancellationToken = default) =>
-        script.SelectAsync(projectId, segmentId, version, cancellationToken);
+    public Task SelectSegmentVersionAsync(Guid projectId, PipelineStage stage, string segmentId, int version, CancellationToken cancellationToken = default) =>
+        segments.SelectAsync(projectId, stage, segmentId, version, cancellationToken);
+
+    public Task<VoiceView> GetVoiceAsync(Guid projectId, CancellationToken cancellationToken = default) =>
+        voice.GetAsync(projectId, cancellationToken);
 
     internal static string SecretName(SecretKey key) => key switch
     {
