@@ -53,7 +53,8 @@ public partial class App : Application
             builder.Services.AddSingleton(services => new MainViewModel(
                 services.GetRequiredService<Client.IStoryForgeClient>(),
                 services.GetRequiredService<ProviderStatusBoard>(),
-                SettingsSaveDelay));
+                SettingsSaveDelay,
+                () => new Views.MediaAudioPlayer()));
             builder.Services.AddSingleton<MainWindow>();
             _host = builder.Build();
 

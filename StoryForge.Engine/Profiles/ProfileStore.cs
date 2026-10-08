@@ -288,8 +288,9 @@ internal sealed class ProfileStore(
         {
             Provider = "ComfyUI",
             Instructions = "Prepare the narration for speech: write numbers, units and abbreviations out in full.",
-            PromptTemplate = "{shot.narration}",
-            Inputs = [new("text", ""), new("seed", "")],
+            PromptTemplate = "{segment.narration}",
+            // What the Voice stage fills: the text, the direction (the profile's Voice), the reference audio.
+            Inputs = [new("text", ""), new("instruction", ""), new("reference_audio", ""), new("seed", "")],
         },
         _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, null),
     };

@@ -173,9 +173,11 @@
             </StackPanel>
 
             <StackPanel Style="{StaticResource FieldBlockStyle}" Visibility="{Binding Shown.IsVoice, Converter={StaticResource Visible}}">
-              <TextBlock Text="Voice" Style="{StaticResource FieldLabelStyle}" />
+              <TextBlock Text="Voice direction" Style="{StaticResource FieldLabelStyle}" />
               <TextBox Text="{Binding Shown.Voice, UpdateSourceTrigger=PropertyChanged}" Background="{StaticResource CardBrush}"
                        IsReadOnly="{Binding Shown.IsReadOnly}" AutomationProperties.Name="Voice" />
+              <TextBlock FontSize="12" Foreground="{StaticResource TextMutedBrush}" TextWrapping="Wrap" Margin="0,6,0,0"
+                         Text="Goes into the workflow input 'instruction': tone, pace, emotion, e.g. a calm, warm documentary narrator, unhurried. The reference audio goes into 'reference_audio', each part of the narration into 'text'." />
             </StackPanel>
 
             <UniformGrid Columns="3" Margin="0,0,-12,0" HorizontalAlignment="Stretch">

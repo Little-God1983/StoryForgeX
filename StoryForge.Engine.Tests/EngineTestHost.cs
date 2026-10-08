@@ -8,6 +8,7 @@ using StoryForge.Engine.Data;
 using StoryForge.Engine.Pipeline;
 using StoryForge.Engine.Research;
 using StoryForge.Engine.Script;
+using StoryForge.Engine.Voice;
 
 namespace StoryForge.Engine.Tests;
 
@@ -33,9 +34,11 @@ internal sealed class EngineTestHost : IDisposable
             options.DataDirectory = DataDirectory;
             options.CredentialTargetPrefix = CredentialPrefix;
         });
-        // No test ever reaches the real Claude CLI: the models refuse unless a test puts its own in.
+        // No test ever reaches the real Claude CLI, ComfyUI or ffmpeg: they refuse unless a test puts its own in.
         builder.Services.Replace(ServiceDescriptor.Singleton<IResearchAgent>(new NoModel()));
         builder.Services.Replace(ServiceDescriptor.Singleton<IScriptAgent>(new NoModel()));
+        builder.Services.Replace(ServiceDescriptor.Singleton<IComfyUi>(new NoModel()));
+        builder.Services.Replace(ServiceDescriptor.Singleton<IAudioConverter>(new NoModel()));
         replace?.Invoke(builder.Services);
         var host = builder.Build();
         await host.StartAsync();
@@ -50,8 +53,8 @@ internal sealed class EngineTestHost : IDisposable
     public async Task<IStoryForgeClient> StartClientAsync(Action<IServiceCollection>? replace = null) =>
         (await StartAsync(replace)).Services.GetRequiredService<IStoryForgeClient>();
 
-    /// <summary>A model that is not there: every stage that asks it fails with a plain reason.</summary>
-    private sealed class NoModel : IResearchAgent, IScriptAgent
+    /// <summary>A model (or ComfyUI, or ffmpeg) that is not there: every stage that asks it fails with a plain reason.</summary>
+    private sealed class NoModel : IResearchAgent, IScriptAgent, IComfyUi, IAudioConverter
     {
         private const string Reason = "No model in this test.";
 
@@ -63,6 +66,13 @@ internal sealed class EngineTestHost : IDisposable
 
         public Task<ScriptAnswer<ScriptPart>> RewriteAsync(ScriptRequest request, IReadOnlyList<Segment> script, string segmentId, string? session,
             IReadOnlyList<string> problems, IProgress<ActivityLine> activity, CancellationToken cancellationToken) => throw new StageFailedException(Reason);
+
+        public Task<string> UploadAsync(string path, CancellationToken cancellationToken) => throw new StageFailedException(Reason);
+
+        public Task<IReadOnlyList<ComfyFile>> RunAsync(System.Text.Json.Nodes.JsonObject workflow, string name, IProgress<string> progress, CancellationToken cancellationToken) =>
+            throw new StageFailedException(Reason);
+
+        public Task ToWavAsync(string source, string target, CancellationToken cancellationToken) => throw new StageFailedException(Reason);
     }
 
     public void Dispose()

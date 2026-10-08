@@ -91,11 +91,12 @@ public sealed class ProviderStatusBoardTests
         public Task<FactSheetView> GetFactSheetAsync(Guid projectId, int? version = null, CancellationToken cancellationToken = default) => _inner.GetFactSheetAsync(projectId, version, cancellationToken);
         public Task<FactSheetView> ChangeFactAsync(Guid projectId, int version, string factId, FactChange change, CancellationToken cancellationToken = default) => _inner.ChangeFactAsync(projectId, version, factId, change, cancellationToken);
         public Task<ScriptView> GetScriptAsync(Guid projectId, CancellationToken cancellationToken = default) => _inner.GetScriptAsync(projectId, cancellationToken);
-        public Task ApproveSegmentAsync(Guid projectId, string segmentId, int version, CancellationToken cancellationToken = default) => _inner.ApproveSegmentAsync(projectId, segmentId, version, cancellationToken);
-        public Task ApproveScriptAsync(Guid projectId, CancellationToken cancellationToken = default) => _inner.ApproveScriptAsync(projectId, cancellationToken);
-        public Task RegenerateSegmentAsync(Guid projectId, string segmentId, CancellationToken cancellationToken = default) => _inner.RegenerateSegmentAsync(projectId, segmentId, cancellationToken);
-        public Task CancelSegmentAsync(Guid projectId, string segmentId, CancellationToken cancellationToken = default) => _inner.CancelSegmentAsync(projectId, segmentId, cancellationToken);
+        public Task ApproveSegmentAsync(Guid projectId, PipelineStage stage, string segmentId, int version, CancellationToken cancellationToken = default) => _inner.ApproveSegmentAsync(projectId, stage, segmentId, version, cancellationToken);
+        public Task ApproveSegmentsAsync(Guid projectId, PipelineStage stage, CancellationToken cancellationToken = default) => _inner.ApproveSegmentsAsync(projectId, stage, cancellationToken);
+        public Task RegenerateSegmentAsync(Guid projectId, PipelineStage stage, string segmentId, CancellationToken cancellationToken = default) => _inner.RegenerateSegmentAsync(projectId, stage, segmentId, cancellationToken);
+        public Task CancelSegmentAsync(Guid projectId, PipelineStage stage, string segmentId, CancellationToken cancellationToken = default) => _inner.CancelSegmentAsync(projectId, stage, segmentId, cancellationToken);
         public Task EditSegmentAsync(Guid projectId, string segmentId, string title, string narration, CancellationToken cancellationToken = default) => _inner.EditSegmentAsync(projectId, segmentId, title, narration, cancellationToken);
-        public Task SelectSegmentVersionAsync(Guid projectId, string segmentId, int version, CancellationToken cancellationToken = default) => _inner.SelectSegmentVersionAsync(projectId, segmentId, version, cancellationToken);
+        public Task SelectSegmentVersionAsync(Guid projectId, PipelineStage stage, string segmentId, int version, CancellationToken cancellationToken = default) => _inner.SelectSegmentVersionAsync(projectId, stage, segmentId, version, cancellationToken);
+        public Task<VoiceView> GetVoiceAsync(Guid projectId, CancellationToken cancellationToken = default) => _inner.GetVoiceAsync(projectId, cancellationToken);
     }
 }

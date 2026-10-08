@@ -400,10 +400,33 @@ internal sealed class FakeStoryForgeClient : IStoryForgeClient
 
     public List<(Guid ProjectId, string SegmentId)> CancelledSegments { get; } = [];
 
-    public Task CancelSegmentAsync(Guid projectId, string segmentId, CancellationToken cancellationToken = default)
+    /// <summary>The voice per project; a project without one has a voice not started.</summary>
+    public Dictionary<Guid, VoiceView> Voices { get; } = [];
+
+    /// <summary>What was asked of Voice cells: the action, the segment and the version (0 when none).</summary>
+    public List<(string Action, string SegmentId, int Version)> VoiceActions { get; } = [];
+
+    public Task CancelSegmentAsync(Guid projectId, PipelineStage stage, string segmentId, CancellationToken cancellationToken = default)
     {
+        if (stage == PipelineStage.Voice)
+        {
+            VoiceActions.Add(("cancel", segmentId, 0));
+            return Task.CompletedTask;
+        }
         CancelledSegments.Add((projectId, segmentId));
         return Task.CompletedTask;
+    }
+
+    /// <summary>While set, loading the voice waits for it: the view is read when it completes.</summary>
+    public Task? VoiceLoadGate { get; set; }
+
+    public async Task<VoiceView> GetVoiceAsync(Guid projectId, CancellationToken cancellationToken = default)
+    {
+        if (VoiceLoadGate is { } gate)
+        {
+            await gate;
+        }
+        return Voices.GetValueOrDefault(projectId) ?? new VoiceView(projectId, StageState.NotStarted, null, [], [], 0, 240);
     }
 
     public List<(Guid ProjectId, string SegmentId, int Version)> SelectedSegmentVersions { get; } = [];
@@ -411,17 +434,28 @@ internal sealed class FakeStoryForgeClient : IStoryForgeClient
     public Task<ScriptView> GetScriptAsync(Guid projectId, CancellationToken cancellationToken = default) =>
         Task.FromResult(Scripts.GetValueOrDefault(projectId) ?? new ScriptView(projectId, StageState.NotStarted, null, [], [], "", 0, 240, []));
 
-    public Task ApproveSegmentAsync(Guid projectId, string segmentId, int version, CancellationToken cancellationToken = default)
+    public Task ApproveSegmentAsync(Guid projectId, PipelineStage stage, string segmentId, int version, CancellationToken cancellationToken = default)
     {
         ThrowIfFailing();
+        if (stage == PipelineStage.Voice)
+        {
+            VoiceActions.Add(("approve", segmentId, version));
+            ChangeVoice(projectId, segmentId, s => s with { State = StageState.Approved, ApprovedVersion = version });
+            return Task.CompletedTask;
+        }
         ApprovedSegments.Add((projectId, segmentId, version));
         ChangeSegment(projectId, segmentId, s => s with { State = StageState.Approved, ApprovedVersion = version });
         return Task.CompletedTask;
     }
 
-    public Task ApproveScriptAsync(Guid projectId, CancellationToken cancellationToken = default)
+    public Task ApproveSegmentsAsync(Guid projectId, PipelineStage stage, CancellationToken cancellationToken = default)
     {
         ThrowIfFailing();
+        if (stage == PipelineStage.Voice)
+        {
+            VoiceActions.Add(("approve all", "", 0));
+            return Task.CompletedTask;
+        }
         ApprovedScripts.Add(projectId);
         if (Scripts.TryGetValue(projectId, out var view))
         {
@@ -430,9 +464,14 @@ internal sealed class FakeStoryForgeClient : IStoryForgeClient
         return Task.CompletedTask;
     }
 
-    public Task RegenerateSegmentAsync(Guid projectId, string segmentId, CancellationToken cancellationToken = default)
+    public Task RegenerateSegmentAsync(Guid projectId, PipelineStage stage, string segmentId, CancellationToken cancellationToken = default)
     {
         ThrowIfFailing();
+        if (stage == PipelineStage.Voice)
+        {
+            VoiceActions.Add(("regenerate", segmentId, 0));
+            return Task.CompletedTask;
+        }
         RegeneratedSegments.Add((projectId, segmentId));
         return Task.CompletedTask;
     }
@@ -452,9 +491,15 @@ internal sealed class FakeStoryForgeClient : IStoryForgeClient
         return Task.CompletedTask;
     }
 
-    public Task SelectSegmentVersionAsync(Guid projectId, string segmentId, int version, CancellationToken cancellationToken = default)
+    public Task SelectSegmentVersionAsync(Guid projectId, PipelineStage stage, string segmentId, int version, CancellationToken cancellationToken = default)
     {
         ThrowIfFailing();
+        if (stage == PipelineStage.Voice)
+        {
+            VoiceActions.Add(("select", segmentId, version));
+            ChangeVoice(projectId, segmentId, s => s with { Version = version });
+            return Task.CompletedTask;
+        }
         SelectedSegmentVersions.Add((projectId, segmentId, version));
         ChangeSegment(projectId, segmentId, s => s with { Version = version });
         return Task.CompletedTask;
@@ -465,6 +510,14 @@ internal sealed class FakeStoryForgeClient : IStoryForgeClient
         if (Scripts.TryGetValue(projectId, out var view))
         {
             Scripts[projectId] = view with { Segments = [.. view.Segments.Select(s => s.Id == segmentId ? change(s) : s)] };
+        }
+    }
+
+    private void ChangeVoice(Guid projectId, string segmentId, Func<VoiceSegmentView, VoiceSegmentView> change)
+    {
+        if (Voices.TryGetValue(projectId, out var view))
+        {
+            Voices[projectId] = view with { Segments = [.. view.Segments.Select(s => s.Id == segmentId ? change(s) : s)] };
         }
     }
 

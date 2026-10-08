@@ -134,6 +134,54 @@
                    Text="The script is written as soon as the fact sheet is approved: one row per segment." />
       </Border>
 
+      <!-- Where the voice stands, once the script is approved. -->
+      <Border Style="{StaticResource BarStyle}" Background="#172536" BorderBrush="#2B4A6B"
+              Visibility="{Binding IsVoiceRunning, Converter={StaticResource Visible}}">
+        <DockPanel>
+          <Button DockPanel.Dock="Right" Content="Cancel" Style="{StaticResource SecondaryButtonStyle}" Command="{Binding CancelVoiceCommand}"
+                  AutomationProperties.Name="Cancel the voice" />
+          <TextBlock Text="Speaking the script" FontSize="14" FontWeight="SemiBold" Foreground="#6FB3EE" VerticalAlignment="Center" Margin="0,0,14,0" />
+          <TextBlock Text="{Binding VoiceProgress}" VerticalAlignment="Center" FontSize="13" Foreground="#BCD3EA" TextTrimming="CharacterEllipsis"
+                     FontFamily="{StaticResource MonoFont}" AutomationProperties.AutomationId="VoiceProgress" />
+        </DockPanel>
+      </Border>
+
+      <Border Style="{StaticResource BarStyle}" Background="{StaticResource AccentSoftBrush}" BorderBrush="#5A4520"
+              Visibility="{Binding IsVoiceReview, Converter={StaticResource Visible}}">
+        <DockPanel>
+          <Button DockPanel.Dock="Right" Content="Approve remaining" Style="{StaticResource PrimaryButtonStyle}" MinHeight="36" FontSize="13"
+                  Margin="8,0,0,0" Command="{Binding ApproveRemainingVoiceCommand}" AutomationProperties.Name="Approve remaining voice" />
+          <Button DockPanel.Dock="Right" Content="Regenerate voice" Style="{StaticResource SecondaryButtonStyle}" Command="{Binding RegenerateVoiceCommand}" />
+          <TextBlock Text="Gate: Voice" FontSize="14" FontWeight="SemiBold" Foreground="{StaticResource AccentTextBrush}" VerticalAlignment="Center" Margin="0,0,14,0" />
+          <TextBlock VerticalAlignment="Center" FontSize="13" Foreground="#D9C9A8" TextWrapping="Wrap">
+            <Run Text="{Binding VoiceApprovedSummary, Mode=OneWay}" /> Listen to each segment; the run goes on when every one is approved.
+          </TextBlock>
+        </DockPanel>
+      </Border>
+
+      <Border Style="{StaticResource BarStyle}" Background="{StaticResource PillOkBackBrush}" BorderBrush="#2F5A50"
+              Visibility="{Binding IsVoiceApproved, Converter={StaticResource Visible}}">
+        <DockPanel>
+          <Button DockPanel.Dock="Right" Content="Regenerate voice" Style="{StaticResource SecondaryButtonStyle}" Command="{Binding RegenerateVoiceCommand}" />
+          <TextBlock Text="Voice approved" FontSize="14" FontWeight="SemiBold" Foreground="{StaticResource PillOkTextBrush}" VerticalAlignment="Center" Margin="0,0,14,0" />
+          <TextBlock VerticalAlignment="Center" FontSize="13" Foreground="{StaticResource TextSoftBrush}" TextWrapping="Wrap"
+                     Text="Every segment is spoken. Select a Voice cell to listen; Regenerate there speaks one segment again." />
+        </DockPanel>
+      </Border>
+
+      <Border Style="{StaticResource BarStyle}" Background="{StaticResource PillErrorBackBrush}" BorderBrush="#6B3A33"
+              Visibility="{Binding IsVoiceFailed, Converter={StaticResource Visible}}">
+        <DockPanel>
+          <Button DockPanel.Dock="Right" Content="Retry" Style="{StaticResource PrimaryButtonStyle}" MinHeight="36" FontSize="13"
+                  Background="{StaticResource ErrorTextBrush}" Command="{Binding RegenerateVoiceCommand}" AutomationProperties.Name="Retry the voice" />
+          <StackPanel VerticalAlignment="Center" Margin="0,0,14,0">
+            <TextBlock Text="Voice failed" FontSize="14" FontWeight="SemiBold" Foreground="{StaticResource PillErrorTextBrush}" />
+            <TextBlock Text="{Binding VoiceError}" FontSize="13" Foreground="#E2C1BB" TextWrapping="Wrap" Margin="0,2,0,0"
+                       AutomationProperties.AutomationId="VoiceError" />
+          </StackPanel>
+        </DockPanel>
+      </Border>
+
       <Border Background="{StaticResource PillErrorBackBrush}" CornerRadius="8" Padding="12,8" Margin="0,0,0,14"
               Visibility="{Binding ActionError, Converter={views:NullToCollapsedConverter}}">
         <TextBlock Text="{Binding ActionError}" Foreground="{StaticResource PillErrorTextBrush}" FontSize="13" TextWrapping="Wrap" />
@@ -200,13 +248,19 @@
                       <TextBlock Text="{Binding Id}" FontFamily="{StaticResource MonoFont}" FontSize="13" FontWeight="SemiBold" />
                       <TextBlock Text="{Binding Title}" FontSize="12" Foreground="{StaticResource TextMutedBrush}" TextTrimming="CharacterEllipsis" ToolTip="{Binding Title}" />
                     </StackPanel>
-                    <Button Grid.Column="1" Style="{StaticResource CellStyle}" Command="{Binding SelectCommand}" AutomationProperties.Name="{Binding}">
+                    <Button Grid.Column="1" Style="{StaticResource CellStyle}" Command="{Binding SelectCommand}" AutomationProperties.Name="{Binding AccessibleName}">
                       <DockPanel>
                         <TextBlock DockPanel.Dock="Right" Text="{Binding VersionText}" FontFamily="{StaticResource MonoFont}" />
                         <TextBlock Text="{Binding StateText}" FontWeight="SemiBold" />
                       </DockPanel>
                     </Button>
-                    <Border Grid.Column="2" Style="{StaticResource LaterCellStyle}" />
+                    <Button Grid.Column="2" DataContext="{Binding Voice}" Style="{StaticResource CellStyle}" Margin="6,0,0,0"
+                            Command="{Binding SelectCommand}" AutomationProperties.Name="{Binding AccessibleName}">
+                      <DockPanel>
+                        <TextBlock DockPanel.Dock="Right" Text="{Binding LengthText}" FontFamily="{StaticResource MonoFont}" />
+                        <TextBlock Text="{Binding StateText}" FontWeight="SemiBold" />
+                      </DockPanel>
+                    </Button>
                     <Border Grid.Column="3" Style="{StaticResource LaterCellStyle}" />
                     <Border Grid.Column="4" Style="{StaticResource LaterCellStyle}" />
                     <Border Grid.Column="5" Style="{StaticResource LaterCellStyle}" />
@@ -226,7 +280,8 @@
                 <Button Content="Approve" Style="{StaticResource PrimaryButtonStyle}" Margin="0,0,4,0" Background="#58B7A6" Command="{Binding ApproveSegmentCommand}" />
                 <Button Content="Regenerate" Style="{StaticResource SecondaryButtonStyle}" MinHeight="44" Margin="4,0,0,0" Command="{Binding RegenerateSegmentCommand}" />
               </UniformGrid>
-              <Button Content="Edit text…" Style="{StaticResource SecondaryButtonStyle}" MinHeight="44" Margin="0,8,0,0" Command="{Binding StartEditCommand}" />
+              <Button Content="Edit text…" Style="{StaticResource SecondaryButtonStyle}" MinHeight="44" Margin="0,8,0,0" Command="{Binding StartEditCommand}"
+                      Visibility="{Binding IsScriptPanel, Converter={StaticResource Visible}}" />
               <Button Content="Cancel" Style="{StaticResource SecondaryButtonStyle}" MinHeight="44" Margin="0,8,0,0" Command="{Binding CancelSegmentCommand}"
                       AutomationProperties.Name="Cancel the segment"
                       Visibility="{Binding SelectedIsRunning, Converter={StaticResource Visible}}" />
@@ -272,50 +327,98 @@
                   </ItemsControl.ItemTemplate>
                 </ItemsControl>
 
-                <StackPanel Visibility="{Binding IsNotEditing, Converter={StaticResource Visible}}">
-                  <TextBlock Text="Narration" Style="{StaticResource FieldLabelStyle}" />
-                  <Border Background="{StaticResource CardBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="8" Padding="12,10">
-                    <TextBlock Text="{Binding SelectedNarration}" FontSize="14" TextWrapping="Wrap" LineHeight="21" AutomationProperties.AutomationId="Narration" />
+                <!-- A Voice cell: play it, and watch the word being heard. -->
+                <StackPanel DataContext="{Binding Playback}" Visibility="{Binding DataContext.IsVoicePanel, RelativeSource={RelativeSource AncestorType=UserControl}, Converter={StaticResource Visible}}">
+                  <DockPanel Margin="0,0,0,10">
+                    <Button DockPanel.Dock="Left" Content="{Binding PlayLabel}" Style="{StaticResource PrimaryButtonStyle}" MinHeight="36" MinWidth="88" FontSize="13"
+                            Command="{Binding PlayPauseCommand}" AutomationProperties.Name="Play or pause the voice" />
+                    <TextBlock Text="{Binding PositionText}" FontFamily="{StaticResource MonoFont}" FontSize="13" Foreground="{StaticResource TextSoftBrush}"
+                               VerticalAlignment="Center" Margin="12,0,0,0" AutomationProperties.AutomationId="VoicePosition" />
+                  </DockPanel>
+                  <TextBlock Text="The audio file is gone from the projects folder. Regenerate speaks it again." FontSize="13" Foreground="{StaticResource ErrorTextBrush}"
+                             TextWrapping="Wrap" Margin="0,0,0,10" Visibility="{Binding IsMissing, Converter={StaticResource Visible}}" />
+                  <TextBlock Text="{Binding Error}" FontSize="13" Foreground="{StaticResource ErrorTextBrush}" TextWrapping="Wrap" Margin="0,0,0,10"
+                             Visibility="{Binding Error, Converter={views:NullToCollapsedConverter}}" />
+                  <TextBlock Text="Words" Style="{StaticResource FieldLabelStyle}" />
+                  <Border Background="{StaticResource CardBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="8" Padding="10,8">
+                    <ItemsControl ItemsSource="{Binding Words}" Focusable="False" AutomationProperties.Name="Spoken words">
+                      <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate>
+                          <WrapPanel />
+                        </ItemsPanelTemplate>
+                      </ItemsControl.ItemsPanel>
+                      <ItemsControl.ItemTemplate>
+                        <DataTemplate DataType="{x:Type script:SpokenWordViewModel}">
+                          <Button Command="{Binding SeekCommand}" Cursor="Hand" ToolTip="{Binding StartText}" Margin="0,0,1,3"
+                                  AutomationProperties.Name="{Binding Text}" FocusVisualStyle="{StaticResource RoundedFocusVisual}">
+                            <Button.Template>
+                              <ControlTemplate TargetType="Button">
+                                <Border x:Name="Back" CornerRadius="4" Padding="3,1" Background="Transparent">
+                                  <TextBlock x:Name="Word" Text="{Binding Text}" FontSize="14" Foreground="{StaticResource TextBrush}" />
+                                </Border>
+                                <ControlTemplate.Triggers>
+                                  <DataTrigger Binding="{Binding IsCurrent}" Value="True">
+                                    <Setter TargetName="Back" Property="Background" Value="{StaticResource AccentSoftBrush}" />
+                                    <Setter TargetName="Word" Property="Foreground" Value="{StaticResource AccentTextBrush}" />
+                                  </DataTrigger>
+                                </ControlTemplate.Triggers>
+                              </ControlTemplate>
+                            </Button.Template>
+                          </Button>
+                        </DataTemplate>
+                      </ItemsControl.ItemTemplate>
+                    </ItemsControl>
                   </Border>
+                  <TextBlock FontSize="12" Foreground="{StaticResource TextMutedBrush}" TextWrapping="Wrap" Margin="0,8,0,0"
+                             Text="When each word is heard is estimated from the text. Click a word to hear from there." />
                 </StackPanel>
 
-                <StackPanel Visibility="{Binding IsEditing, Converter={StaticResource Visible}}">
-                  <TextBlock Text="Title" Style="{StaticResource FieldLabelStyle}" />
-                  <TextBox Text="{Binding EditTitle, UpdateSourceTrigger=PropertyChanged}" FontSize="14" Padding="10,6" Margin="0,0,0,10" AutomationProperties.Name="Segment title" />
-                  <TextBlock Text="Narration" Style="{StaticResource FieldLabelStyle}" />
-                  <TextBox Text="{Binding EditNarration, UpdateSourceTrigger=PropertyChanged}" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="160"
-                           VerticalContentAlignment="Top" FontSize="14" Padding="10,8" AutomationProperties.Name="Segment narration" />
-                  <TextBlock FontSize="12" Foreground="{StaticResource TextMutedBrush}" TextWrapping="Wrap" Margin="0,8,0,12"
-                             Text="Saving makes a new version; the facts the segment lists stay as they are." />
-                  <UniformGrid Columns="2">
-                    <Button Content="Save" Style="{StaticResource PrimaryButtonStyle}" Margin="0,0,4,0" Command="{Binding SaveEditCommand}" />
-                    <Button Content="Cancel" Style="{StaticResource SecondaryButtonStyle}" MinHeight="44" Margin="4,0,0,0" Command="{Binding CancelEditCommand}" />
-                  </UniformGrid>
-                </StackPanel>
+                <StackPanel Visibility="{Binding IsScriptPanel, Converter={StaticResource Visible}}">
+                  <StackPanel Visibility="{Binding IsNotEditing, Converter={StaticResource Visible}}">
+                    <TextBlock Text="Narration" Style="{StaticResource FieldLabelStyle}" />
+                    <Border Background="{StaticResource CardBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="8" Padding="12,10">
+                      <TextBlock Text="{Binding SelectedNarration}" FontSize="14" TextWrapping="Wrap" LineHeight="21" AutomationProperties.AutomationId="Narration" />
+                    </Border>
+                  </StackPanel>
 
-                <TextBlock Text="Facts used" Style="{StaticResource FieldLabelStyle}" Margin="0,14,0,6" />
-                <ItemsControl ItemsSource="{Binding SelectedFacts}" Focusable="False" AutomationProperties.Name="Facts used">
-                  <ItemsControl.ItemTemplate>
-                    <DataTemplate DataType="{x:Type script:UsedFact}">
-                      <DockPanel Margin="0,0,0,6">
-                        <TextBlock DockPanel.Dock="Left" Width="40" Text="{Binding Id}" FontFamily="{StaticResource MonoFont}" FontSize="12" Foreground="{StaticResource TextSoftBrush}" />
-                        <TextBlock DockPanel.Dock="Left" Width="26" Text="{Binding Weight}" FontFamily="{StaticResource MonoFont}" FontSize="12">
-                          <TextBlock.Style>
-                            <Style TargetType="TextBlock">
-                              <Setter Property="Foreground" Value="{StaticResource TextMutedBrush}" />
-                              <Style.Triggers>
-                                <DataTrigger Binding="{Binding IsMust}" Value="True">
-                                  <Setter Property="Foreground" Value="{StaticResource AccentTextBrush}" />
-                                </DataTrigger>
-                              </Style.Triggers>
-                            </Style>
-                          </TextBlock.Style>
-                        </TextBlock>
-                        <TextBlock Text="{Binding Statement}" FontSize="12" Foreground="{StaticResource TextSoftBrush}" TextWrapping="Wrap" />
-                      </DockPanel>
-                    </DataTemplate>
-                  </ItemsControl.ItemTemplate>
-                </ItemsControl>
+                  <StackPanel Visibility="{Binding IsEditing, Converter={StaticResource Visible}}">
+                    <TextBlock Text="Title" Style="{StaticResource FieldLabelStyle}" />
+                    <TextBox Text="{Binding EditTitle, UpdateSourceTrigger=PropertyChanged}" FontSize="14" Padding="10,6" Margin="0,0,0,10" AutomationProperties.Name="Segment title" />
+                    <TextBlock Text="Narration" Style="{StaticResource FieldLabelStyle}" />
+                    <TextBox Text="{Binding EditNarration, UpdateSourceTrigger=PropertyChanged}" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="160"
+                             VerticalContentAlignment="Top" FontSize="14" Padding="10,8" AutomationProperties.Name="Segment narration" />
+                    <TextBlock FontSize="12" Foreground="{StaticResource TextMutedBrush}" TextWrapping="Wrap" Margin="0,8,0,12"
+                               Text="Saving makes a new version; the facts the segment lists stay as they are." />
+                    <UniformGrid Columns="2">
+                      <Button Content="Save" Style="{StaticResource PrimaryButtonStyle}" Margin="0,0,4,0" Command="{Binding SaveEditCommand}" />
+                      <Button Content="Cancel" Style="{StaticResource SecondaryButtonStyle}" MinHeight="44" Margin="4,0,0,0" Command="{Binding CancelEditCommand}" />
+                    </UniformGrid>
+                  </StackPanel>
+
+                  <TextBlock Text="Facts used" Style="{StaticResource FieldLabelStyle}" Margin="0,14,0,6" />
+                  <ItemsControl ItemsSource="{Binding SelectedFacts}" Focusable="False" AutomationProperties.Name="Facts used">
+                    <ItemsControl.ItemTemplate>
+                      <DataTemplate DataType="{x:Type script:UsedFact}">
+                        <DockPanel Margin="0,0,0,6">
+                          <TextBlock DockPanel.Dock="Left" Width="40" Text="{Binding Id}" FontFamily="{StaticResource MonoFont}" FontSize="12" Foreground="{StaticResource TextSoftBrush}" />
+                          <TextBlock DockPanel.Dock="Left" Width="26" Text="{Binding Weight}" FontFamily="{StaticResource MonoFont}" FontSize="12">
+                            <TextBlock.Style>
+                              <Style TargetType="TextBlock">
+                                <Setter Property="Foreground" Value="{StaticResource TextMutedBrush}" />
+                                <Style.Triggers>
+                                  <DataTrigger Binding="{Binding IsMust}" Value="True">
+                                    <Setter Property="Foreground" Value="{StaticResource AccentTextBrush}" />
+                                  </DataTrigger>
+                                </Style.Triggers>
+                              </Style>
+                            </TextBlock.Style>
+                          </TextBlock>
+                          <TextBlock Text="{Binding Statement}" FontSize="12" Foreground="{StaticResource TextSoftBrush}" TextWrapping="Wrap" />
+                        </DockPanel>
+                      </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                  </ItemsControl>
+                </StackPanel>
               </StackPanel>
             </ScrollViewer>
           </DockPanel>

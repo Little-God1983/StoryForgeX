@@ -43,6 +43,28 @@ internal sealed class CellReader(IDbContextFactory<StoryForgeDbContext> contextF
         return entry is null ? null : StoredJson.Read<ScriptSheet>(entry.OutputJson);
     }
 
+    /// <summary>
+    /// The script's segments as approved, with their versions, in order: what the voice speaks. A
+    /// segment not approved (yet) counts with its current version.
+    /// </summary>
+    public async Task<IReadOnlyList<(Segment Segment, int Version)>> ApprovedSegmentsAsync(Guid projectId, CancellationToken cancellationToken)
+    {
+        await using var db = await contextFactory.CreateDbContextAsync(cancellationToken);
+        var cells = await db.Cells.AsNoTracking()
+            .Where(c => c.ProjectId == projectId && c.Stage == PipelineStage.Script && c.Key != "")
+            .ToListAsync(cancellationToken);
+        var versions = await db.CellVersions.AsNoTracking()
+            .Where(v => v.ProjectId == projectId && v.Stage == PipelineStage.Script && v.Key != "")
+            .ToListAsync(cancellationToken);
+        return
+        [
+            .. cells.OrderBy(c => c.Key, StringComparer.Ordinal)
+                .Select(c => versions.FirstOrDefault(v => v.Key == c.Key && v.Version == (c.ApprovedVersion ?? c.CurrentVersion)))
+                .OfType<CellVersionEntry>()
+                .Select(v => (StoredJson.Read<Segment>(v.OutputJson), v.Version)),
+        ];
+    }
+
     /// <summary>The script's segments as they stand: each segment's current version, in order.</summary>
     public async Task<IReadOnlyList<Segment>> CurrentSegmentsAsync(Guid projectId, CancellationToken cancellationToken)
     {

@@ -21,8 +21,8 @@ public sealed record StageChip(PipelineStage Stage, string Name, StageState Stat
     /// <summary>"Research", "Research – review": the chip's text, as on the canvas.</summary>
     public string Label => State is StageState.NotStarted or StageState.Approved ? Name : $"{Name} – {StateText}";
 
-    /// <summary>Research opens the fact sheet, Script the matrix; the others arrive with their issues.</summary>
-    public bool CanOpen => Stage is PipelineStage.Research or PipelineStage.Script;
+    /// <summary>Research opens the fact sheet, Script and Voice the matrix; the others arrive with their issues.</summary>
+    public bool CanOpen => Stage is PipelineStage.Research or PipelineStage.Script or PipelineStage.Voice;
 
     // What screen readers announce.
     public override string ToString() => $"{Name}: {StateText}";
@@ -37,13 +37,16 @@ public sealed partial class ResultMatrixPageViewModel : PageViewModel
 {
     private readonly IStoryForgeClient _client;
     private readonly Action<string> _openUrl;
+    private readonly Func<IAudioPlayer>? _newPlayer;
 
     /// <param name="openUrl">Opens a source page in the browser; tests pass their own.</param>
-    public ResultMatrixPageViewModel(IStoryForgeClient client, Action<string>? openUrl = null)
+    /// <param name="newPlayer">Makes the player a project's voice is played with; tests pass their own or none.</param>
+    public ResultMatrixPageViewModel(IStoryForgeClient client, Action<string>? openUrl = null, Func<IAudioPlayer>? newPlayer = null)
         : base("Result matrix", "Projects / Result matrix", "No project open. Start one from New project.")
     {
         _client = client;
         _openUrl = openUrl ?? (url => Process.Start(new ProcessStartInfo(url) { UseShellExecute = true }));
+        _newPlayer = newPlayer;
         client.StageUpdated += (_, update) => UiThread.Run(() => Updating = ReceiveAsync(update));
     }
 
@@ -91,7 +94,8 @@ public sealed partial class ResultMatrixPageViewModel : PageViewModel
         Project = project;
         FactSheet = null;
         Breadcrumb = $"Projects / {project.Setup.Name}";
-        Script = new ScriptMatrixViewModel(_client, project.Id);
+        Script?.Playback.Stop();   // the project before keeps no file open
+        Script = new ScriptMatrixViewModel(_client, project.Id, _newPlayer?.Invoke());
         ScriptLoading = Script.LoadAsync();
     }
 
@@ -136,7 +140,7 @@ public sealed partial class ResultMatrixPageViewModel : PageViewModel
         {
             await ShowFactSheetAsync();
         }
-        else if (chip.Stage == PipelineStage.Script)
+        else if (chip.Stage is PipelineStage.Script or PipelineStage.Voice)
         {
             ShowMatrix();
         }
@@ -152,12 +156,16 @@ public sealed partial class ResultMatrixPageViewModel : PageViewModel
         }
     }
 
+    /// <summary>Stops a voice playing in the matrix: it goes out of sight, and so does its Pause.</summary>
+    public void StopPlayback() => Script?.Playback.Stop();
+
     private async Task ShowFactSheetAsync()
     {
         if (Project is null)
         {
             return;
         }
+        StopPlayback();
         var sheet = new FactSheetViewModel(_client, Project.Id, Project.Setup.ResearchSources, _openUrl);
         // "Approve and continue": back to the matrix, where the script is being written.
         sheet.Approved += (_, _) => ShowMatrix();

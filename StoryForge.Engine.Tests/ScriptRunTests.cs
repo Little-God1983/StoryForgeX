@@ -30,7 +30,7 @@ public sealed class ScriptRunTests : IDisposable
     });
 
     /// <summary>A project whose fact sheet is researched and approved (F01 marked must), so the script starts.</summary>
-    private static async Task<Project> ApprovedFactsAsync(IStoryForgeClient client, Func<ProjectSetup, ProjectSetup>? change = null)
+    internal static async Task<Project> ApprovedFactsAsync(IStoryForgeClient client, Func<ProjectSetup, ProjectSetup>? change = null)
     {
         var setup = await ProjectTests.ValidSetup(client);
         var project = await client.CreateProjectAsync(change is null ? setup : change(setup));
@@ -45,7 +45,7 @@ public sealed class ScriptRunTests : IDisposable
         return project;
     }
 
-    private static async Task<T> WaitForAsync<T>(Func<Task<T>> read, Func<T, bool> done)
+    internal static async Task<T> WaitForAsync<T>(Func<Task<T>> read, Func<T, bool> done)
     {
         var deadline = DateTime.UtcNow.AddSeconds(15);
         while (true)
@@ -66,11 +66,11 @@ public sealed class ScriptRunTests : IDisposable
     private static Task<ScriptView> ScriptAsync(IStoryForgeClient client, Guid projectId, params StageState[] states) =>
         WaitForAsync(() => client.GetScriptAsync(projectId), v => states.Contains(v.State));
 
-    private static ScriptPart Part(string title, params string[] facts) =>
+    internal static ScriptPart Part(string title, params string[] facts) =>
         new(title, string.Join(' ', Enumerable.Repeat("word", 150)), facts);
 
     /// <summary>Three segments of a minute each: right for a 4:00 target with F01 and F02 in use.</summary>
-    private static ScriptOutput Good() => new([Part("Hook - a coin that screams", "F01"), Part("Money of Hell", "F02"), Part("Outro", "F01"), Part("Coins in the game", "F03")], "");
+    internal static ScriptOutput Good() => new([Part("Hook - a coin that screams", "F01"), Part("Money of Hell", "F02"), Part("Outro", "F01"), Part("Coins in the game", "F03")], "");
 
     [Fact]
     public async Task Approving_the_fact_sheet_writes_the_script_as_one_row_per_segment()
@@ -155,13 +155,13 @@ public sealed class ScriptRunTests : IDisposable
         var project = await ApprovedFactsAsync(client);
         await ScriptAsync(client, project.Id, StageState.NeedsReview);
 
-        await client.ApproveSegmentAsync(project.Id, "S02", 1);
+        await client.ApproveSegmentAsync(project.Id, PipelineStage.Script, "S02", 1);
         var one = await client.GetScriptAsync(project.Id);
         Assert.Equal(StageState.NeedsReview, one.State);
         Assert.Equal(StageState.Approved, one.Segments[1].State);
         Assert.Equal(StageState.NeedsReview, one.Segments[0].State);
 
-        await client.ApproveScriptAsync(project.Id);   // "Approve remaining"
+        await client.ApproveSegmentsAsync(project.Id, PipelineStage.Script);   // "Approve remaining"
         var all = await client.GetScriptAsync(project.Id);
         Assert.Equal(StageState.Approved, all.State);
         Assert.All(all.Segments, s => Assert.Equal(StageState.Approved, s.State));
@@ -175,7 +175,7 @@ public sealed class ScriptRunTests : IDisposable
         var client = await StartAsync();
         var project = await ApprovedFactsAsync(client);
         await ScriptAsync(client, project.Id, StageState.NeedsReview);
-        await client.ApproveScriptAsync(project.Id);
+        await client.ApproveSegmentsAsync(project.Id, PipelineStage.Script);
 
         await client.EditSegmentAsync(project.Id, "S01", "Hook - a scream in the dark", " A coin screams. ");
         var edited = (await client.GetScriptAsync(project.Id)).Segments[0];
@@ -184,7 +184,7 @@ public sealed class ScriptRunTests : IDisposable
         Assert.Equal(["F01"], edited.FactIds);
         Assert.Equal(StageState.NeedsReview, (await client.GetScriptAsync(project.Id)).State);
 
-        await client.SelectSegmentVersionAsync(project.Id, "S01", 1);   // back to the approved one
+        await client.SelectSegmentVersionAsync(project.Id, PipelineStage.Script, "S01", 1);   // back to the approved one
         var back = await client.GetScriptAsync(project.Id);
         Assert.Equal((1, StageState.Approved), (back.Segments[0].Version, back.Segments[0].State));
         Assert.Equal(StageState.Approved, back.State);
@@ -199,9 +199,9 @@ public sealed class ScriptRunTests : IDisposable
         var client = await StartAsync();
         var project = await ApprovedFactsAsync(client);
         await ScriptAsync(client, project.Id, StageState.NeedsReview);
-        await client.ApproveScriptAsync(project.Id);
+        await client.ApproveSegmentsAsync(project.Id, PipelineStage.Script);
 
-        await client.RegenerateSegmentAsync(project.Id, "S01");
+        await client.RegenerateSegmentAsync(project.Id, PipelineStage.Script, "S01");
         var script = await WaitForAsync(() => client.GetScriptAsync(project.Id), v => v.Segments[0].Version == 2 || v.Segments[0].State == StageState.Failed);
 
         Assert.Equal(("Hook - a coin that whispers", StageState.NeedsReview), (script.Segments[0].Title, script.Segments[0].State));
@@ -219,7 +219,7 @@ public sealed class ScriptRunTests : IDisposable
         var project = await ApprovedFactsAsync(client);
         await ScriptAsync(client, project.Id, StageState.NeedsReview);
 
-        await client.RegenerateSegmentAsync(project.Id, "S01");
+        await client.RegenerateSegmentAsync(project.Id, PipelineStage.Script, "S01");
         var script = await WaitForAsync(() => client.GetScriptAsync(project.Id), v => v.Segments[0].Version == 2 || v.Segments[0].State == StageState.Failed);
 
         Assert.Equal("Hook - kept", script.Segments[0].Title);
@@ -235,7 +235,7 @@ public sealed class ScriptRunTests : IDisposable
         var project = await ApprovedFactsAsync(client);
         await ScriptAsync(client, project.Id, StageState.NeedsReview);
 
-        await client.RegenerateSegmentAsync(project.Id, "S02");
+        await client.RegenerateSegmentAsync(project.Id, PipelineStage.Script, "S02");
         var script = await WaitForAsync(() => client.GetScriptAsync(project.Id), v => v.Segments[1].State == StageState.Failed);
 
         Assert.Equal("Claude CLI was not found (claude). Check its executable in Settings.", script.Segments[1].Error);
@@ -251,9 +251,9 @@ public sealed class ScriptRunTests : IDisposable
         var client = await StartAsync();
         var project = await ApprovedFactsAsync(client);
         await ScriptAsync(client, project.Id, StageState.NeedsReview);
-        await client.ApproveScriptAsync(project.Id);
+        await client.ApproveSegmentsAsync(project.Id, PipelineStage.Script);
 
-        await client.RegenerateSegmentAsync(project.Id, "S02");
+        await client.RegenerateSegmentAsync(project.Id, PipelineStage.Script, "S02");
         // The segment fails first, and the stage settles right after it.
         var script = await WaitForAsync(() => client.GetScriptAsync(project.Id), v => v.Segments[1].State == StageState.Failed && v.State != StageState.Approved);
 
@@ -272,7 +272,7 @@ public sealed class ScriptRunTests : IDisposable
         await client.RegenerateAsync(project.Id, PipelineStage.Script);
         await ScriptAsync(client, project.Id, StageState.Failed);
 
-        await client.ApproveScriptAsync(project.Id);
+        await client.ApproveSegmentsAsync(project.Id, PipelineStage.Script);
 
         var script = await client.GetScriptAsync(project.Id);
         Assert.Equal((StageState.Approved, null), (script.State, script.Error));
@@ -286,7 +286,7 @@ public sealed class ScriptRunTests : IDisposable
         var first = await StartAsync();
         var project = await ApprovedFactsAsync(first);
         await ScriptAsync(first, project.Id, StageState.NeedsReview);
-        await first.ApproveScriptAsync(project.Id);
+        await first.ApproveSegmentsAsync(project.Id, PipelineStage.Script);
         await using (var db = await _engine.DbAsync())
         {
             db.Cells.Single(c => c.ProjectId == project.Id && c.Key == "S03").State = StageState.Running;
@@ -313,7 +313,7 @@ public sealed class ScriptRunTests : IDisposable
         Assert.Equal((StageState.Approved, (int?)2), (edited.Segments[0].State, edited.Segments[0].ApprovedVersion));
         Assert.Equal(StageState.Approved, edited.State);
 
-        await client.SelectSegmentVersionAsync(project.Id, "S01", 1);
+        await client.SelectSegmentVersionAsync(project.Id, PipelineStage.Script, "S01", 1);
         var back = await client.GetScriptAsync(project.Id);
         Assert.Equal((StageState.Approved, (int?)1), (back.Segments[0].State, back.Segments[0].ApprovedVersion));
         Assert.Equal(StageState.Approved, back.State);
@@ -359,10 +359,10 @@ public sealed class ScriptRunTests : IDisposable
         var project = await ApprovedFactsAsync(client);
         await ScriptAsync(client, project.Id, StageState.NeedsReview);
 
-        await client.RegenerateSegmentAsync(project.Id, "S01");
+        await client.RegenerateSegmentAsync(project.Id, PipelineStage.Script, "S01");
 
         await Assert.ThrowsAsync<InvalidOperationException>(() => client.EditSegmentAsync(project.Id, "S01", "t", "n"));
-        await Assert.ThrowsAsync<InvalidOperationException>(() => client.ApproveScriptAsync(project.Id));
+        await Assert.ThrowsAsync<InvalidOperationException>(() => client.ApproveSegmentsAsync(project.Id, PipelineStage.Script));
         await Assert.ThrowsAsync<InvalidOperationException>(() => client.RegenerateAsync(project.Id, PipelineStage.Script));
         await client.CancelAsync(project.Id, PipelineStage.Script);   // the whole stage is not running: nothing to cancel
     }
@@ -374,7 +374,7 @@ public sealed class ScriptRunTests : IDisposable
         var client = await StartAsync();
         var project = await ApprovedFactsAsync(client);
         await ScriptAsync(client, project.Id, StageState.NeedsReview);
-        await client.ApproveSegmentAsync(project.Id, "S02", 1);
+        await client.ApproveSegmentAsync(project.Id, PipelineStage.Script, "S02", 1);
         await client.EditSegmentAsync(project.Id, "S01", "Hook - mine", "My words.");
 
         await ApproveNewResearchAsync(client, project.Id);
@@ -401,7 +401,7 @@ public sealed class ScriptRunTests : IDisposable
         var script = await client.GetScriptAsync(project.Id);
         Assert.Equal(("Soul coins hold one soul.", Fact.MustWeight), (script.Facts[0].Statement, script.Facts[0].Weight));
 
-        await client.RegenerateSegmentAsync(project.Id, "S01");
+        await client.RegenerateSegmentAsync(project.Id, PipelineStage.Script, "S01");
         await WaitForAsync(() => client.GetScriptAsync(project.Id), v => v.Segments[0].Version == 2 || v.Segments[0].State == StageState.Failed);
         Assert.Equal("Soul coins hold one soul.", _script.RewriteRequests.Single().Facts.Facts[0].Statement);
     }
@@ -430,13 +430,13 @@ public sealed class ScriptRunTests : IDisposable
         var project = await ApprovedFactsAsync(client);
         await ScriptAsync(client, project.Id, StageState.NeedsReview);
 
-        await client.RegenerateSegmentAsync(project.Id, "S02");
+        await client.RegenerateSegmentAsync(project.Id, PipelineStage.Script, "S02");
         var running = await WaitForAsync(() => client.GetScriptAsync(project.Id), v => v.Segments[1].Activity.Count > 0);
         Assert.Equal(StageState.Running, running.Segments[1].State);
         Assert.Equal(["rewriting S02"], running.Segments[1].Activity.Select(a => a.Text));
         Assert.DoesNotContain(running.Activity, a => a.Text == "rewriting S02");   // the whole script's log is not this segment's
 
-        await client.CancelSegmentAsync(project.Id, "S02");
+        await client.CancelSegmentAsync(project.Id, PipelineStage.Script, "S02");
 
         var back = await WaitForAsync(() => client.GetScriptAsync(project.Id), v => v.Segments[1].State != StageState.Running);
         Assert.Equal((StageState.NeedsReview, 1), (back.Segments[1].State, back.Segments[1].Version));
@@ -450,7 +450,7 @@ public sealed class ScriptRunTests : IDisposable
         var client = await StartAsync();
         var project = await ApprovedFactsAsync(client);
         await ScriptAsync(client, project.Id, StageState.NeedsReview);
-        await client.RegenerateSegmentAsync(project.Id, "S04");
+        await client.RegenerateSegmentAsync(project.Id, PipelineStage.Script, "S04");
         await WaitForAsync(() => client.GetScriptAsync(project.Id), v => v.Segments[3].Activity.Count > 0);
 
         // A whole new script without S04 landed meanwhile.
@@ -459,7 +459,7 @@ public sealed class ScriptRunTests : IDisposable
             db.Cells.Remove(db.Cells.Single(c => c.ProjectId == project.Id && c.Key == "S04"));
             await db.SaveChangesAsync();
         }
-        await client.CancelSegmentAsync(project.Id, "S04");
+        await client.CancelSegmentAsync(project.Id, PipelineStage.Script, "S04");
 
         Assert.Equal(["S01", "S02", "S03"], (await client.GetScriptAsync(project.Id)).Segments.Select(s => s.Id));
         await using (var db = await _engine.DbAsync())
@@ -500,12 +500,12 @@ public sealed class ScriptRunTests : IDisposable
 
         await Assert.ThrowsAsync<ArgumentException>(() => client.EditSegmentAsync(project.Id, "S01", " ", "text"));
         await Assert.ThrowsAsync<KeyNotFoundException>(() => client.EditSegmentAsync(project.Id, "S09", "t", "n"));
-        await Assert.ThrowsAsync<KeyNotFoundException>(() => client.ApproveSegmentAsync(project.Id, "S01", 7));
-        await Assert.ThrowsAsync<KeyNotFoundException>(() => client.RegenerateSegmentAsync(project.Id, "S09"));
+        await Assert.ThrowsAsync<KeyNotFoundException>(() => client.ApproveSegmentAsync(project.Id, PipelineStage.Script, "S01", 7));
+        await Assert.ThrowsAsync<KeyNotFoundException>(() => client.RegenerateSegmentAsync(project.Id, PipelineStage.Script, "S09"));
     }
 
     /// <summary>Research that always finds the same three facts on one page.</summary>
-    private sealed class ThreeFacts : IResearchAgent
+    internal sealed class ThreeFacts : IResearchAgent
     {
         /// <summary>What the first fact says; a test changes it to research something new.</summary>
         public string First { get; set; } = "Soul coins hold one soul.";
@@ -525,7 +525,7 @@ public sealed class ScriptRunTests : IDisposable
     }
 
     /// <summary>Scripts and segments from a script; records what it was asked.</summary>
-    private sealed class FakeScriptAgent : IScriptAgent
+    internal sealed class FakeScriptAgent : IScriptAgent
     {
         private readonly Queue<ScriptOutput> _scripts = new();
         private readonly Queue<Func<CancellationToken, Task<ScriptPart>>> _segments = new();

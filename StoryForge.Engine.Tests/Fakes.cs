@@ -29,14 +29,18 @@ internal sealed class FakeProcessRunner : IProcessRunner
 /// <summary>Answers HTTP requests by URL; anything unknown is refused like a closed port.</summary>
 internal sealed class FakeHttpHandler : HttpMessageHandler
 {
-    private readonly Dictionary<string, Func<HttpRequestMessage, HttpResponseMessage>> _answers = [];
+    private readonly Dictionary<string, Func<HttpRequestMessage, CancellationToken, HttpResponseMessage>> _answers = [];
 
     public List<HttpRequestMessage> Requests { get; } = [];
 
     public FakeHttpHandler Answer(string url, HttpStatusCode status, string body = "") =>
         Answer(url, _ => new HttpResponseMessage(status) { Content = new StringContent(body, Encoding.UTF8, "application/json") });
 
-    public FakeHttpHandler Answer(string url, Func<HttpRequestMessage, HttpResponseMessage> answer)
+    public FakeHttpHandler Answer(string url, Func<HttpRequestMessage, HttpResponseMessage> answer) =>
+        Answer(url, (request, _) => answer(request));
+
+    /// <summary>An answer that sees the request's cancellation, as a real server call in flight would.</summary>
+    public FakeHttpHandler Answer(string url, Func<HttpRequestMessage, CancellationToken, HttpResponseMessage> answer)
     {
         _answers[url] = answer;
         return this;
@@ -46,7 +50,7 @@ internal sealed class FakeHttpHandler : HttpMessageHandler
     {
         Requests.Add(request);
         return _answers.TryGetValue(request.RequestUri!.ToString(), out var answer)
-            ? Task.FromResult(answer(request))
+            ? Task.FromResult(answer(request, cancellationToken))
             : throw new HttpRequestException("No connection could be made because the target machine actively refused it.");
     }
 }

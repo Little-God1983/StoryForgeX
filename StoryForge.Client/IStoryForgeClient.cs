@@ -98,23 +98,26 @@ public interface IStoryForgeClient
     /// <exception cref="KeyNotFoundException">No such project.</exception>
     Task<ScriptView> GetScriptAsync(Guid projectId, CancellationToken cancellationToken = default);
 
-    /// <summary>Approves one version of a segment. When every segment is approved, the run goes on.</summary>
+    /// <summary>
+    /// Approves one version of a segment of <paramref name="stage"/> (Script or Voice). When every
+    /// segment is approved, the run goes on.
+    /// </summary>
     /// <exception cref="KeyNotFoundException">No such project, segment or version.</exception>
-    /// <exception cref="InvalidOperationException">The segment or the script is being written.</exception>
-    Task ApproveSegmentAsync(Guid projectId, string segmentId, int version, CancellationToken cancellationToken = default);
+    /// <exception cref="InvalidOperationException">The segment or its stage is running, or the stage has no segments.</exception>
+    Task ApproveSegmentAsync(Guid projectId, PipelineStage stage, string segmentId, int version, CancellationToken cancellationToken = default);
 
-    /// <summary>"Approve remaining": approves every segment as it stands, and the run goes on.</summary>
-    /// <exception cref="KeyNotFoundException">No such project, or no script yet.</exception>
-    /// <exception cref="InvalidOperationException">The script or a segment is being written.</exception>
-    Task ApproveScriptAsync(Guid projectId, CancellationToken cancellationToken = default);
+    /// <summary>"Approve remaining": approves every segment of the stage as it stands, and the run goes on.</summary>
+    /// <exception cref="KeyNotFoundException">No such project, or the stage has no segments yet.</exception>
+    /// <exception cref="InvalidOperationException">The stage or a segment is running.</exception>
+    Task ApproveSegmentsAsync(Guid projectId, PipelineStage stage, CancellationToken cancellationToken = default);
 
-    /// <summary>Writes one segment again, keeping the rest of the script. The earlier versions stay.</summary>
+    /// <summary>Makes one segment of the stage again (writes or speaks it), keeping the rest. The earlier versions stay.</summary>
     /// <exception cref="KeyNotFoundException">No such project or segment.</exception>
-    /// <exception cref="InvalidOperationException">The script is being written.</exception>
-    Task RegenerateSegmentAsync(Guid projectId, string segmentId, CancellationToken cancellationToken = default);
+    /// <exception cref="InvalidOperationException">The whole stage is running.</exception>
+    Task RegenerateSegmentAsync(Guid projectId, PipelineStage stage, string segmentId, CancellationToken cancellationToken = default);
 
-    /// <summary>Stops writing one segment again; it goes back to the version it had.</summary>
-    Task CancelSegmentAsync(Guid projectId, string segmentId, CancellationToken cancellationToken = default);
+    /// <summary>Stops making one segment again; it goes back to the version it had.</summary>
+    Task CancelSegmentAsync(Guid projectId, PipelineStage stage, string segmentId, CancellationToken cancellationToken = default);
 
     /// <summary>Your own wording of a segment, saved as its next version, to review and approve like any other.</summary>
     /// <exception cref="KeyNotFoundException">No such project or segment.</exception>
@@ -122,8 +125,12 @@ public interface IStoryForgeClient
     /// <exception cref="InvalidOperationException">The segment or the script is being written.</exception>
     Task EditSegmentAsync(Guid projectId, string segmentId, string title, string narration, CancellationToken cancellationToken = default);
 
-    /// <summary>Switches a segment back (or forward) to one of its versions, which then needs approving.</summary>
+    /// <summary>Switches a segment of the stage back (or forward) to one of its versions, which then needs approving.</summary>
     /// <exception cref="KeyNotFoundException">No such project, segment or version.</exception>
-    /// <exception cref="InvalidOperationException">The segment or the script is being written.</exception>
-    Task SelectSegmentVersionAsync(Guid projectId, string segmentId, int version, CancellationToken cancellationToken = default);
+    /// <exception cref="InvalidOperationException">The segment or its stage is running.</exception>
+    Task SelectSegmentVersionAsync(Guid projectId, PipelineStage stage, string segmentId, int version, CancellationToken cancellationToken = default);
+
+    /// <summary>The Voice stage: its state, each segment's audio with its words and versions, and the voice total.</summary>
+    /// <exception cref="KeyNotFoundException">No such project.</exception>
+    Task<VoiceView> GetVoiceAsync(Guid projectId, CancellationToken cancellationToken = default);
 }

@@ -70,6 +70,27 @@ internal sealed class PipelineRunner(
         }
     }
 
+    /// <summary>
+    /// The segments a running whole-stage run has stored so far; null when the stage is not running
+    /// as a whole. The others are still to come in this run.
+    /// </summary>
+    public IReadOnlySet<string>? StoredInRun(Guid projectId, PipelineStage stage)
+    {
+        Job? job;
+        lock (_lock)
+        {
+            _jobs.TryGetValue((projectId, stage, Whole), out job);
+        }
+        if (job is null)
+        {
+            return null;
+        }
+        lock (job.Stored)
+        {
+            return new HashSet<string>(job.Stored);
+        }
+    }
+
     /// <summary>What a running stage (or segment) has done so far; null when it is not running.</summary>
     public IReadOnlyList<ActivityLine>? LiveActivity(Guid projectId, PipelineStage stage, string key = Whole)
     {
@@ -227,8 +248,9 @@ internal sealed class PipelineRunner(
         setup.Gates.Contains(stage) && (setup.Mode == RunMode.StopAtGates || ProjectSetup.RequiredGates.Contains(stage));
 
     /// <summary>
-    /// Queues the next stage unless it has a result already: approving a stage again does not throw
-    /// away what came after it. Regenerate writes that again (#11 marks it out of date).
+    /// Queues the next stage unless it has a result already, as a whole or in segments a run stored
+    /// before it failed: approving a stage again does not throw away what came after it, nor make it
+    /// all again unasked. Regenerate or Retry does that (#11 marks it out of date).
     /// </summary>
     private async Task ContinueAsync(Guid projectId, PipelineStage stage, CancellationToken cancellationToken)
     {
@@ -239,7 +261,7 @@ internal sealed class PipelineRunner(
         }
         await using (var db = await contextFactory.CreateDbContextAsync(cancellationToken))
         {
-            if (await db.Cells.AnyAsync(c => c.ProjectId == projectId && c.Stage == next && c.Key == Whole && c.CurrentVersion != null, cancellationToken))
+            if (await db.Cells.AnyAsync(c => c.ProjectId == projectId && c.Stage == next && c.CurrentVersion != null, cancellationToken))
             {
                 return;
             }
@@ -343,8 +365,8 @@ internal sealed class PipelineRunner(
         {
             job.Cancel.Token.ThrowIfCancellationRequested();
             var project = await projects.GetAsync(job.ProjectId, job.Cancel.Token);
-            var context = new StageContext(project, reporter);
             var gated = IsGated(project.Setup, job.Stage);
+            var context = new StageContext(project, reporter, job.Key == Whole ? segment => StoreRunSegmentAsync(job, segment, gated) : null);
             if (job.Key == Whole)
             {
                 var result = await _workers[job.Stage].RunAsync(context, job.Cancel.Token);
@@ -371,6 +393,11 @@ internal sealed class PipelineRunner(
             if (_stopping.IsCancellationRequested)
             {
                 await FailAsync(job, ClosedWhileRunning, Snapshot(activity));
+            }
+            else if (StoredCount(job) is > 0 and var stored)
+            {
+                // Segments of this run are stored already: going back to before would hide them.
+                await FailAsync(job, $"Cancelled after {stored} {(stored == 1 ? "segment" : "segments")}. Those are kept; Retry makes them all again.", Snapshot(activity));
             }
             else
             {
@@ -435,6 +462,10 @@ internal sealed class PipelineRunner(
                     child = new CellEntry { ProjectId = job.ProjectId, Stage = job.Stage, Key = segment.Key };
                     db.Cells.Add(child);
                 }
+                if (StoredCount(job, segment.Key) > 0)
+                {
+                    continue;   // stored while the run went on, and maybe approved or switched since
+                }
                 AddVersion(db, child, await NextVersionAsync(db, job.ProjectId, job.Stage, segment.Key), segment.OutputJson, segment.SchemaVersion, segment.InputHash);
                 child.State = gated ? StageState.NeedsReview : StageState.Approved;
                 child.ApprovedVersion = gated ? null : child.CurrentVersion;
@@ -445,6 +476,45 @@ internal sealed class PipelineRunner(
         await TouchAsync(db, cell, CancellationToken.None);
         await db.SaveChangesAsync(CancellationToken.None);
         return cell.State;
+    }
+
+    /// <summary>
+    /// Stores one segment while its whole-stage run goes on (see <see cref="StageContext.StoreSegment"/>):
+    /// as the segment's next version, to review or approved as the gate says. The stage stays running.
+    /// </summary>
+    private async Task StoreRunSegmentAsync(Job job, CellResult result, bool gated)
+    {
+        StageState state;
+        await using (var db = await contextFactory.CreateDbContextAsync(CancellationToken.None))
+        {
+            var cell = await db.Cells.FirstOrDefaultAsync(c => c.ProjectId == job.ProjectId && c.Stage == job.Stage && c.Key == result.Key);
+            if (cell is null)
+            {
+                cell = new CellEntry { ProjectId = job.ProjectId, Stage = job.Stage, Key = result.Key };
+                db.Cells.Add(cell);
+            }
+            AddVersion(db, cell, await NextVersionAsync(db, job.ProjectId, job.Stage, result.Key), result.OutputJson, result.SchemaVersion, result.InputHash);
+            cell.State = state = gated ? StageState.NeedsReview : StageState.Approved;
+            cell.ApprovedVersion = gated ? null : cell.CurrentVersion;
+            cell.Error = null;
+            cell.ActivityJson = "[]";
+            await TouchAsync(db, cell, CancellationToken.None);
+            await db.SaveChangesAsync(CancellationToken.None);
+        }
+        lock (job.Stored)
+        {
+            job.Stored.Add(result.Key);
+        }
+        Publish(new StageUpdate(job.ProjectId, job.Stage, state, Key: result.Key));
+    }
+
+    /// <summary>How many segments the run stored as it went; with <paramref name="key"/>, whether it stored that one.</summary>
+    private static int StoredCount(Job job, string? key = null)
+    {
+        lock (job.Stored)
+        {
+            return key is null ? job.Stored.Count : job.Stored.Contains(key) ? 1 : 0;
+        }
     }
 
     /// <summary>Stores a rewritten segment and settles the stage; the stage's new state, if it changed.</summary>
@@ -660,6 +730,9 @@ internal sealed class PipelineRunner(
 
         /// <summary>What the stage has done so far; locked while written or copied.</summary>
         public List<ActivityLine> Activity { get; } = [];
+
+        /// <summary>The segments stored while the run went on; locked while written or read.</summary>
+        public HashSet<string> Stored { get; } = [];
     }
 
     /// <summary>Reports on the stage's own thread, at once; <see cref="Progress{T}"/> would post to a context.</summary>
