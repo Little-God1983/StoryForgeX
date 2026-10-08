@@ -58,7 +58,7 @@ public sealed class VoiceRunTests : IDisposable
     /// A project whose script is written and approved (no Script gate), with the voice profile set
     /// up for the workflow above, so the voice starts by itself.
     /// </summary>
-    private async Task<Project> ScriptApprovedAsync(IStoryForgeClient client, bool voiceGate = false, string workflow = "voice.json")
+    private async Task<Project> ScriptApprovedAsync(IStoryForgeClient client, bool voiceGate = false, string workflow = "voice.json", bool scriptGate = false)
     {
         var settings = await client.GetSettingsAsync();
         await client.SaveSettingsAsync(settings with
@@ -78,11 +78,17 @@ public sealed class VoiceRunTests : IDisposable
             Inputs = [new("text", "#11.text"), new("instruction", "#11.instruction"), new("reference_audio", "#2.audio"), new("seed", "#11.seed")],
         });
         _script.Answer(ScriptRunTests.Good());
-        return await ScriptRunTests.ApprovedFactsAsync(client, s => s with
+        var project = await ScriptRunTests.ApprovedFactsAsync(client, s => s with
         {
-            Gates = [.. s.Gates.Where(g => g != PipelineStage.Script), .. voiceGate ? new[] { PipelineStage.Voice } : []],
+            Gates = [.. s.Gates.Where(g => g != PipelineStage.Script || scriptGate), .. voiceGate ? new[] { PipelineStage.Voice } : []],
             Voice = s.Voice with { Profile = new ProfileRef(profile.Id, saved.Version) },
         });
+        if (scriptGate)
+        {
+            await ScriptRunTests.WaitForAsync(() => client.GetScriptAsync(project.Id), v => v.State == StageState.NeedsReview);
+            await client.ApproveSegmentsAsync(project.Id, PipelineStage.Script);
+        }
+        return project;
     }
 
     private static Task<VoiceView> VoiceAsync(IStoryForgeClient client, Guid projectId, params StageState[] states) =>
@@ -204,6 +210,26 @@ public sealed class VoiceRunTests : IDisposable
         hold.Release();
         var done = await VoiceAsync(client, project.Id, StageState.Approved, StageState.Failed);
         Assert.Equal([1, 1, 1, 1], done.Segments.Select(s => s.Version));   // stored once, not again at the end
+    }
+
+    [Fact]
+    public async Task Approving_the_script_again_after_a_failed_voice_does_not_speak_it_all_again_unasked()
+    {
+        _comfy.FailAt(3, "The workflow failed in ComfyUI: #11 ITLBreezeTTSVoiceDirection: CUDA out of memory.");
+        var client = await StartAsync();
+        var project = await ScriptApprovedAsync(client, scriptGate: true);
+        await VoiceAsync(client, project.Id, StageState.Failed, StageState.Approved);
+        var sent = _comfy.Workflows.Count;
+
+        // With the Script gate: your wording goes to review, and approving it settles the script approved again.
+        await client.EditSegmentAsync(project.Id, "S02", "Money of Hell", "Soul coins are the money of Hell.");
+        Assert.Equal(StageState.NeedsReview, (await client.GetScriptAsync(project.Id)).State);
+        await client.ApproveSegmentAsync(project.Id, PipelineStage.Script, "S02", 2);
+        Assert.Equal(StageState.Approved, (await client.GetScriptAsync(project.Id)).State);
+
+        var voice = await client.GetVoiceAsync(project.Id);
+        Assert.Equal(StageState.Failed, voice.State);   // Retry is yours to press
+        Assert.Equal(sent, _comfy.Workflows.Count);
     }
 
     [Fact]

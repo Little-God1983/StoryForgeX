@@ -288,6 +288,10 @@ public sealed class ComfyUiClientTests : IDisposable
 
     private static readonly Progress<string> Quiet = new();
 
+    /// <summary>ComfyUI's queue with the prompt running (or waiting, or neither).</summary>
+    private static string Queue(string? running = "p1", string? pending = null) =>
+        $$"""{ "queue_running": [{{(running is null ? "" : $"[0, \"{running}\", {{}}, {{}}, []]")}}], "queue_pending": [{{(pending is null ? "" : $"[1, \"{pending}\", {{}}, {{}}, []]")}}] }""";
+
     private const string Done = """
         { "p1": { "status": { "status_str": "success", "completed": true, "messages": [] },
                   "outputs": { "4": { "audio": [ { "filename": "BreezeTTS_00001_.mp3", "subfolder": "audio", "type": "output" } ] },
@@ -307,6 +311,7 @@ public sealed class ComfyUiClientTests : IDisposable
                 return Json("""{ "prompt_id": "p1", "number": 3 }""");
             })
             .Answer(Root + "history/p1", _ => Json(++asked < 3 ? "{}" : Done))
+            .Answer(Root + "queue", _ => Json(Queue()))
             .Answer(Root + "view?filename=BreezeTTS_00001_.mp3&subfolder=audio&type=output", _ =>
                 new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent("mp3!"u8.ToArray()) });
         var client = await ClientAsync();
@@ -385,6 +390,67 @@ public sealed class ComfyUiClientTests : IDisposable
 
         Assert.Contains(_http.Requests, r => r.RequestUri!.ToString() == Root + "queue");
         Assert.Contains(_http.Requests, r => r.RequestUri!.ToString() == Root + "interrupt");
+    }
+
+    [Fact]
+    public async Task A_part_ComfyUI_no_longer_has_fails_at_once_instead_of_waiting_out_the_deadline()
+    {
+        ComfyUiClient.PollInterval = TimeSpan.FromMilliseconds(5);
+        _http.Answer(Root + "prompt", HttpStatusCode.OK, """{ "prompt_id": "p1" }""")
+            .Answer(Root + "history/p1", HttpStatusCode.OK, "{}")
+            .Answer(Root + "queue", _ => Json(Queue(running: "someone-else")));   // its queue was cleared, or ComfyUI restarted
+        var client = await ClientAsync();
+
+        var ex = await Assert.ThrowsAsync<StageFailedException>(() => client.RunAsync(Workflow(), "StoryForge · test", Quiet, CancellationToken.None))
+            .WaitAsync(TimeSpan.FromSeconds(10));
+
+        Assert.Equal("ComfyUI no longer has this part: its queue was cleared, or it was restarted.", ex.Message);
+    }
+
+    [Fact]
+    public async Task Time_spent_waiting_behind_other_work_in_ComfyUI_does_not_count_against_the_part()
+    {
+        ComfyUiClient.PollInterval = TimeSpan.FromMilliseconds(5);
+        var deadline = ComfyUiClient.Deadline;
+        ComfyUiClient.Deadline = TimeSpan.FromMilliseconds(200);
+        try
+        {
+            var asked = 0;
+            _http.Answer(Root + "prompt", HttpStatusCode.OK, """{ "prompt_id": "p1" }""")
+                .Answer(Root + "history/p1", _ => Json(asked > 60 ? Done : "{}"))
+                // Waiting behind someone else's long job for a while, then running briefly.
+                .Answer(Root + "queue", _ => Json(++asked < 55 ? Queue(running: "theirs", pending: "p1") : Queue()))
+                .Answer(Root + "view?filename=BreezeTTS_00001_.mp3&subfolder=audio&type=output", _ =>
+                    new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent("mp3!"u8.ToArray()) });
+            var client = await ClientAsync();
+
+            var files = await client.RunAsync(Workflow(), "StoryForge · test", Quiet, CancellationToken.None);
+
+            Assert.Single(files);
+        }
+        finally
+        {
+            ComfyUiClient.Deadline = deadline;
+        }
+    }
+
+    [Fact]
+    public async Task A_cancel_while_the_part_is_being_sent_still_takes_it_out_of_ComfyUIs_queue()
+    {
+        using var cancel = new CancellationTokenSource();
+        _http.Answer(Root + "prompt", (_, token) =>
+            {
+                cancel.Cancel();   // you press Cancel while ComfyUI takes the part
+                token.ThrowIfCancellationRequested();
+                return Json("""{ "prompt_id": "p1" }""");
+            })
+            .Answer(Root + "queue", HttpStatusCode.OK)
+            .Answer(Root + "interrupt", HttpStatusCode.OK);
+        var client = await ClientAsync();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => client.RunAsync(Workflow(), "StoryForge · test", Quiet, cancel.Token));
+
+        Assert.Contains(_http.Requests, r => r.RequestUri!.ToString() == Root + "queue" && r.Method == HttpMethod.Post);
     }
 
     [Fact]

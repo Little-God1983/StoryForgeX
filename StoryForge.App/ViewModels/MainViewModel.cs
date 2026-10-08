@@ -195,6 +195,10 @@ public sealed partial class MainViewModel : ObservableObject
         {
             oldValue.PropertyChanged -= OnPagePropertyChanged;
         }
+        if (oldValue == _matrix)
+        {
+            _matrix.StopPlayback();   // no voice plays on behind another page
+        }
         newValue.PropertyChanged += OnPagePropertyChanged;
         if (newValue == _profiles)
         {

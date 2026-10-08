@@ -156,12 +156,16 @@ public sealed partial class ResultMatrixPageViewModel : PageViewModel
         }
     }
 
+    /// <summary>Stops a voice playing in the matrix: it goes out of sight, and so does its Pause.</summary>
+    public void StopPlayback() => Script?.Playback.Stop();
+
     private async Task ShowFactSheetAsync()
     {
         if (Project is null)
         {
             return;
         }
+        StopPlayback();
         var sheet = new FactSheetViewModel(_client, Project.Id, Project.Setup.ResearchSources, _openUrl);
         // "Approve and continue": back to the matrix, where the script is being written.
         sheet.Approved += (_, _) => ShowMatrix();

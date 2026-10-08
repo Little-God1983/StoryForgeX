@@ -65,7 +65,8 @@ public sealed class VoiceMatrixTests
         Assert.Equal("script about 3:52 · voice total 1:30 · target 4:00", script.LengthSummary);
         Assert.Equal("1 of 3 segments approved.", script.VoiceApprovedSummary);
         Assert.True(script.IsVoiceReview);
-        Assert.False(script.ShowsScriptApproved);   // the voice's bar takes its place
+        Assert.True(script.ShowsScriptApproved);   // above the voice's bar: Regenerate script stays at hand
+        Assert.True(script.RegenerateScriptCommand.CanExecute(null));
         Assert.Equal("S02 voice: approved, 0:29", script.Rows[1].Voice.AccessibleName);
     }
 
@@ -202,6 +203,57 @@ public sealed class VoiceMatrixTests
         await matrix.Updating;
 
         Assert.Equal(["S03: sent to ComfyUI", "S03: 0:30 of audio"], script.SelectedActivity.Select(l => l.Text));
+    }
+
+    [Fact]
+    public async Task Clicking_the_cell_already_selected_keeps_the_log_lines_that_came_live()
+    {
+        var (matrix, project) = await OpenAsync();
+        await SpokenAsync(matrix, project, StageState.Approved);
+        var script = matrix.Script!;
+        script.Rows[2].Voice.SelectCommand.Execute(null);
+        var voice = _client.Voices[project.Id];
+        _client.Voices[project.Id] = voice with { Segments = [.. voice.Segments.Select(s => s.Id == "S03" ? s with { State = StageState.Running } : s)] };
+        _client.Raise(new StageUpdate(project.Id, PipelineStage.Voice, StageState.Running, Key: "S03"));
+        await matrix.Updating;
+        _client.Raise(new StageUpdate(project.Id, PipelineStage.Voice, StageState.Running, new ActivityLine(At, ActivityKind.Model, "S03: sent to ComfyUI"), Key: "S03"));
+        await matrix.Updating;
+
+        script.Rows[2].Voice.SelectCommand.Execute(null);
+
+        Assert.Equal(["S03: sent to ComfyUI"], script.SelectedActivity.Select(l => l.Text));
+    }
+
+    [Fact]
+    public async Task Opening_the_fact_sheet_stops_the_voice()
+    {
+        var (matrix, project) = await OpenAsync();
+        await SpokenAsync(matrix, project, StageState.Approved);
+        matrix.Script!.Rows[0].Voice.SelectCommand.Execute(null);
+        matrix.Script.Playback.PlayPauseCommand.Execute(null);
+
+        await matrix.OpenStageCommand.ExecuteAsync(matrix.Stages[0]);
+
+        Assert.True(_player.Closed);
+        Assert.False(matrix.Script.Playback.IsPlaying);
+    }
+
+    [Fact]
+    public async Task Going_to_another_page_stops_the_voice()
+    {
+        var main = new ViewModels.MainViewModel(_client, new ViewModels.ProviderStatusBoard(_client), TimeSpan.Zero, () => _player);
+        var matrix = (ResultMatrixPageViewModel)main.NavItems.Single(i => i.Title == "Result matrix").Page;
+        var (_, project) = await OpenAsync();
+        matrix.Show(project);
+        await matrix.ScriptLoading;
+        main.SelectedNavItem = main.NavItems.Single(i => i.Title == "Result matrix");
+        await SpokenAsync(matrix, project, StageState.Approved);
+        matrix.Script!.Rows[0].Voice.SelectCommand.Execute(null);
+        matrix.Script.Playback.PlayPauseCommand.Execute(null);
+
+        main.SelectedNavItem = main.NavItems.Single(i => i.Title == "Profiles");
+
+        Assert.True(_player.Closed);
     }
 
     [Fact]

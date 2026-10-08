@@ -32,8 +32,11 @@ internal sealed class ComfyUiClient(HttpMessageHandler handler, SettingsStore se
     /// <summary>How often a running workflow is asked about.</summary>
     internal static TimeSpan PollInterval { get; set; } = TimeSpan.FromMilliseconds(500);
 
-    /// <summary>The longest one workflow may take, model loading included.</summary>
-    private static readonly TimeSpan Deadline = TimeSpan.FromMinutes(20);
+    /// <summary>
+    /// The longest one workflow may run, model loading included. Time spent waiting in ComfyUI's
+    /// queue behind other work does not count.
+    /// </summary>
+    internal static TimeSpan Deadline { get; set; } = TimeSpan.FromMinutes(20);
 
     private static readonly string ClientId = Guid.NewGuid().ToString("N");
 
@@ -68,10 +71,13 @@ internal sealed class ComfyUiClient(HttpMessageHandler handler, SettingsStore se
         var (http, address) = await ConnectAsync(cancellationToken);
         using (http)
         {
-            var promptId = await SubmitAsync(http, address, workflow, name, cancellationToken);
+            // Sent whatever happens meanwhile: a cancel while ComfyUI takes the part would leave it
+            // queued with no id to take it back by. The cancel is honoured right after.
+            var promptId = await SubmitAsync(http, address, workflow, name, CancellationToken.None);
             progress.Report("sent to ComfyUI");
             try
             {
+                cancellationToken.ThrowIfCancellationRequested();
                 var outputs = await WaitAsync(http, address, promptId, cancellationToken);
                 return await DownloadAsync(http, address, outputs, cancellationToken);
             }
@@ -117,10 +123,14 @@ internal sealed class ComfyUiClient(HttpMessageHandler handler, SettingsStore se
             ?? throw new StageFailedException("ComfyUI accepted the workflow but gave no prompt id.");
     }
 
-    /// <summary>Asks after the prompt until its history has it; returns its outputs.</summary>
+    /// <summary>
+    /// Asks after the prompt until its history has it; returns its outputs. While it waits behind
+    /// other work the deadline does not run; when it is neither queued nor done, ComfyUI dropped it.
+    /// </summary>
     private async Task<JsonObject> WaitAsync(HttpClient http, string address, string promptId, CancellationToken cancellationToken)
     {
-        var started = clock.GetUtcNow();
+        DateTimeOffset? started = null;
+        var missing = 0;
         while (true)
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -139,13 +149,49 @@ internal sealed class ComfyUiClient(HttpMessageHandler handler, SettingsStore se
                     }
                 }
             }
-            if (clock.GetUtcNow() - started > Deadline)
+            switch (await PlaceAsync(http, address, promptId, cancellationToken))
+            {
+                case Place.Running:
+                    started ??= clock.GetUtcNow();
+                    missing = 0;
+                    break;
+                case Place.Waiting:
+                    missing = 0;
+                    break;
+                case Place.Gone when ++missing >= 2:
+                    // Twice, so a part that finished between the two questions is not taken for lost.
+                    throw new StageFailedException("ComfyUI no longer has this part: its queue was cleared, or it was restarted.");
+            }
+            if (started is { } since && clock.GetUtcNow() - since > Deadline)
             {
                 await StopAsync(http, promptId);
                 throw new StageFailedException($"ComfyUI did not finish within {Deadline.TotalMinutes:0} minutes.");
             }
             await Task.Delay(PollInterval, clock, cancellationToken);
         }
+    }
+
+    private enum Place
+    {
+        Running,
+        Waiting,
+        Gone,
+        Unknown,
+    }
+
+    /// <summary>Where the prompt is in ComfyUI's queue; Unknown when the queue could not be read.</summary>
+    private static async Task<Place> PlaceAsync(HttpClient http, string address, string promptId, CancellationToken cancellationToken)
+    {
+        using var response = await SendAsync(http, address, () => http.GetAsync("queue", cancellationToken));
+        if (!response.IsSuccessStatusCode || await ReadAsync(response, cancellationToken) is not { } queue)
+        {
+            return Place.Unknown;
+        }
+        static bool Has(JsonNode? list, string id) =>
+            list is JsonArray items && items.OfType<JsonArray>().Any(item => item.Count > 1 && item[1]?.ToString() == id);
+        return Has(queue["queue_running"], promptId) ? Place.Running
+            : Has(queue["queue_pending"], promptId) ? Place.Waiting
+            : Place.Gone;
     }
 
     private static async Task<IReadOnlyList<ComfyFile>> DownloadAsync(HttpClient http, string address, JsonObject outputs, CancellationToken cancellationToken)

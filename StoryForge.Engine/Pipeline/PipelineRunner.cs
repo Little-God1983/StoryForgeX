@@ -248,8 +248,9 @@ internal sealed class PipelineRunner(
         setup.Gates.Contains(stage) && (setup.Mode == RunMode.StopAtGates || ProjectSetup.RequiredGates.Contains(stage));
 
     /// <summary>
-    /// Queues the next stage unless it has a result already: approving a stage again does not throw
-    /// away what came after it. Regenerate writes that again (#11 marks it out of date).
+    /// Queues the next stage unless it has a result already, as a whole or in segments a run stored
+    /// before it failed: approving a stage again does not throw away what came after it, nor make it
+    /// all again unasked. Regenerate or Retry does that (#11 marks it out of date).
     /// </summary>
     private async Task ContinueAsync(Guid projectId, PipelineStage stage, CancellationToken cancellationToken)
     {
@@ -260,7 +261,7 @@ internal sealed class PipelineRunner(
         }
         await using (var db = await contextFactory.CreateDbContextAsync(cancellationToken))
         {
-            if (await db.Cells.AnyAsync(c => c.ProjectId == projectId && c.Stage == next && c.Key == Whole && c.CurrentVersion != null, cancellationToken))
+            if (await db.Cells.AnyAsync(c => c.ProjectId == projectId && c.Stage == next && c.CurrentVersion != null, cancellationToken))
             {
                 return;
             }

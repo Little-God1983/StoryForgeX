@@ -126,11 +126,11 @@ public sealed partial class ScriptMatrixViewModel(IStoryForgeClient client, Guid
 
     public bool IsNotStarted => State == StageState.NotStarted;
 
-    /// <summary>The script's own "approved" bar, until the voice has a bar of its own.</summary>
-    public bool ShowsScriptApproved => IsApproved && VoiceState == StageState.NotStarted;
+    /// <summary>The script's "approved" bar, with Regenerate script; the voice's bar shows below it.</summary>
+    public bool ShowsScriptApproved => IsApproved;
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(IsVoiceRunning), nameof(IsVoiceReview), nameof(IsVoiceApproved), nameof(IsVoiceFailed), nameof(ShowsScriptApproved))]
+    [NotifyPropertyChangedFor(nameof(IsVoiceRunning), nameof(IsVoiceReview), nameof(IsVoiceApproved), nameof(IsVoiceFailed))]
     [NotifyCanExecuteChangedFor(nameof(ApproveRemainingVoiceCommand), nameof(RegenerateVoiceCommand), nameof(CancelVoiceCommand), nameof(ApproveSegmentCommand), nameof(RegenerateSegmentCommand))]
     private StageState _voiceState;
 
@@ -450,6 +450,10 @@ public sealed partial class ScriptMatrixViewModel(IStoryForgeClient client, Guid
 
     private void Select(SegmentRowViewModel? row, PipelineStage stage)
     {
+        if (row is not null && row == Selected && stage == SelectedStage)
+        {
+            return;   // already shown: reading it again would swap live log lines for an older load
+        }
         if (Selected is not null)
         {
             Selected.IsSelected = false;
