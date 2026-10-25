@@ -178,7 +178,7 @@ public interface IStoryForgeClient
     /// <summary>Your own picture, copied into the pool and used first for the reference, like a found one; once the images exist, they are made again from it.</summary>
     /// <exception cref="KeyNotFoundException">No such project or reference.</exception>
     /// <exception cref="FileNotFoundException">No such file.</exception>
-    /// <exception cref="ArgumentException">The file is not a PNG, JPEG or WebP picture.</exception>
+    /// <exception cref="ArgumentException">The file is not a PNG, JPEG or WebP picture, or is under <see cref="PoolImage.MinUsableSide"/> px on a side.</exception>
     /// <exception cref="InvalidOperationException">The References stage is running.</exception>
     Task AddOwnPictureAsync(Guid projectId, string referenceId, string path, CancellationToken cancellationToken = default);
 

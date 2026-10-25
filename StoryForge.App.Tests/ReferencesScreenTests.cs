@@ -489,4 +489,12 @@ public sealed class ReferencesScreenTests
 
         Assert.Equal(["b", "c"], kept);   // the oldest goes first
     }
+
+    [Fact]
+    public void A_Fandom_picture_without_a_caption_shows_its_file_name_not_its_revision()
+    {
+        var picture = new PoolImageView(new PoolImage("P01", "https://static.wikia.nocookie.net/forgottenrealms/images/5/5e/Karlach_portrait.png/revision/latest?cb=20230801", "https://forgottenrealms.fandom.com/wiki/Karlach", "", 997, 1148, "pool/P01.png", PoolOrigin.Found), null, []);
+
+        Assert.Equal("Karlach portrait.png", new PoolPictureViewModel(picture, _ => { }).Caption);
+    }
 }

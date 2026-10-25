@@ -252,6 +252,11 @@ internal sealed class ReferenceEdits(
         {
             throw new ArgumentException($"{Path.GetFileName(path)} is not a PNG, JPEG or WebP picture.");
         }
+        if (Math.Min(size.Width, size.Height) < PoolImage.MinUsableSide)
+        {
+            throw new ArgumentException(
+                $"{Path.GetFileName(path)} is {size.Width} × {size.Height} px: an image is made only from a picture of at least {PoolImage.MinUsableSide} px on each side.");
+        }
         var id = PoolBuilder.NextId(sheet.Pool.Concat(sheet.Discarded ?? []));
         var file = Path.Combine(ProjectFolders.Of(project), "references", "pool", id + ending);
         var target = Path.Combine(await folders.RootAsync(cancellationToken), file);
@@ -270,8 +275,14 @@ internal sealed class ReferenceEdits(
         RequireIdle(projectId);
         var project = await projects.GetAsync(projectId, cancellationToken);
         var sheet = await SheetAsync(projectId, cancellationToken);
-        Find(sheet, referenceId);
+        var before = Find(sheet, referenceId);
         sheet = await SearchAsync(project, sheet, referenceId, cancellationToken);
+        // Nothing found, e.g. while the wiki cannot be reached: what it had stays, and its images.
+        var found = Find(sheet, referenceId).Sources.Where(id => !(before.Chosen ?? []).Contains(id) && sheet.Pool.Any(p => p.Id == id && p.Origin == PoolOrigin.Found));
+        if (!found.Any())
+        {
+            throw new InvalidOperationException($"Nothing was found for {before.Name} on the sources just now. It keeps the pictures it has.");
+        }
         await SaveAsync(projectId, sheet, [], cancellationToken);
         await MakeImagesOfAsync(projectId, referenceId, cancellationToken);
     }

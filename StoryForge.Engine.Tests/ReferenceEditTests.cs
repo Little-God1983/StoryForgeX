@@ -676,4 +676,45 @@ public sealed partial class ReferencesRunTests
         Assert.Null(view.Error);
         Assert.All(view.References, r => Assert.NotNull(r.Images[0].Path));
     }
+
+    [Fact]
+    public async Task Searching_again_when_the_sources_find_nothing_keeps_what_the_reference_has()
+    {
+        var (client, projectId) = await ImagedAsync();
+        var before = await client.GetReferencesAsync(projectId);
+        var runs = _comfy.Workflows.Count;
+        _pictures.ByName["Karlach"] = [];   // the wiki cannot be reached just now
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => client.SearchSourcesAgainAsync(projectId, "R01"));
+
+        var after = await client.GetReferencesAsync(projectId);
+        Assert.Equal(before.References[0].Reference.Sources, after.References[0].Reference.Sources);
+        Assert.Equal(before.References[0].Images[0].Version, after.References[0].Images[0].Version);
+        Assert.Equal(runs, _comfy.Workflows.Count);
+    }
+
+    [Fact]
+    public async Task A_removed_reference_takes_its_image_files_with_it()
+    {
+        var (client, projectId) = await ImagedAsync();
+        var file = (await client.GetReferencesAsync(projectId)).References[1].Images[0].Path!;
+        Assert.True(File.Exists(file));
+
+        await client.ChangeReferencesAsync(projectId, new ReferenceChange(ReferenceChangeKind.Remove, ReferenceId: "R02"));
+
+        Assert.False(File.Exists(file));
+    }
+
+    [Fact]
+    public async Task Your_own_picture_too_small_to_make_from_is_refused()
+    {
+        var (client, projectId) = await ImagedAsync();
+        var own = Path.Combine(_engine.DataDirectory, "tiny coin.png");
+        await File.WriteAllBytesAsync(own, Png(300, 300));
+
+        var refused = await Assert.ThrowsAsync<ArgumentException>(() => client.AddOwnPictureAsync(projectId, "R02", own));
+
+        Assert.Contains("512", refused.Message);
+        Assert.DoesNotContain((await client.GetReferencesAsync(projectId)).Pool, p => p.Image.Origin == PoolOrigin.Own);
+    }
 }

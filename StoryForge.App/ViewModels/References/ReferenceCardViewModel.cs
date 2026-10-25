@@ -106,11 +106,14 @@ public sealed partial class PoolPictureViewModel(PoolImageView view, Action<Pool
 
     public string Id => View.Image.Id;
 
-    /// <summary>The wiki's caption; without one (most files have none), the file's own name.</summary>
+    /// <summary>
+    /// The wiki's caption; without one (most files have none), the file's own name: the last part of
+    /// the address with an ending, as Fandom's end in "/revision/latest".
+    /// </summary>
     public string Caption => View.Image.Caption.Length > 0
         ? View.Image.Caption
         : Uri.TryCreate(View.Image.Url, UriKind.Absolute, out var url)
-            ? Uri.UnescapeDataString(url.Segments[^1]).Replace('_', ' ')
+            ? Uri.UnescapeDataString((url.Segments.LastOrDefault(s => System.IO.Path.HasExtension(s.TrimEnd('/'))) ?? url.Segments[^1]).TrimEnd('/')).Replace('_', ' ')
             : View.Image.Url;
 
     public string? Path => View.Path;
