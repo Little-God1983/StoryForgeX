@@ -279,7 +279,7 @@ public sealed partial class ReferencesViewModel(IStoryForgeClient client, Guid p
     private Task MakeReferenceAsync(string name) =>
         ActAsync("make it a reference", () => client.ChangeReferencesAsync(ProjectId, new ReferenceChange(ReferenceChangeKind.MakeReference, Name: name)));
 
-    private bool CanApproveRemaining() => ShowsGateBar && !_acting && Cards.SelectMany(c => c.View.Images).All(i => i.State != StageState.Running);
+    private bool CanApproveRemaining() => ShowsGateBar && !_acting && ImagesIdle;
 
     [RelayCommand(CanExecute = nameof(CanApproveRemaining))]
     private Task ApproveRemainingAsync() => ActAsync("approve the references", () => client.ApproveSegmentsAsync(ProjectId, PipelineStage.References));

@@ -339,7 +339,11 @@ internal sealed class ReferenceEdits(
                 $"There is no picture to make another image of {reference.Name} from. Search the sources again, add your own picture, or make it from the description.");
         }
         var images = await cells.ReferenceImagesAsync(projectId, cancellationToken);
-        var next = 1 + images.Where(i => i.ReferenceId == referenceId).Select(i => i.Number).DefaultIfEmpty(0).Max();
+        // Past the ones never made too: one that failed stays for "Make the images", and this is a new one.
+        var unmade = (await cells.UnmadeKeysAsync(projectId, Stage, cancellationToken))
+            .Where(k => k.StartsWith(referenceId + "/", StringComparison.Ordinal))
+            .Select(k => ReferencesStage.Parse(k).Number);
+        var next = 1 + images.Where(i => i.ReferenceId == referenceId).Select(i => i.Number).Concat(unmade).DefaultIfEmpty(0).Max();
         await runner.MakeSegmentAsync(projectId, Stage, ReferenceImage.KeyOf(referenceId, next), cancellationToken);
     }
 

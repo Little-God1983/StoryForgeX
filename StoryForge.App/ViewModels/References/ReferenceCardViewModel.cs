@@ -19,9 +19,8 @@ public sealed record ReferenceImageChoice(ReferenceImageView Image, bool IsShown
 /// </summary>
 public sealed partial class ReferenceCardViewModel(ReferenceView view, IReadOnlyDictionary<string, string> labels, Action<ReferenceCardViewModel> select) : ObservableObject
 {
-    [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(Name), nameof(StateText), nameof(Usage), nameof(SourcesText), nameof(Note), nameof(IsMissing), nameof(IsPartial), nameof(Images), nameof(Thumbnail), nameof(AccessibleName))]
-    private ReferenceView _view = view;
+    // Each load makes the cards again: one never changes.
+    public ReferenceView View { get; } = view;
 
     [ObservableProperty]
     private bool _isSelected;

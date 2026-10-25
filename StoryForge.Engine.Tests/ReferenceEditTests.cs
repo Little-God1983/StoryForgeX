@@ -955,4 +955,43 @@ public sealed partial class ReferencesRunTests
 
         Assert.DoesNotContain(wyll, (await client.GetReferencesAsync(projectId)).References[0].Reference.Sources);
     }
+
+    [Fact]
+    public async Task One_more_image_is_a_new_one_even_when_the_last_was_never_made()
+    {
+        var (client, projectId) = await ImagedAsync();
+        _comfy.Failure = "ComfyUI is not reachable.";
+        await client.AddReferenceImageAsync(projectId, "R01");
+        await ReferencesAsync(client, projectId, v => v.References[0].Images is [_, { State: StageState.Failed }]);
+        _comfy.Failure = null;
+
+        await client.AddReferenceImageAsync(projectId, "R01");
+        var view = await ScriptRunTests.WaitForAsync(() => client.GetReferencesAsync(projectId), v => v.References[0].Images is [_, _, { Version: > 0, State: not StageState.Running }]);
+
+        Assert.Equal(["R01/1", "R01/2", "R01/3"], view.References[0].Images.Select(i => i.Key));
+    }
+
+    [Fact]
+    public async Task A_pool_picture_is_as_big_as_the_file_that_came_not_as_the_wiki_says()
+    {
+        _pictures.Content["https://bg3.wiki/w/images/Karlach.png"] = Png(300, 400);   // the wiki says 800 x 1200
+        var (client, projectId) = await ListedAsync();
+
+        var picture = (await client.GetReferencesAsync(projectId)).Pool.Single(p => p.Image.Caption == "Karlach.png").Image;
+
+        Assert.Equal((300, 400, true), (picture.Width, picture.Height, picture.TooSmall));
+    }
+
+    [Fact]
+    public async Task What_an_image_is_made_from_all_goes_into_its_input_hash()
+    {
+        var (client, projectId) = await ListedAsync();
+        var setup = (await client.GetProjectAsync(projectId)).Setup;
+        var karlach = (await client.GetReferencesAsync(projectId)).References[0].Reference;
+
+        var hash = ReferencesStage.Hash(setup, karlach);
+
+        Assert.NotEqual(hash, ReferencesStage.Hash(setup, karlach with { Chosen = ["P01"] }));
+        Assert.NotEqual(hash, ReferencesStage.Hash(setup, karlach with { KeyReason = "Carries the soul coin." }));
+    }
 }

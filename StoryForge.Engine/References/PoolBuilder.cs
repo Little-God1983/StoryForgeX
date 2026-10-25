@@ -86,7 +86,9 @@ internal sealed class PoolBuilder(IPictureSource pictures)
             var file = Path.Combine(folder, "references", "pool", id + download.Extension);
             Directory.CreateDirectory(Path.GetDirectoryName(Path.Combine(root, file))!);
             await File.WriteAllBytesAsync(Path.Combine(root, file), download.Content, cancellationToken);
-            pool.Add(new PoolImage(id, picture.Url, picture.Page, picture.Caption, picture.Width, picture.Height, file, PoolOrigin.Found));
+            // As big as the file that came, which is what is made from; the wiki's numbers otherwise.
+            var (width, height) = ImageSize.Of(download.Content) ?? (picture.Width, picture.Height);
+            pool.Add(new PoolImage(id, picture.Url, picture.Page, picture.Caption, width, height, file, PoolOrigin.Found));
             ids.Add(id);
         }
         return ids;

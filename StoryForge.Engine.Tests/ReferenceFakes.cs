@@ -33,8 +33,11 @@ internal sealed class FakePictures : IPictureSource
     public Task<IReadOnlyList<FoundPicture>> PageAsync(IReadOnlyList<string> sources, string pageUrl, CancellationToken cancellationToken) =>
         Task.FromResult(ByPage.GetValueOrDefault(pageUrl) ?? []);
 
+    /// <summary>What a download of the address gives; three bytes that are no picture by default.</summary>
+    public Dictionary<string, byte[]> Content { get; } = [];
+
     public Task<DownloadedPicture?> DownloadAsync(string url, CancellationToken cancellationToken) =>
-        Task.FromResult(Broken.Contains(url) ? null : new DownloadedPicture([1, 2, 3], url.EndsWith(".jpg", StringComparison.Ordinal) ? ".jpg" : ".png"));
+        Task.FromResult(Broken.Contains(url) ? null : new DownloadedPicture(Content.GetValueOrDefault(url) ?? [1, 2, 3], url.EndsWith(".jpg", StringComparison.Ordinal) ? ".jpg" : ".png"));
 
     public static FoundPicture Picture(string name, int width = 800, int height = 1200, bool main = true, string page = "https://bg3.wiki/wiki/Karlach") =>
         new($"https://bg3.wiki/w/images/{name}", page, Path.GetFileNameWithoutExtension(name), name, width, height, main);
