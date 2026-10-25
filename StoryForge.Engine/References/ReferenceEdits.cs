@@ -61,7 +61,7 @@ internal sealed class ReferenceEdits(
         var images = await cells.ReferenceImagesAsync(projectId, cancellationToken);
         var unmade = await cells.UnmadeKeysAsync(projectId, Stage, cancellationToken);
         var keys = sheet.References
-            .Where(r => images.All(i => i.ReferenceId != r.Id))
+            .Where(r => images.All(i => i.ReferenceId != r.Id) && !unmade.Any(k => k.StartsWith(r.Id + "/", StringComparison.Ordinal)))
             .Select(r => ReferenceImage.KeyOf(r.Id, 1))
             .Concat(unmade)
             .Distinct();

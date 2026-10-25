@@ -606,4 +606,74 @@ public sealed partial class ReferencesRunTests
         Assert.Null(view.Error);
         Assert.All(view.References, r => Assert.Equal(ImageMaking.NoPicture, r.Images.Single().Image.Made));
     }
+
+    [Fact]
+    public async Task An_image_profile_that_does_not_say_where_the_picture_goes_is_refused()
+    {
+        _inputs = [.. FakeImageComfy.Inputs.Where(i => i.Key != "image")];
+        var client = await StartAsync();
+        var project = await StoryboardApprovedAsync(client, s => s with { ReviewReferenceList = false });
+
+        var view = await ReferencesAsync(client, project.Id, _ => false);
+
+        Assert.Equal(StageState.Failed, view.State);
+        Assert.Contains("'image'", view.Error);
+        Assert.Empty(_comfy.Workflows);
+    }
+
+    [Fact]
+    public async Task A_run_that_fails_partway_keeps_the_look_its_images_were_made_with()
+    {
+        _comfy.Failure = "ComfyUI is not reachable.";
+        _comfy.FailFor = "Soul coin";
+        var client = await StartAsync();
+        var project = await StoryboardApprovedAsync(client, s => s with { ReviewReferenceList = false });
+
+        var failed = await ReferencesAsync(client, project.Id, v => v.State == StageState.Failed);
+
+        Assert.Equal("Karlach as the picture shows.", failed.References[0].Reference.Look);
+    }
+
+    [Fact]
+    public async Task A_reference_whose_only_image_was_never_made_gets_that_one_made_not_another()
+    {
+        var (client, projectId) = await ImagedAsync();
+        _comfy.Failure = "ComfyUI is not reachable.";
+        await client.AddReferenceImageAsync(projectId, "R01");
+        await ReferencesAsync(client, projectId, v => v.References[0].Images is [_, { State: StageState.Failed }]);
+        _comfy.Failure = null;
+        await client.ChangeReferencesAsync(projectId, new ReferenceChange(ReferenceChangeKind.RemoveImage, ImageKey: "R01/1"));
+
+        await client.MakeReferenceImagesAsync(projectId);
+        var view = await ScriptRunTests.WaitForAsync(() => client.GetReferencesAsync(projectId), v => v.References[0].Images.All(i => i is { Version: > 0, State: not StageState.Running }));
+
+        Assert.Equal(["R01/2"], view.References[0].Images.Select(i => i.Key));
+    }
+
+    [Fact]
+    public async Task Cancelling_part_way_keeps_the_images_made_and_says_Retry_makes_the_rest()
+    {
+        _comfy.Hold = new TaskCompletionSource();
+        _comfy.HoldFor = "Soul coin";
+        var client = await StartAsync();
+        var project = await StoryboardApprovedAsync(client, s => s with { ReviewReferenceList = false });
+        await ReferencesAsync(client, project.Id, v => v.References is [{ Images: [{ Version: > 0 }] }, ..]);
+
+        await client.CancelAsync(project.Id, PipelineStage.References);
+        var view = await ReferencesAsync(client, project.Id, _ => false);
+
+        Assert.Equal("Cancelled after 1 image. Those are kept; Retry makes the ones still missing.", view.Error);
+    }
+
+    [Fact]
+    public async Task A_workflow_that_saves_its_picture_with_a_capital_ending_is_read()
+    {
+        _comfy.Saved = "ComfyUI_00001_.PNG";
+        var (client, projectId) = await ImagedAsync();
+
+        var view = await client.GetReferencesAsync(projectId);
+
+        Assert.Null(view.Error);
+        Assert.All(view.References, r => Assert.NotNull(r.Images[0].Path));
+    }
 }

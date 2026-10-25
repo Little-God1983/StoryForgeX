@@ -440,7 +440,7 @@ internal sealed class PipelineRunner(
             else if (StoredCount(job) is > 0 and var stored)
             {
                 // Segments of this run are stored already: going back to before would hide them.
-                await FailAsync(job, $"Cancelled after {stored} {(stored == 1 ? "segment" : "segments")}. Those are kept; Retry makes them all again.", Snapshot(activity));
+                await FailAsync(job, _workers[job.Stage].CancelledAfter(stored), Snapshot(activity));
             }
             else
             {

@@ -31,6 +31,10 @@ internal interface IStageWorker
 
     /// <exception cref="StageFailedException">The stage failed; the reason is shown on its cell.</exception>
     Task<StageResult> RunAsync(StageContext context, CancellationToken cancellationToken);
+
+    /// <summary>What a run cancelled after <paramref name="stored"/> of its segments were stored says.</summary>
+    string CancelledAfter(int stored) =>
+        $"Cancelled after {stored} {(stored == 1 ? "segment" : "segments")}. Those are kept; Retry makes them all again.";
 }
 
 /// <summary>A stage whose segments can each be written again on their own (Regenerate on one segment).</summary>

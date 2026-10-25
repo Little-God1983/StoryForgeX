@@ -42,6 +42,10 @@ internal sealed class ReferencesStage(
 
     public PipelineStage Stage => PipelineStage.References;
 
+    // Retry past the list makes only what is missing (ReferenceEdits.MakeImagesAsync).
+    public string CancelledAfter(int stored) =>
+        $"Cancelled after {stored} {(stored == 1 ? "image" : "images")}. Those are kept; Retry makes the ones still missing.";
+
     public async Task<StageResult> RunAsync(StageContext context, CancellationToken cancellationToken)
     {
         var project = context.Project;
@@ -79,7 +83,14 @@ internal sealed class ReferencesStage(
             var numbers = existing.Where(i => i.ReferenceId == reference.Id).Select(i => i.Number).DefaultIfEmpty(1).Distinct().Order();
             foreach (var number in numbers)
             {
-                (var image, updated) = await MakeAsync(context, root, WorkflowAsync, sheet, updated, number, cancellationToken);
+                (var image, var looked) = await MakeAsync(context, root, WorkflowAsync, sheet, updated, number, cancellationToken);
+                if (looked.Look != updated.Look)
+                {
+                    // Kept at once, like the image: a run that stops later keeps the look it was made with.
+                    sheet = sheet with { References = [.. sheet.References.Select(r => r.Id == looked.Id ? looked : r)] };
+                    await sheets.WriteAsync(project.Id, sheet, [], cancellationToken);
+                }
+                updated = looked;
                 var result = new CellResult(ReferenceImage.KeyOf(reference.Id, number), StoredJson.Write(image), ReferenceSheet.SchemaVersion, Hash(project.Setup, updated));
                 if (context.StoreSegment is { } store)
                 {
@@ -179,6 +190,11 @@ internal sealed class ReferencesStage(
         if (!WorkflowTemplate.Maps(profile.Inputs, PromptKey))
         {
             throw new StageFailedException($"The image profile does not say where the prompt goes. Map '{PromptKey}' to the prompt node's text.");
+        }
+        // Without it the workflow edits whatever picture it was saved with.
+        if (!WorkflowTemplate.Maps(profile.Inputs, ImageKey) && !WorkflowTemplate.Maps(profile.Inputs, ImagesKey))
+        {
+            throw new StageFailedException($"The image profile does not say where the picture goes. Map '{ImageKey}' (or '{ImagesKey}') to the node that loads it.");
         }
         return new Maker(workflow, profile, await folders.RootAsync(cancellationToken), ProjectFolders.Of(context.Project));
     }
@@ -287,7 +303,7 @@ internal sealed class ReferencesStage(
                 $"StoryForge · {context.Project.Setup.Name} · {name}",
                 new Progress(line => Report(context, ActivityKind.Model, $"{name}: {line}")),
                 cancellationToken);
-            var picture = files.FirstOrDefault(f => f.Kind == "images" && Path.GetExtension(f.Name) is ".png" or ".jpg" or ".jpeg" or ".webp")
+            var picture = files.FirstOrDefault(f => f.Kind == "images" && Path.GetExtension(f.Name).ToLowerInvariant() is ".png" or ".jpg" or ".jpeg" or ".webp")
                 ?? throw new StageFailedException("The workflow saved no image. It needs a node that saves it, e.g. Save Image.");
             var file = Path.Combine(maker.Folder, "references", $"{reference.Id}-{number}-{Guid.NewGuid().ToString("N")[..8]}{Path.GetExtension(picture.Name)}");
             Directory.CreateDirectory(Path.GetDirectoryName(Path.Combine(maker.Root, file))!);

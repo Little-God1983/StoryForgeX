@@ -75,6 +75,12 @@ internal sealed class FakeImageComfy : IComfyUi
     /// <summary>While set, every run waits for it: the stage stays running.</summary>
     public TaskCompletionSource? Hold { get; set; }
 
+    /// <summary>Only runs whose prompt names this wait for <see cref="Hold"/>; null holds them all.</summary>
+    public string? HoldFor { get; set; }
+
+    /// <summary>The name of the picture each run saves.</summary>
+    public string Saved { get; set; } = "ComfyUI_00001_.png";
+
     public Task<string> UploadAsync(string path, CancellationToken cancellationToken)
     {
         lock (Uploaded)
@@ -86,7 +92,7 @@ internal sealed class FakeImageComfy : IComfyUi
 
     public async Task<IReadOnlyList<ComfyFile>> RunAsync(JsonObject workflow, string name, IProgress<string> progress, CancellationToken cancellationToken)
     {
-        if (Hold is { } hold)
+        if (Hold is { } hold && (HoldFor is null || workflow.ToJsonString().Contains(HoldFor, StringComparison.Ordinal)))
         {
             await hold.Task.WaitAsync(cancellationToken);
         }
@@ -98,7 +104,7 @@ internal sealed class FakeImageComfy : IComfyUi
         {
             Workflows.Add(workflow);
         }
-        return [new ComfyFile("images", "ComfyUI_00001_.png", [137, 80, 78, 71])];
+        return [new ComfyFile("images", Saved, [137, 80, 78, 71])];
     }
 
     /// <summary>An API-format image workflow: a picture in, a prompt, a seed, a size, a picture out.</summary>

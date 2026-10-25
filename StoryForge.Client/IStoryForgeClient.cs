@@ -182,9 +182,12 @@ public interface IStoryForgeClient
     /// <exception cref="InvalidOperationException">The References stage is running.</exception>
     Task AddOwnPictureAsync(Guid projectId, string referenceId, string path, CancellationToken cancellationToken = default);
 
-    /// <summary>The list is confirmed: its images are made.</summary>
+    /// <summary>
+    /// The list is confirmed: its images are made (an empty list waits to be approved as it is).
+    /// Past the list, only what is missing is made: references with no image, and images never made.
+    /// </summary>
     /// <exception cref="KeyNotFoundException">No such project, or no list yet.</exception>
-    /// <exception cref="InvalidOperationException">The References stage is running, or the list is empty.</exception>
+    /// <exception cref="InvalidOperationException">The References stage is running.</exception>
     Task MakeReferenceImagesAsync(Guid projectId, CancellationToken cancellationToken = default);
 
     /// <summary>"+ image": one more image of the reference, made from its pictures.</summary>

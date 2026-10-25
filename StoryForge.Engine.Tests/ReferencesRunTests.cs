@@ -25,6 +25,9 @@ public sealed partial class ReferencesRunTests : IDisposable
     private readonly string _templates;
     private readonly string _projects;
 
+    // Where the image profile puts what it is given.
+    private IReadOnlyList<WorkflowInput> _inputs = FakeImageComfy.Inputs;
+
     public ReferencesRunTests()
     {
         _templates = Path.Combine(_engine.DataDirectory, "templates");
@@ -61,7 +64,7 @@ public sealed partial class ReferencesRunTests : IDisposable
         });
         var image = await client.CreateProfileAsync(ProfileKind.Image, "Qwen edit");
         var starter = await client.GetProfileVersionAsync(image.Id);
-        var saved = await client.SaveProfileVersionAsync(image.Id, starter.Content with { WorkflowTemplate = "qwen.json", Inputs = FakeImageComfy.Inputs });
+        var saved = await client.SaveProfileVersionAsync(image.Id, starter.Content with { WorkflowTemplate = "qwen.json", Inputs = _inputs });
         _board.Answer(StoryboardRunTests.Good());
         _script.Answer(ScriptRunTests.Good());
         var project = await ScriptRunTests.ApprovedFactsAsync(client, s =>
