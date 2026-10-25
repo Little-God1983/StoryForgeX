@@ -61,14 +61,20 @@ internal sealed class SegmentCells(
                     throw new InvalidOperationException($"{never} {(never == 1 ? "image was" : "images were")} never made: make the images first.");
                 }
                 var without = new HashSet<string>();
+                var made = new HashSet<string>();
                 foreach (var segment in segments)
                 {
-                    if (!await MadeAsync(db, segment, segment.CurrentVersion ?? 0, cancellationToken))
-                    {
-                        without.Add(References.ReferencesStage.Parse(segment.Key).ReferenceId);
-                    }
+                    var id = References.ReferencesStage.Parse(segment.Key).ReferenceId;
+                    (await MadeAsync(db, segment, segment.CurrentVersion ?? 0, cancellationToken) ? made : without).Add(id);
                 }
-                var nothing = without.Count;
+                // Another image of it was made: that one is the fix, not a new picture.
+                if (without.Count > 0 && without.All(made.Contains))
+                {
+                    var names = await PipelineRunner.NamesAsync(db, projectId, without, cancellationToken);
+                    throw new InvalidOperationException(
+                        $"{string.Join(", ", names)} {(names.Count == 1 ? "has" : "have")} an image that shows nothing: remove it (Remove this image), then approve the rest.");
+                }
+                var nothing = without.Except(made).Count();
                 if (nothing > 0)
                 {
                     throw new InvalidOperationException(

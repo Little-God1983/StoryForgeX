@@ -340,6 +340,7 @@ internal sealed class PipelineRunner(
             await ChangeCellAsync(projectId, stage, key, cell =>
             {
                 job.PreviousState = cell.State;
+                job.PreviousVersion = cell.CurrentVersion;
                 job.PreviousError = cell.Error;
                 job.PreviousActivity = cell.ActivityJson;
                 cell.State = StageState.Running;
@@ -437,9 +438,9 @@ internal sealed class PipelineRunner(
             {
                 await FailAsync(job, ClosedWhileRunning, Snapshot(activity));
             }
-            else if (StoredCount(job) is > 0 and var stored)
+            else if (StoredCount(job) is var stored && (stored > 0 || await KeptAsync(job)))
             {
-                // Segments of this run are stored already: going back to before would hide them.
+                // Segments of this run are stored already, or what it saved before them: going back to before would hide them.
                 await FailAsync(job, _workers[job.Stage].CancelledAfter(stored), Snapshot(activity));
             }
             else
@@ -551,6 +552,21 @@ internal sealed class PipelineRunner(
         Publish(new StageUpdate(job.ProjectId, job.Stage, state, Key: result.Key));
     }
 
+    /// <summary>Whether a whole run saved its result partway, as References keeps its list before its images.</summary>
+    private async Task<bool> KeptAsync(Job job)
+    {
+        if (job.Key != Whole)
+        {
+            return false;
+        }
+        await using var db = await contextFactory.CreateDbContextAsync(CancellationToken.None);
+        var version = await db.Cells.AsNoTracking()
+            .Where(c => c.ProjectId == job.ProjectId && c.Stage == job.Stage && c.Key == Whole)
+            .Select(c => c.CurrentVersion)
+            .FirstOrDefaultAsync(CancellationToken.None);
+        return version != job.PreviousVersion;
+    }
+
     /// <summary>How many segments the run stored as it went; with <paramref name="key"/>, whether it stored that one.</summary>
     private static int StoredCount(Job job, string? key = null)
     {
@@ -620,18 +636,26 @@ internal sealed class PipelineRunner(
         return state;
     }
 
-    /// <summary>The names of the references on the current list that have none of <paramref name="images"/>.</summary>
-    internal static async Task<List<string>> WithoutImagesAsync(StoryForgeDbContext db, Guid projectId, IReadOnlyList<CellEntry> images, CancellationToken cancellationToken)
+    /// <summary>The names of the references <paramref name="ids"/> on the current list, in its order.</summary>
+    internal static async Task<List<string>> NamesAsync(StoryForgeDbContext db, Guid projectId, IReadOnlySet<string> ids, CancellationToken cancellationToken) =>
+        await SheetAsync(db, projectId, cancellationToken) is { } sheet ? [.. sheet.References.Where(r => ids.Contains(r.Id)).Select(r => r.Name)] : [.. ids];
+
+    private static async Task<ReferenceSheet?> SheetAsync(StoryForgeDbContext db, Guid projectId, CancellationToken cancellationToken)
     {
         var whole = await db.Cells.AsNoTracking().FirstOrDefaultAsync(c => c.ProjectId == projectId && c.Stage == PipelineStage.References && c.Key == Whole, cancellationToken);
         var entry = whole?.CurrentVersion is { } version
             ? await db.CellVersions.AsNoTracking().FirstOrDefaultAsync(v => v.ProjectId == projectId && v.Stage == PipelineStage.References && v.Key == Whole && v.Version == version, cancellationToken)
             : null;
-        if (entry is null)
+        return entry is null ? null : StoredJson.Read<ReferenceSheet>(entry.OutputJson);
+    }
+
+    /// <summary>The names of the references on the current list that have none of <paramref name="images"/>.</summary>
+    internal static async Task<List<string>> WithoutImagesAsync(StoryForgeDbContext db, Guid projectId, IReadOnlyList<CellEntry> images, CancellationToken cancellationToken)
+    {
+        if (await SheetAsync(db, projectId, cancellationToken) is not { } sheet)
         {
             return [];
         }
-        var sheet = StoredJson.Read<ReferenceSheet>(entry.OutputJson);
         return [.. sheet.References.Where(r => images.All(i => !i.Key.StartsWith(r.Id + "/", StringComparison.Ordinal) || i.CurrentVersion is null)).Select(r => r.Name)];
     }
 
@@ -777,6 +801,8 @@ internal sealed class PipelineRunner(
         public CancellationTokenSource Cancel { get; } = cancel;
 
         public StageState PreviousState { get; set; }
+
+        public int? PreviousVersion { get; set; }
 
         public string? PreviousError { get; set; }
 

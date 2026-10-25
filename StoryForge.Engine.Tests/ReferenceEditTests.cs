@@ -758,4 +758,61 @@ public sealed partial class ReferencesRunTests
 
         Assert.Equal("1 image was never made: make the images first.", refused.Message);
     }
+
+    [Fact]
+    public async Task Cancelling_before_the_first_image_keeps_the_list_and_says_Retry_makes_the_images()
+    {
+        _comfy.Hold = new TaskCompletionSource();
+        var client = await StartAsync();
+        var project = await StoryboardApprovedAsync(client, s => s with { ReviewReferenceList = false });
+        await ReferencesAsync(client, project.Id, v => v is { State: StageState.Running, Phase: ReferencePhase.Images, References.Count: 2 });
+
+        await client.CancelAsync(project.Id, PipelineStage.References);
+        var view = await ReferencesAsync(client, project.Id, _ => false);
+
+        Assert.Equal("Cancelled before any image was made. The list is kept; Retry makes the images.", view.Error);
+        Assert.Equal(2, view.References.Count);
+    }
+
+    [Fact]
+    public async Task A_picture_whose_file_is_gone_is_passed_over_not_the_end_of_the_run()
+    {
+        var (client, projectId) = await ImagedAsync();
+        var before = await client.GetReferencesAsync(projectId);
+        File.Delete(before.Pool.Single(p => p.Image.Id == before.References[0].Reference.Sources[0]).Path!);
+
+        await client.RegenerateSegmentAsync(projectId, PipelineStage.References, "R01/1");
+        var view = await ReferencesAsync(client, projectId, v => v.References[0].Images[0] is { Version: 2, State: not StageState.Running });
+
+        Assert.Null(view.References[0].Images[0].Error);
+        Assert.Equal(ImageMaking.NoPicture, view.References[0].Images[0].Image.Made);
+        Assert.Contains("gone", view.References[0].Images[0].Image.Missing);
+    }
+
+    [Fact]
+    public async Task Approving_the_rest_with_an_extra_image_that_shows_nothing_says_to_remove_it()
+    {
+        var (client, projectId) = await ImagedAsync();
+        _check.Decide = request => new PictureVerdict(false, false, "", "");   // no picture shows Karlach any more
+        await client.AddReferenceImageAsync(projectId, "R01");
+        await ReferencesAsync(client, projectId, v => v.References[0].Images is [_, { Version: > 0, State: not StageState.Running }]);
+
+        var refused = await Assert.ThrowsAsync<InvalidOperationException>(() => client.ApproveSegmentsAsync(projectId, PipelineStage.References));
+
+        Assert.Equal("Karlach has an image that shows nothing: remove it (Remove this image), then approve the rest.", refused.Message);
+    }
+
+    [Fact]
+    public async Task A_discarded_picture_whose_file_is_still_open_is_discarded_all_the_same()
+    {
+        var (client, projectId) = await ListedAsync();
+        var coin = (await client.GetReferencesAsync(projectId)).Pool.Single(p => p.Image.Caption == "Coin.png");
+
+        using (new FileStream(coin.Path!, FileMode.Open, FileAccess.Read, FileShare.None))
+        {
+            await client.ChangeReferencesAsync(projectId, new ReferenceChange(ReferenceChangeKind.DiscardFromPool, PoolImageId: coin.Image.Id));
+        }
+
+        Assert.DoesNotContain((await client.GetReferencesAsync(projectId)).Pool, p => p.Image.Id == coin.Image.Id);
+    }
 }

@@ -43,8 +43,9 @@ internal sealed class ReferencesStage(
     public PipelineStage Stage => PipelineStage.References;
 
     // Retry past the list makes only what is missing (ReferenceEdits.MakeImagesAsync).
-    public string CancelledAfter(int stored) =>
-        $"Cancelled after {stored} {(stored == 1 ? "image" : "images")}. Those are kept; Retry makes the ones still missing.";
+    public string CancelledAfter(int stored) => stored == 0
+        ? "Cancelled before any image was made. The list is kept; Retry makes the images."
+        : $"Cancelled after {stored} {(stored == 1 ? "image" : "images")}. Those are kept; Retry makes the ones still missing.";
 
     public async Task<StageResult> RunAsync(StageContext context, CancellationToken cancellationToken)
     {
@@ -218,9 +219,18 @@ internal sealed class ReferencesStage(
 
         var pictures = reference.Sources.Select(id => sheet.Pool.FirstOrDefault(p => p.Id == id)).OfType<PoolImage>().ToList();
         var usable = pictures.Where(p => !p.TooSmall).ToList();
+        // A file deleted or moved from the project folder: passed over, the rest are still tried.
+        var gone = usable.Where(p => !File.Exists(Path.Combine(root, p.File))).ToList();
+        foreach (var picture in gone)
+        {
+            Report(context, ActivityKind.Check, $"{reference.Name}: the file of {picture.Id} is gone, passed over");
+        }
+        usable = [.. usable.Except(gone)];
         if (usable.Count == 0)
         {
-            var why = pictures.Count > 0 ? $"Only pictures under {PoolImage.MinUsableSide} px were found." : "No picture was found on the sources.";
+            var why = gone.Count > 0 ? "The picture files are gone from the project folder: search the sources again, or add your own picture."
+                : pictures.Count > 0 ? $"Only pictures under {PoolImage.MinUsableSide} px were found."
+                : "No picture was found on the sources.";
             Report(context, ActivityKind.Check, $"{reference.Name}: {why} Nothing is made until you choose.");
             return (new ReferenceImage(reference.Id, number, null, [], seed, ImageMaking.NoPicture, why), reference);
         }

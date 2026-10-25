@@ -226,9 +226,9 @@ internal sealed class ReferenceEdits(
                 throw new ArgumentException($"There is no change \"{change.Change}\".");
         }
         await SaveAsync(projectId, sheet, removed, cancellationToken);
-        if (thrownOut is not null && File.Exists(thrownOut))
+        if (thrownOut is not null)
         {
-            File.Delete(thrownOut);   // once the sheet no longer names it
+            Voice.VoiceStage.DeleteQuietly(thrownOut);   // once the sheet no longer names it
         }
         if (remake is not null)
         {

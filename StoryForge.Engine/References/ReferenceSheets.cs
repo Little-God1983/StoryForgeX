@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using Microsoft.EntityFrameworkCore;
 using StoryForge.Client;
 using StoryForge.Engine.Data;
@@ -68,14 +67,7 @@ internal sealed class ReferenceSheets(IDbContextFactory<StoryForgeDbContext> con
             var root = await folders.RootAsync(cancellationToken);
             foreach (var file in files)
             {
-                try
-                {
-                    File.Delete(Path.Combine(root, file));   // once nothing names it; a file still open stays
-                }
-                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-                {
-                    Debug.WriteLine($"{file} could not be deleted: {ex.Message}");
-                }
+                Voice.VoiceStage.DeleteQuietly(Path.Combine(root, file));   // once nothing names it
             }
         }
         return (keys, cell.State);
