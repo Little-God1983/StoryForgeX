@@ -177,7 +177,7 @@ public sealed partial class ReferencesRunTests
         var (client, projectId) = await ImagedAsync();
         var own = Path.Combine(_engine.DataDirectory, "coin fan art.png");
         await File.WriteAllBytesAsync(own, Png(900, 900));
-        _check.ByName["Soul coin"] = new PictureVerdict(false, false, "", "");
+        _check.ByName["Soul coin"] = new PictureVerdict(false, false, "", "A parchment map of the Sword Coast.");
 
         await client.AddOwnPictureAsync(projectId, "R02", own);
         var view = await ReferencesAsync(client, projectId, v => v.References[1].Images[0] is { Version: 2, State: not StageState.Running });
@@ -185,6 +185,7 @@ public sealed partial class ReferencesRunTests
         var picture = view.Pool.Single(p => p.Image.Origin == PoolOrigin.Own).Image;
         Assert.Equal(ImageMaking.FromPicture, view.References[1].Images[0].Image.Made);
         Assert.Equal([picture.Id], view.References[1].Images[0].Image.Sources);
+        Assert.Equal("", view.References[1].Reference.Look);   // what Claude saw is not the soul coin
     }
 
     [Fact]
@@ -760,7 +761,7 @@ public sealed partial class ReferencesRunTests
     }
 
     [Fact]
-    public async Task Cancelling_before_the_first_image_keeps_the_list_and_says_Retry_makes_the_images()
+    public async Task Cancelling_before_the_first_image_keeps_the_list_and_says_Retry_makes_what_is_missing()
     {
         _comfy.Hold = new TaskCompletionSource();
         var client = await StartAsync();
@@ -770,7 +771,7 @@ public sealed partial class ReferencesRunTests
         await client.CancelAsync(project.Id, PipelineStage.References);
         var view = await ReferencesAsync(client, project.Id, _ => false);
 
-        Assert.Equal("Cancelled before any image was made. The list is kept; Retry makes the images.", view.Error);
+        Assert.Equal("Cancelled before any image was made. The list is kept; Retry makes the ones still missing.", view.Error);
         Assert.Equal(2, view.References.Count);
     }
 
@@ -814,5 +815,30 @@ public sealed partial class ReferencesRunTests
         }
 
         Assert.DoesNotContain((await client.GetReferencesAsync(projectId)).Pool, p => p.Image.Id == coin.Image.Id);
+    }
+
+    [Fact]
+    public async Task Merging_into_a_reference_that_shows_nothing_makes_it_from_the_pictures_it_gets()
+    {
+        _pictures.ByName["Karlach"] = [];
+        var (client, projectId) = await ImagedAsync();
+        Assert.Equal(ImageMaking.NoPicture, (await client.GetReferencesAsync(projectId)).References[0].Images[0].Image.Made);
+
+        await client.ChangeReferencesAsync(projectId, new ReferenceChange(ReferenceChangeKind.Merge, ReferenceId: "R02", OtherId: "R01"));
+        var view = await ReferencesAsync(client, projectId, v => v.References[0].Images[0] is { Version: 2, State: not StageState.Running });
+
+        Assert.NotEqual(ImageMaking.NoPicture, view.References[0].Images[0].Image.Made);
+    }
+
+    [Fact]
+    public async Task Merging_into_a_reference_with_an_image_keeps_that_image()
+    {
+        var (client, projectId) = await ImagedAsync();
+        var runs = _comfy.Workflows.Count;
+
+        await client.ChangeReferencesAsync(projectId, new ReferenceChange(ReferenceChangeKind.Merge, ReferenceId: "R02", OtherId: "R01"));
+
+        Assert.Equal(1, (await client.GetReferencesAsync(projectId)).References[0].Images[0].Version);
+        Assert.Equal(runs, _comfy.Workflows.Count);
     }
 }

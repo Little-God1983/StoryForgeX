@@ -44,7 +44,7 @@ internal sealed class ReferencesStage(
 
     // Retry past the list makes only what is missing (ReferenceEdits.MakeImagesAsync).
     public string CancelledAfter(int stored) => stored == 0
-        ? "Cancelled before any image was made. The list is kept; Retry makes the images."
+        ? "Cancelled before any image was made. The list is kept; Retry makes the ones still missing."
         : $"Cancelled after {stored} {(stored == 1 ? "image" : "images")}. Those are kept; Retry makes the ones still missing.";
 
     public async Task<StageResult> RunAsync(StageContext context, CancellationToken cancellationToken)
@@ -259,7 +259,8 @@ internal sealed class ReferencesStage(
             {
                 Report(context, ActivityKind.Check, $"{reference.Name}: Claude does not see it in {picture.Id}; made from it because you chose it");
             }
-            var looked = reference.Look.Length > 0 ? reference : reference with { Look = verdict.Look };
+            // What Claude saw in a picture it does not take for this reference is not its look.
+            var looked = reference.Look.Length > 0 || !verdict.Usable ? reference : reference with { Look = verdict.Look };
             var made = verdict.Complete || !verdict.Usable ? ImageMaking.FromPicture : ImageMaking.PartlyMadeUp;
             // Only the picture Claude looked at: another one on the page could show anyone.
             PoolImage[] sources = [picture];

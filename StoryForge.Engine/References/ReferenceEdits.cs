@@ -147,6 +147,11 @@ internal sealed class ReferenceEdits(
                 };
                 sheet = sheet with { References = [.. sheet.References.Where(r => r.Id != from.Id).Select(r => r.Id == into.Id ? merged : r)] };
                 removed.Add(from.Id);
+                // Its images stay; when none shows anything yet, they are made from the pictures it gets.
+                if (!(await cells.ReferenceImagesAsync(projectId, cancellationToken)).Any(i => i.ReferenceId == into.Id && i.Made != ImageMaking.NoPicture))
+                {
+                    remake = into.Id;
+                }
                 break;
             }
             case ReferenceChangeKind.EditLook:
