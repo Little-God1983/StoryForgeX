@@ -551,6 +551,7 @@ public sealed partial class ScriptMatrixViewModel(IStoryForgeClient client, Guid
             shot.IsSelected = true;
         }
         IsEditing = false;
+        IsEditingShot = false;
         if (sameRow)
         {
             RefreshSelection(keepLive: false);   // the same row, another cell: the panel changes all the same
@@ -578,6 +579,7 @@ public sealed partial class ScriptMatrixViewModel(IStoryForgeClient client, Guid
         RegenerateSegmentCommand.NotifyCanExecuteChanged();
         StartEditCommand.NotifyCanExecuteChanged();
         CancelSegmentCommand.NotifyCanExecuteChanged();
+        RefreshBoardPanel();
         ShowClip();
     }
 

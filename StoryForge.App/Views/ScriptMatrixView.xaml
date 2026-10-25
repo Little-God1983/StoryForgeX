@@ -415,6 +415,11 @@
               </UniformGrid>
               <Button Content="Edit text…" Style="{StaticResource SecondaryButtonStyle}" MinHeight="44" Margin="0,8,0,0" Command="{Binding StartEditCommand}"
                       Visibility="{Binding IsScriptPanel, Converter={StaticResource Visible}}" />
+              <UniformGrid Columns="2" Margin="0,8,0,0" Visibility="{Binding IsBoardPanel, Converter={StaticResource Visible}}">
+                <Button Content="Edit description…" Style="{StaticResource SecondaryButtonStyle}" MinHeight="44" Margin="0,0,4,0" Command="{Binding StartEditShotCommand}" />
+                <Button Content="Merge with next" Style="{StaticResource SecondaryButtonStyle}" MinHeight="44" Margin="4,0,0,0" Command="{Binding MergeWithNextCommand}"
+                        AutomationProperties.Name="Merge with the next shot" />
+              </UniformGrid>
               <Button Content="Cancel" Style="{StaticResource SecondaryButtonStyle}" MinHeight="44" Margin="0,8,0,0" Command="{Binding CancelSegmentCommand}"
                       AutomationProperties.Name="Cancel the segment"
                       Visibility="{Binding SelectedIsRunning, Converter={StaticResource Visible}}" />
@@ -504,6 +509,116 @@
                   </Border>
                   <TextBlock FontSize="12" Foreground="{StaticResource TextMutedBrush}" TextWrapping="Wrap" Margin="0,8,0,0"
                              Text="When each word is heard is estimated from the text. Click a word to hear from there." />
+                </StackPanel>
+
+                <!-- A Board cell: what board 8 drew, as the panel. -->
+                <StackPanel Visibility="{Binding IsBoardPanel, Converter={StaticResource Visible}}">
+                  <TextBlock Text="Shows" Style="{StaticResource FieldLabelStyle}" />
+                  <Border Background="{StaticResource CardBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="8" Padding="12,10"
+                          Visibility="{Binding IsNotEditingShot, Converter={StaticResource Visible}}">
+                    <TextBlock Text="{Binding BoardShows}" FontSize="14" TextWrapping="Wrap" LineHeight="21" AutomationProperties.AutomationId="BoardShows" />
+                  </Border>
+                  <StackPanel Visibility="{Binding IsEditingShot, Converter={StaticResource Visible}}">
+                    <TextBox Text="{Binding EditShotDescription, UpdateSourceTrigger=PropertyChanged}" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="90"
+                             VerticalContentAlignment="Top" FontSize="14" Padding="10,8" AutomationProperties.Name="Shot description" />
+                    <UniformGrid Columns="2" Margin="0,8,0,0">
+                      <Button Content="Save" Style="{StaticResource PrimaryButtonStyle}" Margin="0,0,4,0" Command="{Binding SaveShotDescriptionCommand}"
+                              AutomationProperties.Name="Save the description" />
+                      <Button Content="Cancel" Style="{StaticResource SecondaryButtonStyle}" MinHeight="44" Margin="4,0,0,0" Command="{Binding CancelEditShotCommand}"
+                              AutomationProperties.Name="Cancel the description" />
+                    </UniformGrid>
+                  </StackPanel>
+
+                  <TextBlock Style="{StaticResource FieldLabelStyle}" Margin="0,14,0,6">
+                    <Run Text="Covers" /> <Run Text="(the narration of" /> <Run Text="{Binding Selected.Id, Mode=OneWay}" /><Run Text="; this shot lit)" />
+                  </TextBlock>
+                  <Border Background="{StaticResource CardBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="8" Padding="10,8">
+                    <ItemsControl ItemsSource="{Binding BoardWords}" Focusable="False" AutomationProperties.Name="Words of the segment">
+                      <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate>
+                          <WrapPanel />
+                        </ItemsPanelTemplate>
+                      </ItemsControl.ItemsPanel>
+                      <ItemsControl.ItemTemplate>
+                        <DataTemplate DataType="{x:Type script:BoardWord}">
+                          <Button Command="{Binding DataContext.SplitAtCommand, RelativeSource={RelativeSource AncestorType=UserControl}}" CommandParameter="{Binding Index}"
+                                  Margin="0,0,1,3" AutomationProperties.Name="{Binding Text, StringFormat='Split here, at {0}'}" FocusVisualStyle="{StaticResource RoundedFocusVisual}">
+                            <Button.Template>
+                              <ControlTemplate TargetType="Button">
+                                <Border x:Name="Back" CornerRadius="4" Padding="3,1" Background="Transparent">
+                                  <TextBlock x:Name="Word" Text="{Binding Text}" FontSize="14" Foreground="{StaticResource TextMutedBrush}" />
+                                </Border>
+                                <ControlTemplate.Triggers>
+                                  <DataTrigger Binding="{Binding IsInShot}" Value="True">
+                                    <Setter TargetName="Back" Property="Background" Value="{StaticResource AccentSoftBrush}" />
+                                    <Setter TargetName="Word" Property="Foreground" Value="{StaticResource AccentTextBrush}" />
+                                  </DataTrigger>
+                                  <DataTrigger Binding="{Binding CanSplit}" Value="True">
+                                    <Setter Property="Cursor" Value="Hand" />
+                                    <Setter Property="ToolTip" Value="Split the shot here" />
+                                  </DataTrigger>
+                                </ControlTemplate.Triggers>
+                              </ControlTemplate>
+                            </Button.Template>
+                          </Button>
+                        </DataTemplate>
+                      </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                  </Border>
+
+                  <DockPanel Margin="0,10,0,0">
+                    <Button DockPanel.Dock="Right" Content="later ▶" Style="{StaticResource SmallButtonStyle}" Margin="6,0,0,0" Command="{Binding StartLaterCommand}"
+                            AutomationProperties.Name="Start one word later" />
+                    <Button DockPanel.Dock="Right" Content="◀ earlier" Style="{StaticResource SmallButtonStyle}" Command="{Binding StartEarlierCommand}"
+                            AutomationProperties.Name="Start one word earlier" />
+                    <TextBlock VerticalAlignment="Center" FontSize="13" Foreground="{StaticResource TextSoftBrush}">
+                      <Run Text="Starts at “" /><Run Text="{Binding BoardStartWord, Mode=OneWay}" /><Run Text="”" />
+                    </TextBlock>
+                  </DockPanel>
+                  <DockPanel Margin="0,6,0,0">
+                    <Button DockPanel.Dock="Right" Content="later ▶" Style="{StaticResource SmallButtonStyle}" Margin="6,0,0,0" Command="{Binding EndLaterCommand}"
+                            AutomationProperties.Name="End one word later" />
+                    <Button DockPanel.Dock="Right" Content="◀ earlier" Style="{StaticResource SmallButtonStyle}" Command="{Binding EndEarlierCommand}"
+                            AutomationProperties.Name="End one word earlier" />
+                    <TextBlock VerticalAlignment="Center" FontSize="13" Foreground="{StaticResource TextSoftBrush}">
+                      <Run Text="Ends after “" /><Run Text="{Binding BoardEndWord, Mode=OneWay}" /><Run Text="”" />
+                    </TextBlock>
+                  </DockPanel>
+                  <TextBlock FontSize="12" Foreground="{StaticResource TextMutedBrush}" TextWrapping="Wrap" Margin="0,6,0,0"
+                             Text="Cuts fall between words. Moving one changes the shot next to it, so the segment still adds up to its audio. Click a word in the shot to split it there." />
+
+                  <TextBlock Text="Who and where (up to 4: what Minimax takes per clip)" Style="{StaticResource FieldLabelStyle}" Margin="0,14,0,6" />
+                  <ItemsControl ItemsSource="{Binding BoardCast}" Focusable="False" AutomationProperties.Name="Who and what is in the shot">
+                    <ItemsControl.ItemsPanel>
+                      <ItemsPanelTemplate>
+                        <WrapPanel />
+                      </ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                    <ItemsControl.ItemTemplate>
+                      <DataTemplate>
+                        <Button Content="{Binding StringFormat='{}{0}  ×'}" Style="{StaticResource SmallButtonStyle}" Margin="0,0,6,6"
+                                Command="{Binding DataContext.RemoveCastCommand, RelativeSource={RelativeSource AncestorType=UserControl}}" CommandParameter="{Binding}"
+                                AutomationProperties.Name="{Binding StringFormat='Take {0} out of the shot'}" />
+                      </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                  </ItemsControl>
+                  <ItemsControl ItemsSource="{Binding BoardCastChoices}" Focusable="False" AutomationProperties.Name="Who and what can be added">
+                    <ItemsControl.ItemsPanel>
+                      <ItemsPanelTemplate>
+                        <WrapPanel />
+                      </ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                    <ItemsControl.ItemTemplate>
+                      <DataTemplate>
+                        <Button Content="{Binding StringFormat='+ {0}'}" Style="{StaticResource SmallButtonStyle}" Margin="0,0,6,6" Foreground="{StaticResource TextMutedBrush}"
+                                Command="{Binding DataContext.AddCastCommand, RelativeSource={RelativeSource AncestorType=UserControl}}" CommandParameter="{Binding}"
+                                AutomationProperties.Name="{Binding StringFormat='Put {0} in the shot'}" />
+                      </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                  </ItemsControl>
+
+                  <CheckBox IsChecked="{Binding BoardContinues}" Margin="0,10,0,0" Foreground="{StaticResource TextBrush}" FontSize="13"
+                            Content="Continues the shot before (same scene, the camera moves on)" />
                 </StackPanel>
 
                 <StackPanel Visibility="{Binding IsScriptPanel, Converter={StaticResource Visible}}">
