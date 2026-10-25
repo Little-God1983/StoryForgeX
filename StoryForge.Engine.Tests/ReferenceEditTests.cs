@@ -994,4 +994,19 @@ public sealed partial class ReferencesRunTests
         Assert.NotEqual(hash, ReferencesStage.Hash(setup, karlach with { Chosen = ["P01"] }));
         Assert.NotEqual(hash, ReferencesStage.Hash(setup, karlach with { KeyReason = "Carries the soul coin." }));
     }
+
+    [Fact]
+    public async Task A_picture_you_took_off_a_reference_stays_off_when_another_is_merged_into_it()
+    {
+        var (client, projectId) = await ListedAsync();
+        var coin = (await client.GetReferencesAsync(projectId)).Pool.Single(p => p.Image.Caption == "Coin.png").Image.Id;
+        await client.ChangeReferencesAsync(projectId, new ReferenceChange(ReferenceChangeKind.UseSource, ReferenceId: "R01", PoolImageId: coin));
+        await client.ChangeReferencesAsync(projectId, new ReferenceChange(ReferenceChangeKind.DropSource, ReferenceId: "R01", PoolImageId: coin));
+
+        await client.ChangeReferencesAsync(projectId, new ReferenceChange(ReferenceChangeKind.Merge, ReferenceId: "R02", OtherId: "R01"));
+
+        var merged = (await client.GetReferencesAsync(projectId)).References.Single().Reference;
+        Assert.DoesNotContain(coin, merged.Sources);
+        Assert.Contains(coin, merged.Dropped ?? []);
+    }
 }

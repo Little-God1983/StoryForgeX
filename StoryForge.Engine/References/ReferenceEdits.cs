@@ -139,21 +139,25 @@ internal sealed class ReferenceEdits(
                     throw new ArgumentException($"{from.Name} cannot be merged with itself.");
                 }
                 bool Usable(string id) => sheet.Pool.Any(p => p.Id == id && !p.TooSmall);
+                var chosen = (into.Chosen ?? []).Concat(from.Chosen ?? []).Distinct().ToList();
+                // A picture taken off either stays off, unless one of them picked it.
+                var dropped = (into.Dropped ?? []).Concat(from.Dropped ?? []).Except(chosen).Distinct().ToList();
+                var sources = into.Sources.Concat(from.Sources).Distinct().Except(dropped).ToList();
                 var merged = into with
                 {
                     Shots = [.. into.Shots.Concat(from.Shots).Distinct()],
-                    Sources = [.. into.Sources.Concat(from.Sources).Distinct()],
-                    Chosen = [.. (into.Chosen ?? []).Concat(from.Chosen ?? []).Distinct()],
-                    Dropped = [.. (into.Dropped ?? []).Concat(from.Dropped ?? []).Except(into.Sources.Concat(from.Sources)).Distinct()],
+                    Sources = sources,
+                    Chosen = chosen,
+                    Dropped = dropped,
                     Look = into.Look.Length > 0 ? into.Look : from.Look,
                     KeyReason = into.KeyReason.Length > 0 ? into.KeyReason : from.KeyReason,
                     // Made from its look alone, as the one merged in was, when there is still no picture to make it from.
-                    DescriptionOnly = into.DescriptionOnly || (from.DescriptionOnly && !into.Sources.Concat(from.Sources).Any(Usable)),
+                    DescriptionOnly = into.DescriptionOnly || (from.DescriptionOnly && !sources.Any(Usable)),
                 };
                 sheet = sheet with { References = [.. sheet.References.Where(r => r.Id != from.Id).Select(r => r.Id == into.Id ? merged : r)] };
                 removed.Add(from.Id);
                 // Its images stay; those that show nothing are made again when the merge brought something to make them from.
-                if (from.Sources.Except(into.Sources).Any(Usable) || merged.DescriptionOnly != into.DescriptionOnly)
+                if (sources.Except(into.Sources).Any(Usable) || merged.DescriptionOnly != into.DescriptionOnly)
                 {
                     fill = into.Id;
                 }
