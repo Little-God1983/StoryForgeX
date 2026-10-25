@@ -575,6 +575,7 @@ public sealed partial class ReferencesRunTests
         var (client, projectId) = await ListedAsync();
         var coin = (await client.GetReferencesAsync(projectId)).Pool.Single(p => p.Image.Caption == "Coin.png").Image.Id;
         await client.ChangeReferencesAsync(projectId, new ReferenceChange(ReferenceChangeKind.UseSource, ReferenceId: "R01", PoolImageId: coin));
+        _pictures.ByName["Karlach"] = [FakePictures.Picture("Karlach2.png")];
 
         await client.SearchSourcesAgainAsync(projectId, "R01");
 
@@ -892,5 +893,35 @@ public sealed partial class ReferencesRunTests
 
         Assert.True(view.References[0].Reference.DescriptionOnly);
         Assert.Equal(ImageMaking.FromDescription, view.References[0].Images[0].Image.Made);
+    }
+
+    [Fact]
+    public async Task A_new_image_cancelled_before_it_was_made_is_gone_and_the_stage_stays_approved()
+    {
+        var (client, projectId) = await ImagedAsync();
+        await client.ApproveSegmentsAsync(projectId, PipelineStage.References);
+        await ReferencesAsync(client, projectId, v => v.State == StageState.Approved);
+        _comfy.Hold = new TaskCompletionSource();
+        await client.AddReferenceImageAsync(projectId, "R01");
+        await ReferencesAsync(client, projectId, v => v.References[0].Images is [_, { State: StageState.Running }]);
+
+        await client.CancelSegmentAsync(projectId, PipelineStage.References, "R01/2");
+        var view = await ReferencesAsync(client, projectId, v => v.References[0].Images.Count == 1);
+
+        Assert.Equal(StageState.Approved, view.State);
+    }
+
+    [Fact]
+    public async Task Searching_again_that_finds_the_same_pictures_keeps_the_images_as_they_are()
+    {
+        var (client, projectId) = await ImagedAsync();
+        var before = await client.GetReferencesAsync(projectId);
+        var runs = _comfy.Workflows.Count;
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => client.SearchSourcesAgainAsync(projectId, "R01"));
+
+        var after = await client.GetReferencesAsync(projectId);
+        Assert.Equal((before.References[0].Images[0].Version, StageState.NeedsReview), (after.References[0].Images[0].Version, after.References[0].Images[0].State));
+        Assert.Equal(runs, _comfy.Workflows.Count);
     }
 }

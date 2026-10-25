@@ -703,6 +703,18 @@ internal sealed class PipelineRunner(
     /// </summary>
     private async Task RestoreAsync(Job job)
     {
+        if (job.Key != Whole && job.PreviousState == StageState.NotStarted && job.PreviousVersion is null)
+        {
+            // A cell made for this run (MakeSegmentAsync): it goes again, not left waiting for an image.
+            await using (var db = await contextFactory.CreateDbContextAsync(CancellationToken.None))
+            {
+                await db.Cells.Where(c => c.ProjectId == job.ProjectId && c.Stage == job.Stage && c.Key == job.Key && c.CurrentVersion == null)
+                    .ExecuteDeleteAsync(CancellationToken.None);
+            }
+            Forget(job);
+            Publish(Update(job, StageState.NotStarted));
+            return;
+        }
         await ChangeCellAsync(job.ProjectId, job.Stage, job.Key, cell =>
         {
             cell.State = job.PreviousState;

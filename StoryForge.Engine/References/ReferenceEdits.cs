@@ -295,11 +295,11 @@ internal sealed class ReferenceEdits(
         var sheet = await SheetAsync(projectId, cancellationToken);
         var before = Find(sheet, referenceId);
         sheet = await SearchAsync(project, sheet, referenceId, cancellationToken);
-        // Nothing found, e.g. while the wiki cannot be reached: what it had stays, and its images.
-        var found = Find(sheet, referenceId).Sources.Where(id => !(before.Chosen ?? []).Contains(id) && sheet.Pool.Any(p => p.Id == id && p.Origin == PoolOrigin.Found));
+        // Nothing new found, e.g. while the wiki cannot be reached: what it had stays, and its images.
+        var found = Find(sheet, referenceId).Sources.Where(id => !before.Sources.Contains(id) && sheet.Pool.Any(p => p.Id == id && p.Origin == PoolOrigin.Found));
         if (!found.Any())
         {
-            throw new InvalidOperationException($"Nothing was found for {before.Name} on the sources just now. It keeps the pictures it has.");
+            throw new InvalidOperationException($"Nothing new was found for {before.Name} on the sources just now. It keeps the pictures it has.");
         }
         await SaveAsync(projectId, sheet, [], cancellationToken);
         await MakeImagesOfAsync(projectId, referenceId, cancellationToken);
