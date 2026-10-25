@@ -182,6 +182,54 @@
         </DockPanel>
       </Border>
 
+      <!-- Where the storyboard stands, once the voice is approved. -->
+      <Border Style="{StaticResource BarStyle}" Background="#172536" BorderBrush="#2B4A6B"
+              Visibility="{Binding IsBoardRunning, Converter={StaticResource Visible}}">
+        <DockPanel>
+          <Button DockPanel.Dock="Right" Content="Cancel" Style="{StaticResource SecondaryButtonStyle}" Command="{Binding CancelBoardCommand}"
+                  AutomationProperties.Name="Cancel the storyboard" />
+          <TextBlock Text="Planning the shots" FontSize="14" FontWeight="SemiBold" Foreground="#6FB3EE" VerticalAlignment="Center" Margin="0,0,14,0" />
+          <TextBlock Text="{Binding BoardProgress}" VerticalAlignment="Center" FontSize="13" Foreground="#BCD3EA" TextTrimming="CharacterEllipsis"
+                     FontFamily="{StaticResource MonoFont}" AutomationProperties.AutomationId="BoardProgress" />
+        </DockPanel>
+      </Border>
+
+      <Border Style="{StaticResource BarStyle}" Background="{StaticResource AccentSoftBrush}" BorderBrush="#5A4520"
+              Visibility="{Binding IsBoardReview, Converter={StaticResource Visible}}">
+        <DockPanel>
+          <Button DockPanel.Dock="Right" Content="Approve remaining" Style="{StaticResource PrimaryButtonStyle}" MinHeight="36" FontSize="13"
+                  Margin="8,0,0,0" Command="{Binding ApproveRemainingBoardCommand}" AutomationProperties.Name="Approve remaining shots" />
+          <Button DockPanel.Dock="Right" Content="Regenerate storyboard" Style="{StaticResource SecondaryButtonStyle}" Command="{Binding RegenerateBoardCommand}" />
+          <TextBlock Text="Gate: Storyboard" FontSize="14" FontWeight="SemiBold" Foreground="{StaticResource AccentTextBrush}" VerticalAlignment="Center" Margin="0,0,14,0" />
+          <TextBlock VerticalAlignment="Center" FontSize="13" Foreground="#D9C9A8" TextWrapping="Wrap">
+            <Run Text="{Binding BoardApprovedSummary, Mode=OneWay}" /> This stop is always on: References start when every shot is approved.
+          </TextBlock>
+        </DockPanel>
+      </Border>
+
+      <Border Style="{StaticResource BarStyle}" Background="{StaticResource PillOkBackBrush}" BorderBrush="#2F5A50"
+              Visibility="{Binding IsBoardApproved, Converter={StaticResource Visible}}">
+        <DockPanel>
+          <Button DockPanel.Dock="Right" Content="Regenerate storyboard" Style="{StaticResource SecondaryButtonStyle}" Command="{Binding RegenerateBoardCommand}" />
+          <TextBlock Text="Storyboard approved" FontSize="14" FontWeight="SemiBold" Foreground="{StaticResource PillOkTextBrush}" VerticalAlignment="Center" Margin="0,0,14,0" />
+          <TextBlock VerticalAlignment="Center" FontSize="13" Foreground="{StaticResource TextSoftBrush}" TextWrapping="Wrap"
+                     Text="Every shot is approved. References arrive with #9." />
+        </DockPanel>
+      </Border>
+
+      <Border Style="{StaticResource BarStyle}" Background="{StaticResource PillErrorBackBrush}" BorderBrush="#6B3A33"
+              Visibility="{Binding IsBoardFailed, Converter={StaticResource Visible}}">
+        <DockPanel>
+          <Button DockPanel.Dock="Right" Content="Retry" Style="{StaticResource PrimaryButtonStyle}" MinHeight="36" FontSize="13"
+                  Background="{StaticResource ErrorTextBrush}" Command="{Binding RegenerateBoardCommand}" AutomationProperties.Name="Retry the storyboard" />
+          <StackPanel VerticalAlignment="Center" Margin="0,0,14,0">
+            <TextBlock Text="Storyboard failed" FontSize="14" FontWeight="SemiBold" Foreground="{StaticResource PillErrorTextBrush}" />
+            <TextBlock Text="{Binding BoardError}" FontSize="13" Foreground="#E2C1BB" TextWrapping="Wrap" Margin="0,2,0,0"
+                       AutomationProperties.AutomationId="BoardError" />
+          </StackPanel>
+        </DockPanel>
+      </Border>
+
       <Border Background="{StaticResource PillErrorBackBrush}" CornerRadius="8" Padding="12,8" Margin="0,0,0,14"
               Visibility="{Binding ActionError, Converter={views:NullToCollapsedConverter}}">
         <TextBlock Text="{Binding ActionError}" Foreground="{StaticResource PillErrorTextBrush}" FontSize="13" TextWrapping="Wrap" />
@@ -192,6 +240,9 @@
                    AutomationProperties.AutomationId="ScriptLength" />
         <TextBlock Text="{Binding LengthNote}" FontSize="13" Foreground="{StaticResource AccentTextBrush}" TextWrapping="Wrap" Margin="0,4,0,0"
                    Visibility="{Binding LengthNote, Converter={views:NullToCollapsedConverter}}" />
+        <TextBlock Text="{Binding PacingSummary}" FontFamily="{StaticResource MonoFont}" FontSize="12" Foreground="{StaticResource TextMutedBrush}" Margin="0,4,0,0"
+                   AutomationProperties.AutomationId="PacingSummary"
+                   Visibility="{Binding PacingSummary, Converter={views:NullToCollapsedConverter}}" />
       </StackPanel>
     </StackPanel>
 
@@ -224,7 +275,11 @@
               <ColumnDefinition Width="*" />
               <ColumnDefinition Width="*" />
             </Grid.ColumnDefinitions>
-            <TextBlock Grid.Column="0" Text="SEGMENT" Style="{StaticResource SectionLabelStyle}" />
+            <DockPanel Grid.Column="0" Margin="0,0,10,0">
+              <Button DockPanel.Dock="Right" Content="{Binding FoldAllLabel}" Style="{StaticResource SmallButtonStyle}" Padding="8,2" FontSize="11"
+                      Command="{Binding FoldAllCommand}" />
+              <TextBlock Text="SEGMENT · SHOT" Style="{StaticResource SectionLabelStyle}" VerticalAlignment="Center" />
+            </DockPanel>
             <TextBlock Grid.Column="1" Text="SCRIPT" Style="{StaticResource SectionLabelStyle}" />
             <TextBlock Grid.Column="2" Text="VOICE" Style="{StaticResource SectionLabelStyle}" Margin="6,0,0,0" />
             <TextBlock Grid.Column="3" Text="BOARD" Style="{StaticResource SectionLabelStyle}" Margin="6,0,0,0" />
@@ -235,6 +290,7 @@
             <ItemsControl ItemsSource="{Binding Rows}" Focusable="False" AutomationProperties.Name="Segments">
               <ItemsControl.ItemTemplate>
                 <DataTemplate DataType="{x:Type script:SegmentRowViewModel}">
+                  <StackPanel>
                   <Grid Margin="4,0,4,6">
                     <Grid.ColumnDefinitions>
                       <ColumnDefinition Width="220" />
@@ -244,10 +300,50 @@
                       <ColumnDefinition Width="*" />
                       <ColumnDefinition Width="*" />
                     </Grid.ColumnDefinitions>
-                    <StackPanel Grid.Column="0" VerticalAlignment="Center" Margin="6,0,10,0">
-                      <TextBlock Text="{Binding Id}" FontFamily="{StaticResource MonoFont}" FontSize="13" FontWeight="SemiBold" />
-                      <TextBlock Text="{Binding Title}" FontSize="12" Foreground="{StaticResource TextMutedBrush}" TextTrimming="CharacterEllipsis" ToolTip="{Binding Title}" />
-                    </StackPanel>
+                    <Button Grid.Column="0" Command="{Binding ToggleCommand}" Cursor="Hand" Margin="0,0,10,0" HorizontalContentAlignment="Stretch"
+                            IsEnabled="{Binding HasShots}" AutomationProperties.Name="{Binding Id, StringFormat='Fold or open {0}'}"
+                            FocusVisualStyle="{StaticResource RoundedFocusVisual}">
+                      <Button.Template>
+                        <ControlTemplate TargetType="Button">
+                          <Border Background="Transparent" Padding="0,2">
+                            <ContentPresenter VerticalAlignment="Center" />
+                          </Border>
+                        </ControlTemplate>
+                      </Button.Template>
+                      <DockPanel>
+                        <Path x:Name="Chevron" DockPanel.Dock="Left" Data="M 0 0 L 5 5 L 0 10" Stroke="{StaticResource TextSoftBrush}" StrokeThickness="2"
+                              VerticalAlignment="Center" Margin="6,0,8,0" RenderTransformOrigin="0.5,0.5">
+                          <Path.Style>
+                            <Style TargetType="Path">
+                              <Setter Property="Visibility" Value="Hidden" />
+                              <Setter Property="RenderTransform">
+                                <Setter.Value>
+                                  <RotateTransform Angle="0" />
+                                </Setter.Value>
+                              </Setter>
+                              <Style.Triggers>
+                                <DataTrigger Binding="{Binding HasShots}" Value="True">
+                                  <Setter Property="Visibility" Value="Visible" />
+                                </DataTrigger>
+                                <DataTrigger Binding="{Binding IsOpen}" Value="True">
+                                  <Setter Property="RenderTransform">
+                                    <Setter.Value>
+                                      <RotateTransform Angle="90" />
+                                    </Setter.Value>
+                                  </Setter>
+                                </DataTrigger>
+                              </Style.Triggers>
+                            </Style>
+                          </Path.Style>
+                        </Path>
+                        <StackPanel>
+                          <TextBlock Text="{Binding Id}" FontFamily="{StaticResource MonoFont}" FontSize="13" FontWeight="SemiBold" Foreground="{StaticResource TextBrush}" />
+                          <TextBlock Text="{Binding Title}" FontSize="12" Foreground="{StaticResource TextMutedBrush}" TextTrimming="CharacterEllipsis" ToolTip="{Binding Title}" />
+                          <TextBlock Text="{Binding ShotsText}" FontSize="11" FontFamily="{StaticResource MonoFont}" Foreground="{StaticResource TextMutedBrush}"
+                                     Visibility="{Binding HasShots, Converter={StaticResource Visible}}" />
+                        </StackPanel>
+                      </DockPanel>
+                    </Button>
                     <Button Grid.Column="1" Style="{StaticResource CellStyle}" Command="{Binding SelectCommand}" AutomationProperties.Name="{Binding AccessibleName}">
                       <DockPanel>
                         <TextBlock DockPanel.Dock="Right" Text="{Binding VersionText}" FontFamily="{StaticResource MonoFont}" />
@@ -261,10 +357,47 @@
                         <TextBlock Text="{Binding StateText}" FontWeight="SemiBold" />
                       </DockPanel>
                     </Button>
-                    <Border Grid.Column="3" Style="{StaticResource LaterCellStyle}" />
+                    <!-- Folded: what the shots need, in the Board column. -->
+                    <Border Grid.Column="3" Style="{StaticResource LaterCellStyle}">
+                      <TextBlock Text="{Binding BoardSummary}" FontFamily="{StaticResource MonoFont}" FontSize="12" Foreground="{StaticResource TextSoftBrush}"
+                                 HorizontalAlignment="Center" VerticalAlignment="Center" AutomationProperties.Name="{Binding BoardSummaryName}"
+                                 Visibility="{Binding ShowsSummary, Converter={StaticResource Visible}}" />
+                    </Border>
                     <Border Grid.Column="4" Style="{StaticResource LaterCellStyle}" />
                     <Border Grid.Column="5" Style="{StaticResource LaterCellStyle}" />
                   </Grid>
+
+                  <!-- Its shots, indented: each with its Board cell; Still and Clip arrive with #10 and #12. -->
+                  <ItemsControl ItemsSource="{Binding Shots}" Focusable="False" AutomationProperties.Name="{Binding Id, StringFormat='Shots of {0}'}"
+                                Visibility="{Binding ShowsShots, Converter={StaticResource Visible}}">
+                    <ItemsControl.ItemTemplate>
+                      <DataTemplate DataType="{x:Type script:ShotRowViewModel}">
+                        <Grid Margin="4,0,4,6">
+                          <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="220" />
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="*" />
+                          </Grid.ColumnDefinitions>
+                          <StackPanel Grid.Column="0" VerticalAlignment="Center" Margin="36,0,10,0">
+                            <TextBlock Text="{Binding Label}" FontFamily="{StaticResource MonoFont}" FontSize="13" FontWeight="SemiBold" />
+                            <TextBlock Text="{Binding Description}" FontSize="12" Foreground="{StaticResource TextMutedBrush}" TextTrimming="CharacterEllipsis" ToolTip="{Binding Description}" />
+                          </StackPanel>
+                          <Button Grid.Column="3" Style="{StaticResource CellStyle}" Margin="6,0,0,0" Command="{Binding SelectCommand}" AutomationProperties.Name="{Binding AccessibleName}">
+                            <DockPanel>
+                              <TextBlock DockPanel.Dock="Right" Text="{Binding VersionText}" FontFamily="{StaticResource MonoFont}" />
+                              <TextBlock Text="{Binding StateText}" FontWeight="SemiBold" />
+                            </DockPanel>
+                          </Button>
+                          <Border Grid.Column="4" Style="{StaticResource LaterCellStyle}" />
+                          <Border Grid.Column="5" Style="{StaticResource LaterCellStyle}" />
+                        </Grid>
+                      </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                  </ItemsControl>
+                  </StackPanel>
                 </DataTemplate>
               </ItemsControl.ItemTemplate>
             </ItemsControl>

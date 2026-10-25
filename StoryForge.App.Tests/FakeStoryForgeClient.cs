@@ -413,6 +413,11 @@ internal sealed class FakeStoryForgeClient : IStoryForgeClient
             VoiceActions.Add(("cancel", segmentId, 0));
             return Task.CompletedTask;
         }
+        if (stage == PipelineStage.Storyboard)
+        {
+            ShotActions.Add(("cancel", segmentId));
+            return Task.CompletedTask;
+        }
         CancelledSegments.Add((projectId, segmentId));
         return Task.CompletedTask;
     }
@@ -443,6 +448,12 @@ internal sealed class FakeStoryForgeClient : IStoryForgeClient
             ChangeVoice(projectId, segmentId, s => s with { State = StageState.Approved, ApprovedVersion = version });
             return Task.CompletedTask;
         }
+        if (stage == PipelineStage.Storyboard)
+        {
+            ShotActions.Add(($"approve v{version}", segmentId));
+            ChangeShot(projectId, segmentId, s => s with { State = StageState.Approved, ApprovedVersion = version });
+            return Task.CompletedTask;
+        }
         ApprovedSegments.Add((projectId, segmentId, version));
         ChangeSegment(projectId, segmentId, s => s with { State = StageState.Approved, ApprovedVersion = version });
         return Task.CompletedTask;
@@ -454,6 +465,11 @@ internal sealed class FakeStoryForgeClient : IStoryForgeClient
         if (stage == PipelineStage.Voice)
         {
             VoiceActions.Add(("approve all", "", 0));
+            return Task.CompletedTask;
+        }
+        if (stage == PipelineStage.Storyboard)
+        {
+            ShotActions.Add(("approve all", ""));
             return Task.CompletedTask;
         }
         ApprovedScripts.Add(projectId);
@@ -470,6 +486,11 @@ internal sealed class FakeStoryForgeClient : IStoryForgeClient
         if (stage == PipelineStage.Voice)
         {
             VoiceActions.Add(("regenerate", segmentId, 0));
+            return Task.CompletedTask;
+        }
+        if (stage == PipelineStage.Storyboard)
+        {
+            ShotActions.Add(("regenerate", segmentId));
             return Task.CompletedTask;
         }
         RegeneratedSegments.Add((projectId, segmentId));
@@ -500,6 +521,12 @@ internal sealed class FakeStoryForgeClient : IStoryForgeClient
             ChangeVoice(projectId, segmentId, s => s with { Version = version });
             return Task.CompletedTask;
         }
+        if (stage == PipelineStage.Storyboard)
+        {
+            ShotActions.Add(($"select v{version}", segmentId));
+            ChangeShot(projectId, segmentId, s => s with { Version = version });
+            return Task.CompletedTask;
+        }
         SelectedSegmentVersions.Add((projectId, segmentId, version));
         ChangeSegment(projectId, segmentId, s => s with { Version = version });
         return Task.CompletedTask;
@@ -510,6 +537,14 @@ internal sealed class FakeStoryForgeClient : IStoryForgeClient
         if (Scripts.TryGetValue(projectId, out var view))
         {
             Scripts[projectId] = view with { Segments = [.. view.Segments.Select(s => s.Id == segmentId ? change(s) : s)] };
+        }
+    }
+
+    private void ChangeShot(Guid projectId, string key, Func<ShotView, ShotView> change)
+    {
+        if (Storyboards.TryGetValue(projectId, out var view))
+        {
+            Storyboards[projectId] = view with { Shots = [.. view.Shots.Select(s => s.Key == key ? change(s) : s)] };
         }
     }
 
