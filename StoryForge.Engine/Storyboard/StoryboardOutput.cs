@@ -77,7 +77,7 @@ internal static class StoryboardCheck
     }
 
     /// <summary>The shots from a checked answer: timed from the word timings, each with a key of its own.</summary>
-    /// <param name="used">Keys shots of this storyboard ever had: a new shot never takes one, nor its versions.</param>
+    /// <param name="used">Keys that shots of this storyboard have versions under: a new shot takes none of them, nor their history.</param>
     public static IReadOnlyList<Shot> ToShots(StoryboardOutput output, IReadOnlyList<SegmentWords> segments, IEnumerable<string>? used = null, Func<string>? random = null)
     {
         var names = Names(output.Cast ?? []);
@@ -85,7 +85,8 @@ internal static class StoryboardCheck
         var keys = new HashSet<string>(used ?? []);
         foreach (var segment in segments)
         {
-            var answered = output.Segments.First(a => a.SegmentId.Trim() == segment.SegmentId).Shots;
+            // Empty entries skipped, as the check skips them.
+            var answered = output.Segments.First(a => a?.SegmentId?.Trim() == segment.SegmentId).Shots.Where(s => s is not null).ToList();
             for (var i = 0; i < answered.Count; i++)
             {
                 var first = answered[i].FirstWord;

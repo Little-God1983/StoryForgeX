@@ -304,4 +304,17 @@ public sealed class StoryboardRunTests : IDisposable
             return new ScriptAnswer<ShotRewriteOutput>("s", await _shots.Dequeue()(cancellationToken));
         }
     }
+
+    [Fact]
+    public async Task A_pacing_longer_than_the_projects_clips_is_held_to_them()
+    {
+        _board.Answer(Good());
+        var client = await StartAsync();
+
+        // The profile's 3–8 s, about 5 s, for clips of at most 6 s.
+        var project = await VoiceApprovedAsync(client, s => s with { Clips = s.Clips with { MaxClipSeconds = 6 } });
+        await StageAsync(client, project.Id, PipelineStage.Storyboard, StageState.NeedsReview, StageState.Failed);
+
+        Assert.Equal((new Pacing(3, 5, 6), 6), (_board.Requests.Single().Pacing, _board.Requests.Single().MaxClipSeconds));
+    }
 }

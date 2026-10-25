@@ -238,4 +238,69 @@ public sealed class StoryboardMatrixTests
 
         Assert.False(matrix.Script.CanPlanBoard);
     }
+
+    [Fact]
+    public async Task The_voice_approval_still_shows_when_the_storyboard_starts_before_its_load_is_back()
+    {
+        var (matrix, project) = await OpenAsync(Planned(Guid.Empty, StageState.NotStarted) with { Shots = [] });
+        var script = matrix.Script!;
+        _client.Voices[project.Id] = new VoiceView(project.Id, StageState.NeedsReview, null, [], [], 0, 60);
+        await script.LoadAsync();
+        Assert.True(script.IsVoiceReview);
+
+        // The voice is approved; the load that brings it waits, and the storyboard starts meanwhile.
+        var gate = new TaskCompletionSource();
+        _client.VoiceLoadGate = gate.Task;
+        _client.Voices[project.Id] = new VoiceView(project.Id, StageState.Approved, null, [], [], 0, 60);
+        _client.Raise(new StageUpdate(project.Id, PipelineStage.Voice, StageState.Approved));
+        var approving = matrix.Updating;
+        _client.Storyboards[project.Id] = Planned(project.Id, StageState.Running) with { Shots = [] };
+        _client.Raise(new StageUpdate(project.Id, PipelineStage.Storyboard, StageState.Running));
+        var starting = matrix.Updating;
+        gate.SetResult();
+        await approving;
+        await starting;
+
+        Assert.True(script.IsVoiceApproved);
+        Assert.True(script.IsBoardRunning);
+    }
+
+    [Fact]
+    public async Task When_the_whole_storyboard_is_planned_again_the_open_shot_cannot_be_changed()
+    {
+        var (matrix, project) = await OpenAsync();
+        var script = matrix.Script!;
+        script.Rows[0].Shots[0].SelectCommand.Execute(null);
+        Assert.True(script.CanEditBoard);
+        // The screen only looks again when told: the panel's controls must hear of it.
+        var told = 0;
+        script.PropertyChanged += (_, e) => told += e.PropertyName == nameof(script.CanEditBoard) ? 1 : 0;
+        var buttonTold = 0;
+        script.EndLaterCommand.CanExecuteChanged += (_, _) => buttonTold++;
+
+        _client.Storyboards[project.Id] = Planned(project.Id, StageState.Running);
+        _client.Raise(new StageUpdate(project.Id, PipelineStage.Storyboard, StageState.Running));
+        await matrix.Updating;
+
+        Assert.False(script.CanEditBoard);
+        Assert.False(script.EndLaterCommand.CanExecute(null));
+        Assert.True(told > 0, "CanEditBoard was not raised");
+        Assert.True(buttonTold > 0, "the arrows were not told");
+    }
+
+    [Fact]
+    public async Task A_short_segment_offers_no_split_the_engine_would_refuse()
+    {
+        // S02 is 1.8 s: one shot, four words. Its halves would be under 2 s, and only a whole segment may be.
+        IReadOnlyList<SpokenWord> shortWords = [new("Thanks", 0, 0.3), new("for", 0.45, 0.75), new("watching,", 0.9, 1.2), new("friends.", 1.35, 1.65)];
+        var view = Planned(Guid.Empty, StageState.NeedsReview, Shot("S01", 1, 0, 4.2, 0, 4), Shot("S01", 2, 4.2, 10.3, 4, 6), Shot("S02", 1, 0, 1.8, 0, 4))
+            with { Words = new Dictionary<string, IReadOnlyList<SpokenWord>> { ["S01"] = Words(), ["S02"] = shortWords } };
+        var (matrix, _) = await OpenAsync(view);
+        var script = matrix.Script!;
+
+        script.Rows[1].Shots[0].SelectCommand.Execute(null);
+
+        Assert.All(script.BoardWords, w => Assert.False(w.CanSplit));
+        Assert.False(script.SplitAtCommand.CanExecute(2));
+    }
 }

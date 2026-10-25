@@ -394,7 +394,8 @@ public sealed partial class ScriptMatrixViewModel(IStoryForgeClient client, Guid
         {
             // Only the start of the run: a log line is no reason to drop a load on its way, which
             // may bring a segment just spoken.
-            if (VoiceState != StageState.Running)
+            var starting = VoiceState != StageState.Running;
+            if (starting)
             {
                 _loads++;   // a load still on its way would show the state from before this run
                 VoiceActivity.Clear();
@@ -413,6 +414,11 @@ public sealed partial class ScriptMatrixViewModel(IStoryForgeClient client, Guid
             {
                 VoiceActivity.Add(line);
                 VoiceProgress = line.Text;
+            }
+            if (starting)
+            {
+                // ... and what that load was bringing (the script approved, which started this run) comes with a new one.
+                await LoadAsync();
             }
             return;
         }

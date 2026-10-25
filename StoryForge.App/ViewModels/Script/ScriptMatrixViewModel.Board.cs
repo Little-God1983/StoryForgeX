@@ -91,7 +91,8 @@ public sealed partial class ScriptMatrixViewModel
     {
         if (update.Key is null && update.State == StageState.Running)
         {
-            if (BoardState != StageState.Running)
+            var starting = BoardState != StageState.Running;
+            if (starting)
             {
                 _loads++;   // a load still on its way would show the state from before this run
                 BoardActivity.Clear();
@@ -103,6 +104,11 @@ public sealed partial class ScriptMatrixViewModel
             {
                 BoardActivity.Add(line);
                 BoardProgress = line.Text;
+            }
+            if (starting)
+            {
+                // ... and what that load was bringing (the voice approved, which started this run) comes with a new one.
+                await LoadAsync();
             }
             return;
         }
@@ -174,6 +180,9 @@ public sealed partial class ScriptMatrixViewModel
         ApproveRemainingBoardCommand.NotifyCanExecuteChanged();
         RegenerateBoardCommand.NotifyCanExecuteChanged();
     }
+
+    // Running or not, the panel's controls follow: nothing on the storyboard changes while it is planned.
+    partial void OnBoardStateChanged(StageState value) => RefreshBoardPanel();
 
     private void SelectShot(ShotRowViewModel shot) => Select(Rows.FirstOrDefault(r => r.Shots.Contains(shot)), PipelineStage.Storyboard, shot);
 
@@ -411,7 +420,7 @@ public sealed partial class ScriptMatrixViewModel
         (first + count >= SelectedWords.Count ? SegmentSeconds : CutAt(first + count)) - CutAt(first);
 
     private bool Fits(double seconds) =>
-        seconds <= (_board?.MaxClipSeconds ?? int.MaxValue) && (seconds >= Pacing.ShortestShot || SegmentSeconds < Pacing.ShortestShot);
+        seconds <= (_board?.MaxClipSeconds ?? int.MaxValue) && (seconds >= Pacing.ShortestShot || seconds >= SegmentSeconds - 0.001);
 
     private string WordAt(int? index) => index is { } i && i >= 0 && i < SelectedWords.Count ? SelectedWords[i].Text : "";
 }

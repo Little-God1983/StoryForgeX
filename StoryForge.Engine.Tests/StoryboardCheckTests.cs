@@ -256,4 +256,15 @@ public sealed class StoryboardCheckTests
         Assert.Equal("She carries the story.", StoryboardCheck.ToCast(output)[0].KeyReason);
         Assert.Equal(["House of  Hope", "Karlach"], StoryboardCheck.ToShots(output, [Segment("S01", 10)]).Single().Cast);
     }
+
+    [Fact]
+    public void Empty_entries_in_an_answer_are_skipped_alike_by_the_check_and_the_shots()
+    {
+        var output = new StoryboardOutput(Cast, [null!, new("S01", [Shot(0), null!, Shot(10)])]);
+
+        Assert.Empty(Problems(output, Segment("S01", 20)));
+        var shots = StoryboardCheck.ToShots(output, [Segment("S01", 20)]);
+
+        Assert.Equal([(0, 10), (10, 10)], shots.Select(s => (s.FirstWord, s.WordCount)));
+    }
 }

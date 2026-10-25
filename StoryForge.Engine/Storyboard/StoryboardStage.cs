@@ -156,8 +156,19 @@ internal sealed class StoryboardStage(IStoryboardAgent agent, CellReader cells, 
             segments,
             profile.Content.Instructions,
             setup.Writing.Model,
-            setup.Pacing ?? profile.Content.Pacing ?? Pacing.Default,
+            HeldTo(setup.Pacing ?? profile.Content.Pacing ?? Pacing.Default, setup.Clips.MaxClipSeconds),
             setup.Clips.MaxClipSeconds), voices);
+    }
+
+    /// <summary>
+    /// The pacing within the clips this project makes: a profile's 3–8 s with clips of at most 6 s
+    /// asks for 3–6 s, so the prompt never asks for shots the check sends back.
+    /// </summary>
+    internal static Pacing HeldTo(Pacing pacing, int maxClipSeconds)
+    {
+        var max = Math.Min(pacing.MaxSeconds, maxClipSeconds);
+        var min = Math.Min(pacing.MinSeconds, max);
+        return new Pacing(min, Math.Clamp(pacing.TypicalSeconds, min, max), max);
     }
 
     private void Fail(StageContext context, int attempt, IReadOnlyList<string> problems, bool last)

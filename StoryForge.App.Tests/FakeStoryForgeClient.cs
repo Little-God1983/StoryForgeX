@@ -273,6 +273,9 @@ internal sealed class FakeStoryForgeClient : IStoryForgeClient
 
     public event EventHandler<StageUpdate>? StageUpdated;
 
+    /// <summary>The stages a whole run of is under way, as announced through <see cref="Raise"/>.</summary>
+    private readonly HashSet<(Guid ProjectId, PipelineStage Stage)> _running = [];
+
     /// <summary>Raises <see cref="StageUpdated"/> as the engine would, and keeps the project's stage state in step.</summary>
     public void Raise(StageUpdate update)
     {
@@ -287,6 +290,26 @@ internal sealed class FakeStoryForgeClient : IStoryForgeClient
         if (FactSheets.TryGetValue(update.ProjectId, out var view) && update.Stage == PipelineStage.Research)
         {
             FactSheets[update.ProjectId] = view with { State = update.State };
+        }
+        // The engine says a whole run started once its cell is running, with its log and error from
+        // before cleared: a load from then on reads that. For the voice, no segment of the new run is
+        // stored yet, so each reads running too.
+        // Only the first update of a run: later ones are its log lines, after segments were stored.
+        if (update.Key is null && update.State == StageState.Running && _running.Add((update.ProjectId, update.Stage)))
+        {
+            if (update.Stage == PipelineStage.Voice)
+            {
+                var voice = Voices.GetValueOrDefault(update.ProjectId) ?? new VoiceView(update.ProjectId, StageState.NotStarted, null, [], [], 0, 240);
+                Voices[update.ProjectId] = voice with { State = StageState.Running, Error = null, Activity = [], Segments = [.. voice.Segments.Select(s => s with { State = StageState.Running })] };
+            }
+            else if (update.Stage == PipelineStage.Storyboard && Storyboards.TryGetValue(update.ProjectId, out var board))
+            {
+                Storyboards[update.ProjectId] = board with { State = StageState.Running, Error = null, Activity = [] };
+            }
+        }
+        else if (update.Key is null && update.State != StageState.Running)
+        {
+            _running.Remove((update.ProjectId, update.Stage));
         }
         StageUpdated?.Invoke(this, update);
     }

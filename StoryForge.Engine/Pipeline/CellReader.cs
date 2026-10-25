@@ -120,7 +120,10 @@ internal sealed class CellReader(IDbContextFactory<StoryForgeDbContext> contextF
             .Select(v => StoredJson.Read<Shot>(v.OutputJson))
             .OrderBy(s => s.SegmentId, StringComparer.Ordinal).ThenBy(s => s.FirstWord)];
 
-    /// <summary>Every key a shot of the storyboard ever had, including shots merged or planned away since.</summary>
+    /// <summary>
+    /// Every key a shot of the storyboard has a version under. A shot merged or planned away loses
+    /// its versions with its cell, so its key may come back, with no history attached.
+    /// </summary>
     public async Task<IReadOnlyList<string>> UsedShotKeysAsync(Guid projectId, CancellationToken cancellationToken)
     {
         await using var db = await contextFactory.CreateDbContextAsync(cancellationToken);
