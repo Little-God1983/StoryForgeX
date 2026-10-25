@@ -5,6 +5,7 @@ using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 using StoryForge.Engine.Research;
 using StoryForge.ResearchServer;
+using StoryForge.Sources;
 
 namespace StoryForge.Engine.Tests;
 
@@ -309,7 +310,7 @@ public sealed class ResearchServerTests
     }
 
     /// <summary>bg3.wiki as MediaWiki describes itself: API under /w/, pages under /wiki/.</summary>
-    private static Web BgWiki() => new Web().On("https://bg3.wiki/w/api.php?action=query&meta=siteinfo", _ => Json(
+    internal static Web BgWiki() => new Web().On("https://bg3.wiki/w/api.php?action=query&meta=siteinfo", _ => Json(
         """{"query":{"general":{"server":"https://bg3.wiki","articlepath":"/wiki/$1"}}}"""));
 
     private static string Text(CallToolResult result) => string.Concat(result.Content.OfType<TextContentBlock>().Select(b => b.Text));
@@ -320,11 +321,11 @@ public sealed class ResearchServerTests
     private static HttpResponseMessage Html(string body) =>
         new(HttpStatusCode.OK) { Content = new StringContent(body, Encoding.UTF8, "text/html") };
 
-    private static HttpResponseMessage Json(string body) =>
+    internal static HttpResponseMessage Json(string body) =>
         new(HttpStatusCode.OK) { Content = new StringContent(body, Encoding.UTF8, "application/json") };
 
     /// <summary>Answers by URL prefix; anything else is refused like a closed port.</summary>
-    private sealed class Web : HttpMessageHandler
+    internal sealed class Web : HttpMessageHandler
     {
         private readonly List<(string Prefix, Func<HttpRequestMessage, HttpResponseMessage> Answer)> _answers = [];
 

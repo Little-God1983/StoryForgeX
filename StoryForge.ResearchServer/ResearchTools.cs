@@ -3,6 +3,7 @@ using System.Text;
 using System.Text.Json;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
+using StoryForge.Sources;
 
 namespace StoryForge.ResearchServer;
 
@@ -10,7 +11,7 @@ namespace StoryForge.ResearchServer;
 internal static class Answers
 {
     /// <summary>Starts every answer to a URL that is not on the source list.</summary>
-    public const string RefusedPrefix = "Refused:";
+    public const string RefusedPrefix = RefusedException.Prefix;
 
     /// <summary>Starts the first line of a fetch answer: "Page: https://bg3.wiki/wiki/Soul_Coin".</summary>
     public const string PagePrefix = "Page: ";

@@ -1,0 +1,73 @@
+using StoryForge.Sources;
+using static StoryForge.Engine.Tests.ResearchServerTests;
+
+namespace StoryForge.Engine.Tests;
+
+/// <summary>A wiki page's pictures, as the References stage builds its image pool from them.</summary>
+public sealed class PageImagesTests
+{
+    private static readonly SourceList Sources = new(["bg3.wiki"]);
+
+    /// <summary>"Karlach" lists her portrait (the page image), a camp scene, two icons and a logo.</summary>
+    private static Web KarlachPage(int scenes = 1) => BgWiki()
+        .On("https://bg3.wiki/w/api.php?action=query&titles=Karlach&prop=pageimages", _ => Json(
+            $$$"""
+            {"query":{"pages":[{"title":"Karlach","pageimage":"Karlach_portrait.png","images":[
+              {{{string.Join(",", Enumerable.Range(1, scenes).Select(i => $$$"""{"title":"File:Camp scene {{{i}}}.jpg"}"""))}}},
+              {"title":"File:Karlach portrait.png"},{"title":"File:Fire icon.png"},{"title":"File:Logo.svg"}]}]}}
+            """))
+        .On("https://bg3.wiki/w/api.php?action=query&titles=File", request => Json(Info(request.RequestUri!)));
+
+    /// <summary>Image info for every file the request names: icons are 64 px, the logo an SVG.</summary>
+    private static string Info(Uri request)
+    {
+        var titles = (System.Web.HttpUtility.ParseQueryString(request.Query)["titles"] ?? "").Split('|');
+        var pages = titles.Select(title =>
+        {
+            var name = title["File:".Length..].Replace(' ', '_');
+            var (width, height, mime) = title.Contains("icon") ? (64, 64, "image/png")
+                : title.EndsWith(".svg", StringComparison.Ordinal) ? (512, 512, "image/svg+xml")
+                : title.Contains("portrait") ? (800, 1200, "image/png")
+                : (1920, 1080, "image/jpeg");
+            var caption = title["File:".Length..];
+            return "{\"title\":\"" + title + "\",\"imageinfo\":[{\"url\":\"https://bg3.wiki/w/images/" + name + "\",\"width\":" + width + ",\"height\":" + height
+                + ",\"mime\":\"" + mime + "\",\"extmetadata\":{\"ImageDescription\":{\"value\":\"<p>" + caption + " <b>caption</b></p>\"}}}]}";
+        });
+        return $$$"""{"query":{"pages":[{{{string.Join(",", pages)}}}]}}""";
+    }
+
+    private static async Task<IReadOnlyList<PageImage>> ImagesAsync(Web web, string title = "Karlach")
+    {
+        var wikis = new MediaWiki(new SiteWeb(web.Invoker, Sources));
+        var wiki = await wikis.FindAsync(Sources.Sources[0], default);
+        return await wikis.PageImagesAsync(wiki!, title, default);
+    }
+
+    [Fact]
+    public async Task The_page_image_comes_first_and_icons_and_drawings_stay_out()
+    {
+        var images = await ImagesAsync(KarlachPage());
+
+        Assert.Equal(["File:Karlach portrait.png", "File:Camp scene 1.jpg"], images.Select(i => i.FileTitle));
+        Assert.True(images[0].IsMain);
+        Assert.Equal(("https://bg3.wiki/w/images/Karlach_portrait.png", 800, 1200), (images[0].Url, images[0].Width, images[0].Height));
+        Assert.Equal("Karlach portrait.png caption", images[0].Caption);
+    }
+
+    [Fact]
+    public async Task At_most_six_pictures_come_from_one_page()
+    {
+        var images = await ImagesAsync(KarlachPage(scenes: 10));
+
+        Assert.Equal(6, images.Count);
+        Assert.Equal("File:Karlach portrait.png", images[0].FileTitle);
+    }
+
+    [Fact]
+    public async Task A_page_without_pictures_or_a_missing_page_has_none()
+    {
+        var web = BgWiki().On("https://bg3.wiki/w/api.php?action=query&titles=Nobody", _ => Json("""{"query":{"pages":[{"title":"Nobody","missing":true}]}}"""));
+
+        Assert.Empty(await ImagesAsync(web, "Nobody"));
+    }
+}

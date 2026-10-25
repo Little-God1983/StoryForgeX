@@ -9,6 +9,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\StoryForge.Client\StoryForge.Client.csproj" />
+    <ProjectReference Include="..\StoryForge.Sources\StoryForge.Sources.csproj" />
   </ItemGroup>
 
   <ItemGroup>

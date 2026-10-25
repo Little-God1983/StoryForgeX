@@ -3,11 +3,15 @@ using System.Net.Http.Headers;
 using System.Reflection;
 using System.Text;
 
-namespace StoryForge.ResearchServer;
+namespace StoryForge.Sources;
 
-/// <summary>A URL the server will not reach because it is not on the project's source list.</summary>
+/// <summary>A URL that is not reached because it is not on the project's source list.</summary>
 internal sealed class RefusedException(Uri url, string sources)
-    : Exception($"{Answers.RefusedPrefix} {url} is not on the project's source list ({sources}). Only those sites can be reached.");
+    : Exception($"{Prefix} {url} is not on the project's source list ({sources}). Only those sites can be reached.")
+{
+    /// <summary>Starts every refusal; the engine reads it back out of the research tools' answers.</summary>
+    public const string Prefix = "Refused:";
+}
 
 /// <summary>A page that could not be read: an HTTP error, a timeout, too many redirects.</summary>
 /// <param name="unreachable">The site did not answer at all (no connection, a timeout), so it may answer later.</param>

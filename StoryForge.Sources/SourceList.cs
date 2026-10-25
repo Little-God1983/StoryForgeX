@@ -1,4 +1,4 @@
-namespace StoryForge.ResearchServer;
+namespace StoryForge.Sources;
 
 /// <summary>
 /// One research source: a site, optionally narrowed to a part of it ("reddit.com/r/BaldursGate3").

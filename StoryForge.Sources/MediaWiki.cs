@@ -1,13 +1,18 @@
 using System.Collections.Concurrent;
 using System.Text.Json;
 
-namespace StoryForge.ResearchServer;
+namespace StoryForge.Sources;
 
 /// <summary>A source that runs MediaWiki (bg3.wiki, every Fandom wiki): where its API is and how its page URLs look.</summary>
 /// <param name="ArticleUrl">"https://bg3.wiki/wiki/$1": a page title goes where $1 is.</param>
 internal sealed record WikiSite(Source Source, Uri Api, string ArticleUrl);
 
 internal sealed record SearchHit(string Title, string Url, string Snippet);
+
+/// <summary>A picture a wiki page shows, e.g. Karlach's portrait: where the wiki serves it, its size and caption.</summary>
+/// <param name="FileTitle">"File:Karlach portrait.png".</param>
+/// <param name="IsMain">The page's own picture (MediaWiki's page image).</param>
+internal sealed record PageImage(string Url, string FileTitle, int Width, int Height, string Caption, bool IsMain);
 
 /// <summary>A page as the reader sees it, with the title the wiki gives it (after any redirect).</summary>
 internal sealed record WikiPage(string Title, string Url, string Text);
@@ -91,6 +96,83 @@ internal sealed class MediaWiki(SiteWeb web)
         var parse = json.RootElement.GetProperty("parse");
         var actual = parse.GetProperty("title").GetString() ?? title;
         return new WikiPage(actual, PageUrl(wiki, actual), HtmlText.ToText(parse.GetProperty("text").GetString() ?? ""));
+    }
+
+    /// <summary>The most a page gives the image pool: its main picture and a few more.</summary>
+    public const int MaxPageImages = 6;
+
+    /// <summary>Smaller than this on either side is an icon or a sprite, not a picture of anything.</summary>
+    public const int MinImageSide = 128;
+
+    private static readonly string[] PictureTypes = ["image/png", "image/jpeg", "image/webp"];
+
+    /// <summary>
+    /// The pictures a page shows: its main picture (the page image) first, then the others in page
+    /// order, at most <see cref="MaxPageImages"/>. Icons, drawings (SVG) and anything that is not a
+    /// picture stay out. A page that does not exist has none.
+    /// </summary>
+    public async Task<IReadOnlyList<PageImage>> PageImagesAsync(WikiSite wiki, string title, CancellationToken cancellationToken)
+    {
+        string? main;
+        List<string> files;
+        using (var json = await ApiAsync(wiki, $"action=query&titles={Uri.EscapeDataString(title)}&prop=pageimages%7Cimages&piprop=name&imlimit=50&redirects=1", cancellationToken))
+        {
+            if (!json.RootElement.TryGetProperty("query", out var query) || !query.TryGetProperty("pages", out var pages)
+                || pages.ValueKind != JsonValueKind.Array || pages.GetArrayLength() == 0)
+            {
+                return [];
+            }
+            var page = pages[0];
+            main = page.TryGetProperty("pageimage", out var image) ? "File:" + image.GetString()?.Replace('_', ' ') : null;
+            files = page.TryGetProperty("images", out var images)
+                ? [.. images.EnumerateArray().Select(i => i.GetProperty("title").GetString() ?? "").Where(t => t.Length > 0)]
+                : [];
+        }
+        if (main is not null)
+        {
+            files.Remove(main);
+            files.Insert(0, main);
+        }
+        if (files.Count == 0)
+        {
+            return [];
+        }
+
+        // Asked for in one go (the API takes up to 50 titles); the answer comes in any order.
+        var found = new Dictionary<string, PageImage>();
+        var titles = Uri.EscapeDataString(string.Join('|', files.Take(50)));
+        using (var json = await ApiAsync(wiki, $"action=query&titles={titles}&prop=imageinfo&iiprop=url%7Csize%7Cmime%7Cextmetadata&iiextmetadatafilter=ImageDescription", cancellationToken))
+        {
+            if (json.RootElement.TryGetProperty("query", out var query) && query.TryGetProperty("pages", out var pages) && pages.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var page in pages.EnumerateArray())
+                {
+                    if (page.TryGetProperty("imageinfo", out var info) && info.ValueKind == JsonValueKind.Array && info.GetArrayLength() > 0
+                        && Picture(page.GetProperty("title").GetString() ?? "", info[0], main) is { } picture)
+                    {
+                        found[picture.FileTitle] = picture;
+                    }
+                }
+            }
+        }
+        return [.. files.Where(found.ContainsKey).Select(f => found[f]).Take(MaxPageImages)];
+    }
+
+    /// <summary>One file as a picture for the pool; null when it is an icon, a drawing or no picture at all.</summary>
+    private static PageImage? Picture(string title, JsonElement info, string? main)
+    {
+        var mime = info.TryGetProperty("mime", out var m) ? m.GetString() ?? "" : "";
+        var width = info.TryGetProperty("width", out var w) && w.TryGetInt32(out var wv) ? wv : 0;
+        var height = info.TryGetProperty("height", out var h) && h.TryGetInt32(out var hv) ? hv : 0;
+        if (!PictureTypes.Contains(mime) || Math.Min(width, height) < MinImageSide || !info.TryGetProperty("url", out var url) || url.GetString() is not { } address)
+        {
+            return null;
+        }
+        var caption = info.TryGetProperty("extmetadata", out var meta) && meta.TryGetProperty("ImageDescription", out var description)
+            && description.TryGetProperty("value", out var value)
+            ? HtmlText.ToText(value.GetString() ?? "").Trim()
+            : "";
+        return new PageImage(address, title, width, height, caption, title == main);
     }
 
     private static string PageUrl(WikiSite wiki, string title) =>
