@@ -148,7 +148,7 @@ public sealed partial class NewProjectPageViewModel : PageViewModel
     public string? PacingProblem => Pacing.Problem(MaxClip.Value);
 
     /// <summary>"about 48 shots → 48 stills, 48 clips": the target length over the typical shot, before anything is spent.</summary>
-    public string ShotEstimate => TargetLength() is { } target && Pacing.Effective is { TypicalSeconds: > 0 } pacing
+    public string ShotEstimate => TargetLength() is { } target && Pacing.Effective?.HeldTo(MaxClip.Value ?? int.MaxValue) is { TypicalSeconds: > 0 } pacing
         && Math.Max(1, (int)Math.Round((double)target / pacing.TypicalSeconds)) is var shots
         ? $"about {shots} shots → {shots} stills, {shots} clips"
         : "";

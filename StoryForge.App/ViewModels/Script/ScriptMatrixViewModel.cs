@@ -307,7 +307,7 @@ public sealed partial class ScriptMatrixViewModel(IStoryForgeClient client, Guid
             : [.. Selected.Segment.Versions.Select(v => new SegmentVersionChoice(v.Version, v.Version == Selected.Segment.Version, v.Version == Selected.Segment.ApprovedVersion))];
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(IsNotEditing))]
+    [NotifyPropertyChangedFor(nameof(IsNotEditing), nameof(IsNotEditingAny))]
     [NotifyCanExecuteChangedFor(nameof(SaveEditCommand))]
     private bool _isEditing;
 
@@ -626,7 +626,7 @@ public sealed partial class ScriptMatrixViewModel(IStoryForgeClient client, Guid
 
     /// <summary>The selected cell can be acted on: it exists, and neither it nor its whole stage is running.</summary>
     private bool SegmentIdle() => IsBoardPanel
-        ? SelectedShot is { State: not StageState.Running } && !IsBoardRunning
+        ? SelectedShot is { State: not StageState.Running } && !IsBoardRunning && !IsEditingShot
         : IsVoicePanel
             ? SelectedVoice is { State: not StageState.Running } && !IsVoiceRunning
             : Selected is not null && !IsRunning && Selected.State != StageState.Running;

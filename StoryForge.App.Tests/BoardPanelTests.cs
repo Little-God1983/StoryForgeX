@@ -223,4 +223,20 @@ public sealed class BoardPanelTests
         Assert.True(changes > 0);   // the box is told to show the stored value again
         Assert.NotNull(script.ActionError);
     }
+
+    [Fact]
+    public async Task While_a_description_is_being_edited_the_shot_cannot_be_approved_planned_again_or_merged()
+    {
+        var script = await OpenAsync();
+        Pick(script, 0, 0);
+
+        script.StartEditShotCommand.Execute(null);
+
+        Assert.False(script.ApproveSegmentCommand.CanExecute(null));
+        Assert.False(script.RegenerateSegmentCommand.CanExecute(null));
+        Assert.False(script.MergeWithNextCommand.CanExecute(null));
+        Assert.False(script.IsNotEditingAny);
+        script.CancelEditShotCommand.Execute(null);
+        Assert.True(script.RegenerateSegmentCommand.CanExecute(null));
+    }
 }

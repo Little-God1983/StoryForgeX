@@ -59,12 +59,12 @@ public sealed partial class ScriptMatrixViewModel
     public bool ShowsFoldAll => HasShots;
 
     /// <summary>"Fold all" while any segment is open, else "Open all".</summary>
-    public string FoldAllLabel => Rows.Any(r => r.IsOpen) ? "Fold all" : "Open all";
+    public string FoldAllLabel => Rows.Any(r => r.HasShots && r.IsOpen) ? "Fold all" : "Open all";
 
     [RelayCommand]
     private void FoldAll()
     {
-        var open = !Rows.Any(r => r.IsOpen);
+        var open = !Rows.Any(r => r.HasShots && r.IsOpen);
         foreach (var row in Rows)
         {
             row.IsOpen = open;
@@ -184,6 +184,8 @@ public sealed partial class ScriptMatrixViewModel
     // Running or not, the panel's controls follow: nothing on the storyboard changes while it is planned.
     partial void OnBoardStateChanged(StageState value) => RefreshBoardPanel();
 
+    partial void OnIsEditingShotChanged(bool value) => RefreshBoardPanel();
+
     private void SelectShot(ShotRowViewModel shot) => Select(Rows.FirstOrDefault(r => r.Shots.Contains(shot)), PipelineStage.Storyboard, shot);
 
     /// <summary>"6.1", "20": a shot's length in the panel and the pacing line.</summary>
@@ -243,11 +245,14 @@ public sealed partial class ScriptMatrixViewModel
     }
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(IsNotEditingShot))]
-    [NotifyCanExecuteChangedFor(nameof(SaveShotDescriptionCommand))]
+    [NotifyPropertyChangedFor(nameof(IsNotEditingShot), nameof(IsNotEditingAny))]
+    [NotifyCanExecuteChangedFor(nameof(SaveShotDescriptionCommand), nameof(ApproveSegmentCommand), nameof(RegenerateSegmentCommand))]
     private bool _isEditingShot;
 
     public bool IsNotEditingShot => !IsEditingShot;
+
+    /// <summary>Neither the script's text nor a shot's description is being edited: the panel's own buttons show.</summary>
+    public bool IsNotEditingAny => !IsEditing && !IsEditingShot;
 
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(SaveShotDescriptionCommand))]

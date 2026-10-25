@@ -19,6 +19,17 @@ public sealed record Pacing(int MinSeconds, int TypicalSeconds, int MaxSeconds)
         : maxClipSeconds is { } clip && MaxSeconds > clip ? $"Shots of up to {MaxSeconds} s are longer than the video model makes ({clip} s)."
         : null;
 
+    /// <summary>
+    /// This pacing within clips of at most <paramref name="maxClipSeconds"/>: 3–8 s with clips of
+    /// 6 s is 3–6 s, so the storyboard never asks for shots the video model cannot make.
+    /// </summary>
+    public Pacing HeldTo(int maxClipSeconds)
+    {
+        var max = Math.Min(MaxSeconds, maxClipSeconds);
+        var min = Math.Min(MinSeconds, max);
+        return new Pacing(min, Math.Clamp(TypicalSeconds, min, max), max);
+    }
+
     /// <summary>"3–8 s, about 5 s".</summary>
     public override string ToString() => $"{MinSeconds}–{MaxSeconds} s, about {TypicalSeconds} s";
 }

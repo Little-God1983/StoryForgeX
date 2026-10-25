@@ -303,4 +303,21 @@ public sealed class StoryboardMatrixTests
         Assert.All(script.BoardWords, w => Assert.False(w.CanSplit));
         Assert.False(script.SplitAtCommand.CanExecute(2));
     }
+
+    [Fact]
+    public async Task Fold_all_counts_only_segments_with_shots_to_fold()
+    {
+        var (matrix, project) = await OpenAsync();
+        var script = matrix.Script!;
+        script.FoldAllCommand.Execute(null);
+
+        // A new script brings S03, which has no shots yet: nothing more to fold.
+        _client.Scripts[project.Id] = new ScriptView(project.Id, StageState.Approved, null, [], [Segment("S01", "Hook"), Segment("S02", "Outro"), Segment("S03", "New")], "", 30, 60, []);
+        await script.LoadAsync();
+
+        Assert.Equal("Open all", script.FoldAllLabel);
+        script.FoldAllCommand.Execute(null);
+        Assert.All(script.Rows.Where(r => r.HasShots), r => Assert.True(r.IsOpen));
+        Assert.Equal("Fold all", script.FoldAllLabel);
+    }
 }

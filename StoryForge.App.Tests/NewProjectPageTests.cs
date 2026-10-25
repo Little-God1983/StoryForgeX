@@ -642,4 +642,16 @@ public sealed class NewProjectPageTests
         Assert.Equal("Shots of up to 40 s are longer than the video model makes (30 s).", page.PacingProblem);
         Assert.False(page.CanStart);
     }
+
+    [Fact]
+    public async Task The_shot_estimate_counts_with_the_pacing_held_to_the_clips()
+    {
+        AddOneOfEach();
+        var page = await ShownPage();
+
+        page.MaxClip.SelectedIndex = GenerationSizeViewModel.CustomIndex;
+        page.MaxClip.CustomSeconds = "4";   // the profile's about 5 s becomes about 4 s
+
+        Assert.Equal("about 60 shots → 60 stills, 60 clips", page.ShotEstimate);
+    }
 }
