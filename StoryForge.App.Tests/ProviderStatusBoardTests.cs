@@ -98,5 +98,10 @@ public sealed class ProviderStatusBoardTests
         public Task EditSegmentAsync(Guid projectId, string segmentId, string title, string narration, CancellationToken cancellationToken = default) => _inner.EditSegmentAsync(projectId, segmentId, title, narration, cancellationToken);
         public Task SelectSegmentVersionAsync(Guid projectId, PipelineStage stage, string segmentId, int version, CancellationToken cancellationToken = default) => _inner.SelectSegmentVersionAsync(projectId, stage, segmentId, version, cancellationToken);
         public Task<VoiceView> GetVoiceAsync(Guid projectId, CancellationToken cancellationToken = default) => _inner.GetVoiceAsync(projectId, cancellationToken);
+        public Task<StoryboardView> GetStoryboardAsync(Guid projectId, CancellationToken cancellationToken = default) => _inner.GetStoryboardAsync(projectId, cancellationToken);
+        public Task EditShotAsync(Guid projectId, string shotKey, ShotChange change, CancellationToken cancellationToken = default) => _inner.EditShotAsync(projectId, shotKey, change, cancellationToken);
+        public Task MoveCutAsync(Guid projectId, string shotKey, ShotEdge edge, int words, CancellationToken cancellationToken = default) => _inner.MoveCutAsync(projectId, shotKey, edge, words, cancellationToken);
+        public Task SplitShotAsync(Guid projectId, string shotKey, int atWord, CancellationToken cancellationToken = default) => _inner.SplitShotAsync(projectId, shotKey, atWord, cancellationToken);
+        public Task MergeShotAsync(Guid projectId, string shotKey, CancellationToken cancellationToken = default) => _inner.MergeShotAsync(projectId, shotKey, cancellationToken);
     }
 }

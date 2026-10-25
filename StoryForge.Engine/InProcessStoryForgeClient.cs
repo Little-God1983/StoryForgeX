@@ -121,6 +121,22 @@ internal sealed class InProcessStoryForgeClient(
     public Task<VoiceView> GetVoiceAsync(Guid projectId, CancellationToken cancellationToken = default) =>
         voice.GetAsync(projectId, cancellationToken);
 
+    // The storyboard arrives with #8; these are filled in as it is built.
+    public Task<StoryboardView> GetStoryboardAsync(Guid projectId, CancellationToken cancellationToken = default) =>
+        throw new NotImplementedException();
+
+    public Task EditShotAsync(Guid projectId, string shotKey, ShotChange change, CancellationToken cancellationToken = default) =>
+        throw new NotImplementedException();
+
+    public Task MoveCutAsync(Guid projectId, string shotKey, ShotEdge edge, int words, CancellationToken cancellationToken = default) =>
+        throw new NotImplementedException();
+
+    public Task SplitShotAsync(Guid projectId, string shotKey, int atWord, CancellationToken cancellationToken = default) =>
+        throw new NotImplementedException();
+
+    public Task MergeShotAsync(Guid projectId, string shotKey, CancellationToken cancellationToken = default) =>
+        throw new NotImplementedException();
+
     internal static string SecretName(SecretKey key) => key switch
     {
         SecretKey.LmStudioApiToken => "lm-studio-api-token",

@@ -172,6 +172,7 @@ internal sealed class ProjectStore(IDbContextFactory<StoryForgeDbContext> contex
         Require(s.Stills.Size.Width >= 1 && s.Stills.Size.Height >= 1, "The still image size must be at least 1 × 1.");
         Require(s.Clips.Size.Width >= 1 && s.Clips.Size.Height >= 1, "The video clip size must be at least 1 × 1.");
         Require(s.Clips.MaxClipSeconds >= 1, "The max clip length must be at least 1 second.");
+        Require(s.Pacing?.Problem(s.Clips.MaxClipSeconds) is null, s.Pacing?.Problem(s.Clips.MaxClipSeconds) ?? "");
         // Stills and clips are generated in the video's shape; a 16:9 still in a 9:16 video is a mistake.
         Require(s.Stills.Size.Aspect == s.Output.Aspect && HasShape(s.Stills.Size, s.Output.Aspect),
             $"A {s.Stills.Size.Width} × {s.Stills.Size.Height} still does not fit a {s.Output.Aspect} video.");

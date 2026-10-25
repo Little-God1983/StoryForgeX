@@ -521,6 +521,46 @@ internal sealed class FakeStoryForgeClient : IStoryForgeClient
         }
     }
 
+    /// <summary>The storyboard per project; a project without one has a storyboard not started.</summary>
+    public Dictionary<Guid, StoryboardView> Storyboards { get; } = [];
+
+    /// <summary>What was asked of shots: the action and the shot, e.g. ("move End +1", "S01/a").</summary>
+    public List<(string Action, string ShotKey)> ShotActions { get; } = [];
+
+    public List<(string ShotKey, ShotChange Change)> ShotChanges { get; } = [];
+
+    public Task<StoryboardView> GetStoryboardAsync(Guid projectId, CancellationToken cancellationToken = default) =>
+        Task.FromResult(Storyboards.GetValueOrDefault(projectId)
+            ?? new StoryboardView(projectId, StageState.NotStarted, null, [], [], [], new Dictionary<string, IReadOnlyList<SpokenWord>>(), Pacing.Default, 20));
+
+    public Task EditShotAsync(Guid projectId, string shotKey, ShotChange change, CancellationToken cancellationToken = default)
+    {
+        ThrowIfFailing();
+        ShotChanges.Add((shotKey, change));
+        return Task.CompletedTask;
+    }
+
+    public Task MoveCutAsync(Guid projectId, string shotKey, ShotEdge edge, int words, CancellationToken cancellationToken = default)
+    {
+        ThrowIfFailing();
+        ShotActions.Add(($"move {edge} {words:+0;-0}", shotKey));
+        return Task.CompletedTask;
+    }
+
+    public Task SplitShotAsync(Guid projectId, string shotKey, int atWord, CancellationToken cancellationToken = default)
+    {
+        ThrowIfFailing();
+        ShotActions.Add(($"split at {atWord}", shotKey));
+        return Task.CompletedTask;
+    }
+
+    public Task MergeShotAsync(Guid projectId, string shotKey, CancellationToken cancellationToken = default)
+    {
+        ThrowIfFailing();
+        ShotActions.Add(("merge", shotKey));
+        return Task.CompletedTask;
+    }
+
     private void ThrowIfFailing()
     {
         if (StageFailure is { } failure)

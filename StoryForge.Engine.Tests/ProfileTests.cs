@@ -313,4 +313,62 @@ public sealed class ProfileTests : IDisposable
 
         Assert.Empty(await client.GetWorkflowTemplatesAsync());
     }
+
+    [Theory]
+    [InlineData(ProfileKind.Storyboard, true)]
+    [InlineData(ProfileKind.Script, false)]
+    [InlineData(ProfileKind.Video, false)]
+    public async Task Only_storyboard_profiles_start_with_a_pacing(ProfileKind kind, bool hasPacing)
+    {
+        var client = await _engine.StartClientAsync();
+
+        var created = await client.CreateProfileAsync(kind, "New");
+
+        Assert.Equal(hasPacing ? new Pacing(3, 5, 8) : null, (await client.GetProfileVersionAsync(created.Id)).Content.Pacing);
+    }
+
+    [Fact]
+    public async Task A_pacing_survives_a_restart()
+    {
+        var first = await _engine.StartClientAsync();
+        var created = await first.CreateProfileAsync(ProfileKind.Storyboard, "Quick cuts");
+        var v1 = await first.GetProfileVersionAsync(created.Id);
+        await first.SaveProfileVersionAsync(created.Id, v1.Content with { Pacing = new Pacing(2, 4, 6) });
+
+        var second = await _engine.StartClientAsync();
+
+        Assert.Equal(new Pacing(2, 4, 6), (await second.GetProfileVersionAsync(created.Id)).Content.Pacing);
+    }
+
+    [Fact]
+    public async Task A_version_saved_before_pacing_reads_without_one()
+    {
+        var client = await _engine.StartClientAsync();
+        var created = await client.CreateProfileAsync(ProfileKind.Storyboard, "Shot planner");
+        await using (var connection = new SqliteConnection($"Data Source={Path.Combine(_engine.DataDirectory, "storyforge.db")}"))
+        {
+            await connection.OpenAsync();
+            var update = connection.CreateCommand();
+            update.CommandText = """UPDATE ProfileVersions SET Json = '{"Instructions":"Cut it."}'""";
+            await update.ExecuteNonQueryAsync();
+        }
+
+        Assert.Null((await client.GetProfileVersionAsync(created.Id)).Content.Pacing);
+    }
+
+    [Theory]
+    [InlineData(1, 5, 8)]
+    [InlineData(5, 4, 8)]
+    [InlineData(3, 9, 8)]
+    public async Task An_impossible_pacing_is_rejected(int min, int typical, int max)
+    {
+        var client = await _engine.StartClientAsync();
+        var created = await client.CreateProfileAsync(ProfileKind.Storyboard, "Shot planner");
+        var v1 = await client.GetProfileVersionAsync(created.Id);
+
+        await Assert.ThrowsAsync<ArgumentException>(() =>
+            client.SaveProfileVersionAsync(created.Id, v1.Content with { Pacing = new Pacing(min, typical, max) }));
+
+        Assert.Equal(1, (await client.GetProfilesAsync()).Single().LatestVersion);
+    }
 }
