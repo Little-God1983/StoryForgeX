@@ -259,8 +259,8 @@ internal sealed class ReferencesStage(
             {
                 Report(context, ActivityKind.Check, $"{reference.Name}: Claude does not see it in {picture.Id}; made from it because you chose it");
             }
-            // What Claude saw in a picture it does not take for this reference is not its look.
-            var looked = reference.Look.Length > 0 || !verdict.Usable ? reference : reference with { Look = verdict.Look };
+            // What Claude saw, even in a picture it did not know: the image is made from it.
+            var looked = reference.Look.Length > 0 ? reference : reference with { Look = verdict.Look };
             var made = verdict.Complete || !verdict.Usable ? ImageMaking.FromPicture : ImageMaking.PartlyMadeUp;
             // Only the picture Claude looked at: another one on the page could show anyone.
             PoolImage[] sources = [picture];

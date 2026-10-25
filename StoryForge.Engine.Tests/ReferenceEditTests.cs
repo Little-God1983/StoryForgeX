@@ -177,7 +177,7 @@ public sealed partial class ReferencesRunTests
         var (client, projectId) = await ImagedAsync();
         var own = Path.Combine(_engine.DataDirectory, "coin fan art.png");
         await File.WriteAllBytesAsync(own, Png(900, 900));
-        _check.ByName["Soul coin"] = new PictureVerdict(false, false, "", "A parchment map of the Sword Coast.");
+        _check.ByName["Soul coin"] = new PictureVerdict(false, false, "", "A gold coin with a horned skull.");
 
         await client.AddOwnPictureAsync(projectId, "R02", own);
         var view = await ReferencesAsync(client, projectId, v => v.References[1].Images[0] is { Version: 2, State: not StageState.Running });
@@ -185,7 +185,7 @@ public sealed partial class ReferencesRunTests
         var picture = view.Pool.Single(p => p.Image.Origin == PoolOrigin.Own).Image;
         Assert.Equal(ImageMaking.FromPicture, view.References[1].Images[0].Image.Made);
         Assert.Equal([picture.Id], view.References[1].Images[0].Image.Sources);
-        Assert.Equal("", view.References[1].Reference.Look);   // what Claude saw is not the soul coin
+        Assert.Equal("A gold coin with a horned skull.", view.References[1].Reference.Look);   // what the image was made from shows
     }
 
     [Fact]
@@ -827,7 +827,9 @@ public sealed partial class ReferencesRunTests
         await client.ChangeReferencesAsync(projectId, new ReferenceChange(ReferenceChangeKind.Merge, ReferenceId: "R02", OtherId: "R01"));
         var view = await ReferencesAsync(client, projectId, v => v.References[0].Images[0] is { Version: 2, State: not StageState.Running });
 
+        var coin = view.Pool.Single(p => p.Image.Caption == "Coin.png").Image.Id;
         Assert.NotEqual(ImageMaking.NoPicture, view.References[0].Images[0].Image.Made);
+        Assert.Equal([coin], view.References[0].Images[0].Image.Sources);
     }
 
     [Fact]
@@ -838,7 +840,57 @@ public sealed partial class ReferencesRunTests
 
         await client.ChangeReferencesAsync(projectId, new ReferenceChange(ReferenceChangeKind.Merge, ReferenceId: "R02", OtherId: "R01"));
 
-        Assert.Equal(1, (await client.GetReferencesAsync(projectId)).References[0].Images[0].Version);
+        // A remake would be queued, and the image running, by now.
+        var image = (await client.GetReferencesAsync(projectId)).References[0].Images[0];
+        Assert.Equal((1, StageState.NeedsReview), (image.Version, image.State));
         Assert.Equal(runs, _comfy.Workflows.Count);
+    }
+
+    [Fact]
+    public async Task Merging_makes_only_the_images_that_show_nothing_again()
+    {
+        var (client, projectId) = await ImagedAsync();
+        _check.Decide = request => request.Name == "Karlach" ? new PictureVerdict(false, false, "", "") : null;
+        await client.AddReferenceImageAsync(projectId, "R01");
+        await ReferencesAsync(client, projectId, v => v.References[0].Images is [_, { Version: > 0, State: not StageState.Running }]);
+        _check.Decide = null;
+
+        await client.ChangeReferencesAsync(projectId, new ReferenceChange(ReferenceChangeKind.Merge, ReferenceId: "R02", OtherId: "R01"));
+        var view = await ReferencesAsync(client, projectId, v => v.References[0].Images is [_, { Version: 2, State: not StageState.Running }]);
+
+        Assert.Equal(1, view.References[0].Images[0].Version);
+        Assert.NotEqual(ImageMaking.NoPicture, view.References[0].Images[1].Image.Made);
+    }
+
+    [Fact]
+    public async Task Merging_in_nothing_to_make_from_makes_nothing_again()
+    {
+        _pictures.ByName["Karlach"] = [];
+        _pictures.ByName["Soul coin"] = [];
+        var (client, projectId) = await ImagedAsync();
+        var runs = _comfy.Workflows.Count;
+
+        await client.ChangeReferencesAsync(projectId, new ReferenceChange(ReferenceChangeKind.Merge, ReferenceId: "R02", OtherId: "R01"));
+
+        var image = (await client.GetReferencesAsync(projectId)).References[0].Images[0];
+        Assert.Equal((1, StageState.NeedsReview), (image.Version, image.State));
+        Assert.Equal(runs, _comfy.Workflows.Count);
+    }
+
+    [Fact]
+    public async Task Merging_in_a_reference_made_from_its_look_makes_the_one_with_nothing_from_that_look()
+    {
+        _pictures.ByName["Karlach"] = [];
+        _pictures.ByName["Soul coin"] = [];
+        var (client, projectId) = await ImagedAsync();
+        await client.ChangeReferencesAsync(projectId, new ReferenceChange(ReferenceChangeKind.EditLook, ReferenceId: "R02", Look: "A tarnished iron coin."));
+        await client.MakeFromDescriptionAsync(projectId, "R02");
+        await ReferencesAsync(client, projectId, v => v.References[1].Images[0] is { Version: 2, State: not StageState.Running });
+
+        await client.ChangeReferencesAsync(projectId, new ReferenceChange(ReferenceChangeKind.Merge, ReferenceId: "R02", OtherId: "R01"));
+        var view = await ReferencesAsync(client, projectId, v => v.References[0].Images[0] is { Version: 2, State: not StageState.Running });
+
+        Assert.True(view.References[0].Reference.DescriptionOnly);
+        Assert.Equal(ImageMaking.FromDescription, view.References[0].Images[0].Image.Made);
     }
 }

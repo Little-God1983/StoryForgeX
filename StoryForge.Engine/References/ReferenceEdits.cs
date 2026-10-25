@@ -80,6 +80,7 @@ internal sealed class ReferenceEdits(
         var shots = await cells.CurrentShotsAsync(projectId, cancellationToken);
         List<string> removed = [];
         string? remake = null;
+        string? fill = null;
         string? thrownOut = null;
         switch (change.Change)
         {
@@ -137,6 +138,7 @@ internal sealed class ReferenceEdits(
                 {
                     throw new ArgumentException($"{from.Name} cannot be merged with itself.");
                 }
+                bool Usable(string id) => sheet.Pool.Any(p => p.Id == id && !p.TooSmall);
                 var merged = into with
                 {
                     Shots = [.. into.Shots.Concat(from.Shots).Distinct()],
@@ -144,13 +146,15 @@ internal sealed class ReferenceEdits(
                     Chosen = [.. (into.Chosen ?? []).Concat(from.Chosen ?? []).Distinct()],
                     Look = into.Look.Length > 0 ? into.Look : from.Look,
                     KeyReason = into.KeyReason.Length > 0 ? into.KeyReason : from.KeyReason,
+                    // Made from its look alone, as the one merged in was, when there is still no picture to make it from.
+                    DescriptionOnly = into.DescriptionOnly || (from.DescriptionOnly && !into.Sources.Concat(from.Sources).Any(Usable)),
                 };
                 sheet = sheet with { References = [.. sheet.References.Where(r => r.Id != from.Id).Select(r => r.Id == into.Id ? merged : r)] };
                 removed.Add(from.Id);
-                // Its images stay; when none shows anything yet, they are made from the pictures it gets.
-                if (!(await cells.ReferenceImagesAsync(projectId, cancellationToken)).Any(i => i.ReferenceId == into.Id && i.Made != ImageMaking.NoPicture))
+                // Its images stay; those that show nothing are made again when the merge brought something to make them from.
+                if (from.Sources.Except(into.Sources).Any(Usable) || merged.DescriptionOnly != into.DescriptionOnly)
                 {
-                    remake = into.Id;
+                    fill = into.Id;
                 }
                 break;
             }
@@ -238,6 +242,10 @@ internal sealed class ReferenceEdits(
         if (remake is not null)
         {
             await MakeImagesOfAsync(projectId, remake, cancellationToken);
+        }
+        if (fill is not null)
+        {
+            await MakeImagesOfAsync(projectId, fill, cancellationToken, onlyEmpty: true);
         }
         if (removed.Count > 0)
         {
@@ -334,22 +342,25 @@ internal sealed class ReferenceEdits(
         await runner.MakeSegmentAsync(projectId, Stage, ReferenceImage.KeyOf(referenceId, next), cancellationToken);
     }
 
-    /// <summary>Once the images exist: every image of the reference made again, those never made made, or its first one made.</summary>
-    private async Task MakeImagesOfAsync(Guid projectId, string referenceId, CancellationToken cancellationToken)
+    /// <summary>
+    /// Once the images exist: every image of the reference made again (with <paramref name="onlyEmpty"/>,
+    /// those that show nothing), those never made made, or its first one made.
+    /// </summary>
+    private async Task MakeImagesOfAsync(Guid projectId, string referenceId, CancellationToken cancellationToken, bool onlyEmpty = false)
     {
         if ((await SheetAsync(projectId, cancellationToken)).Phase != ReferencePhase.Images)
         {
             return;
         }
         var images = await cells.ReferenceImagesAsync(projectId, cancellationToken);
-        var numbers = images.Where(i => i.ReferenceId == referenceId).Select(i => i.Number).ToList();
+        var own = images.Where(i => i.ReferenceId == referenceId).ToList();
         var unmade = (await cells.UnmadeKeysAsync(projectId, Stage, cancellationToken)).Where(k => k.StartsWith(referenceId + "/", StringComparison.Ordinal)).ToList();
-        if (numbers.Count == 0 && unmade.Count == 0)
+        if (own.Count == 0 && unmade.Count == 0)
         {
             await runner.MakeSegmentAsync(projectId, Stage, ReferenceImage.KeyOf(referenceId, 1), cancellationToken);
             return;
         }
-        foreach (var number in numbers)
+        foreach (var number in own.Where(i => !onlyEmpty || i.Made == ImageMaking.NoPicture).Select(i => i.Number))
         {
             await runner.RegenerateSegmentAsync(projectId, Stage, ReferenceImage.KeyOf(referenceId, number), cancellationToken);
         }
