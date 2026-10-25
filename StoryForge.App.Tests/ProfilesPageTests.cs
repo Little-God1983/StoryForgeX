@@ -1,3 +1,4 @@
+using StoryForge.App.ViewModels.Profiles;
 using StoryForge.App.ViewModels;
 using StoryForge.App.ViewModels.Pages;
 using StoryForge.Client;
@@ -679,5 +680,43 @@ public sealed class ProfilesPageTests
         main.SelectedNavItem = main.NavItems.Single(item => item.Title == "Profiles");
 
         Assert.Equal(before + 1, _client.TemplateReads);
+    }
+
+    [Fact]
+    public void A_storyboard_profile_shows_its_pacing_and_saves_a_changed_one()
+    {
+        var form = new ProfileFormViewModel(ProfileKind.Storyboard, ProfileContent.Empty with { Pacing = new Pacing(3, 5, 8) }, isReadOnly: false);
+
+        Assert.True(form.IsStoryboard);
+        Assert.Equal(("3", "5", "8"), (form.PacingMin, form.PacingTypical, form.PacingMax));
+        (form.PacingMin, form.PacingTypical, form.PacingMax) = ("2", "4", "6");
+
+        Assert.False(form.HasAnyErrors);
+        Assert.Equal(new Pacing(2, 4, 6), form.ToContent().Pacing);
+    }
+
+    [Theory]
+    [InlineData("1", "4", "6")]
+    [InlineData("5", "4", "6")]
+    [InlineData("3", "9", "8")]
+    [InlineData("3", "", "8")]
+    public void An_impossible_pacing_blocks_saving(string min, string typical, string max)
+    {
+        var form = new ProfileFormViewModel(ProfileKind.Storyboard, ProfileContent.Empty with { Pacing = Pacing.Default }, isReadOnly: false);
+
+        (form.PacingMin, form.PacingTypical, form.PacingMax) = (min, typical, max);
+
+        Assert.True(form.HasAnyErrors);
+        Assert.NotNull(form.PacingProblem);
+    }
+
+    [Fact]
+    public void Other_profiles_keep_no_pacing()
+    {
+        var form = new ProfileFormViewModel(ProfileKind.Script, ProfileContent.Empty, isReadOnly: false);
+
+        Assert.False(form.IsStoryboard);
+        Assert.False(form.HasAnyErrors);
+        Assert.Null(form.ToContent().Pacing);
     }
 }

@@ -211,3 +211,87 @@ public sealed partial class MaxClipViewModel : ObservableValidator
             ? ValidationResult.Success
             : NumberText.Check(text, 1, 600, optional: false, "1 to 600 seconds.");
 }
+
+/// <summary>
+/// "Pacing": how long shots should be. The storyboard profile's, or a custom one for this
+/// project; only a custom one goes into the setup, so the project keeps following its profile.
+/// </summary>
+public sealed partial class PacingViewModel : ObservableObject
+{
+    private Pacing _default = Pacing.Default;
+    private bool _defaultFromProfile;
+
+    public PacingViewModel() => Options = [new(DefaultLabel()), new("Custom…")];
+
+    public IReadOnlyList<OptionItem> Options { get; }
+
+    private string DefaultLabel() => $"{_default} · {(_defaultFromProfile ? "profile" : "built-in")} default";
+
+    private int _selectedIndex;
+
+    /// <summary>As <see cref="GenerationSizeViewModel.SelectedIndex"/>: -1 from a rebuilt dropdown is ignored.</summary>
+    public int SelectedIndex
+    {
+        get => _selectedIndex;
+        set
+        {
+            if (value is GenerationSizeViewModel.ProfileDefaultIndex or GenerationSizeViewModel.CustomIndex
+                && SetProperty(ref _selectedIndex, value))
+            {
+                if (IsCustom && CustomMin.Length + CustomTypical.Length + CustomMax.Length == 0)
+                {
+                    (CustomMin, CustomTypical, CustomMax) = (NumberText.Format(_default.MinSeconds), NumberText.Format(_default.TypicalSeconds), NumberText.Format(_default.MaxSeconds));
+                }
+                OnPropertyChanged(nameof(IsCustom));
+                OnPropertyChanged(nameof(Override));
+                OnPropertyChanged(nameof(Effective));
+            }
+        }
+    }
+
+    public bool IsCustom => SelectedIndex == GenerationSizeViewModel.CustomIndex;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(Override), nameof(Effective))]
+    private string _customMin = "";
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(Override), nameof(Effective))]
+    private string _customTypical = "";
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(Override), nameof(Effective))]
+    private string _customMax = "";
+
+    private Pacing? Custom =>
+        NumberText.Parse(CustomMin) is { } min && NumberText.Parse(CustomTypical) is { } typical && NumberText.Parse(CustomMax) is { } max
+            ? new Pacing(min, typical, max)
+            : null;
+
+    /// <summary>What goes into the setup: the custom pacing, or null to keep the profile's.</summary>
+    public Pacing? Override => IsCustom ? Custom : null;
+
+    /// <summary>The pacing the storyboard will use; null while a custom one is not a number.</summary>
+    public Pacing? Effective => IsCustom ? Custom : _default;
+
+    /// <summary>Why the custom pacing cannot be used; null when it can, or when the profile's is used.</summary>
+    public string? Problem(int? maxClipSeconds) =>
+        !IsCustom ? null : Custom is { } pacing ? pacing.Problem(maxClipSeconds) : "Every length is a whole number of seconds.";
+
+    /// <summary>
+    /// Takes the profile's pacing. A custom one is dropped, unless <paramref name="keepCustom"/>
+    /// (a new version of the same profile).
+    /// </summary>
+    public void UseDefault(ProfileContent? profile, bool keepCustom = false)
+    {
+        _defaultFromProfile = profile?.Pacing is not null;
+        _default = profile?.Pacing ?? Pacing.Default;
+        if (!keepCustom)
+        {
+            (CustomMin, CustomTypical, CustomMax) = ("", "", "");
+            SelectedIndex = GenerationSizeViewModel.ProfileDefaultIndex;
+        }
+        Options[GenerationSizeViewModel.ProfileDefaultIndex].Label = DefaultLabel();
+        OnPropertyChanged(nameof(Effective));
+    }
+}

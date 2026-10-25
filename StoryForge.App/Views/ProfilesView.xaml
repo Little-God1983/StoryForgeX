@@ -186,12 +186,32 @@
                 <TextBox Text="{Binding Shown.Steps, UpdateSourceTrigger=PropertyChanged}"
                          IsReadOnly="{Binding Shown.IsReadOnly}" AutomationProperties.Name="Steps" />
               </StackPanel>
+              <StackPanel Style="{StaticResource FieldBlockStyle}" Margin="0,0,12,16" Visibility="{Binding Shown.IsStoryboard, Converter={StaticResource Visible}}">
+                <TextBlock Text="Shortest shot (s)" Style="{StaticResource FieldLabelStyle}" />
+                <TextBox Text="{Binding Shown.PacingMin, UpdateSourceTrigger=PropertyChanged}"
+                         IsReadOnly="{Binding Shown.IsReadOnly}" AutomationProperties.Name="Shortest shot in seconds" />
+              </StackPanel>
+              <StackPanel Style="{StaticResource FieldBlockStyle}" Margin="0,0,12,16" Visibility="{Binding Shown.IsStoryboard, Converter={StaticResource Visible}}">
+                <TextBlock Text="Typical shot (s)" Style="{StaticResource FieldLabelStyle}" />
+                <TextBox Text="{Binding Shown.PacingTypical, UpdateSourceTrigger=PropertyChanged}"
+                         IsReadOnly="{Binding Shown.IsReadOnly}" AutomationProperties.Name="Typical shot in seconds" />
+              </StackPanel>
+              <StackPanel Style="{StaticResource FieldBlockStyle}" Margin="0,0,12,16" Visibility="{Binding Shown.IsStoryboard, Converter={StaticResource Visible}}">
+                <TextBlock Text="Longest shot (s)" Style="{StaticResource FieldLabelStyle}" />
+                <TextBox Text="{Binding Shown.PacingMax, UpdateSourceTrigger=PropertyChanged}"
+                         IsReadOnly="{Binding Shown.IsReadOnly}" AutomationProperties.Name="Longest shot in seconds" />
+              </StackPanel>
               <StackPanel Style="{StaticResource FieldBlockStyle}" Margin="0,0,12,16" Visibility="{Binding Shown.IsVideo, Converter={StaticResource Visible}}">
                 <TextBlock Text="Max clip length (s)" Style="{StaticResource FieldLabelStyle}" />
                 <TextBox Text="{Binding Shown.MaxClipSeconds, UpdateSourceTrigger=PropertyChanged}"
                          IsReadOnly="{Binding Shown.IsReadOnly}" AutomationProperties.Name="Max clip length in seconds" />
               </StackPanel>
             </UniformGrid>
+            <TextBlock Text="{Binding Shown.PacingProblem}" FontSize="13" Foreground="{StaticResource ErrorTextBrush}" TextWrapping="Wrap" Margin="0,0,0,12"
+                       Visibility="{Binding Shown.PacingProblem, Converter={views:NullToCollapsedConverter}}" />
+            <TextBlock FontSize="12" Foreground="{StaticResource TextMutedBrush}" TextWrapping="Wrap" Margin="0,0,0,12"
+                       Visibility="{Binding Shown.IsStoryboard, Converter={StaticResource Visible}}"
+                       Text="The pacing: within it the storyboard cuts from the story. Whatever it says, no shot is shorter than 2 s or longer than the video model makes. Empty: 3–8 s, about 5 s." />
           </StackPanel>
         </ScrollViewer>
 
