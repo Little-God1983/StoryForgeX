@@ -164,6 +164,11 @@ internal sealed class ReferenceEdits(
             {
                 var reference = Find(sheet, change.ReferenceId);
                 var picture = FindPicture(sheet, change.PoolImageId);
+                if (picture.TooSmall)
+                {
+                    throw new ArgumentException(
+                        $"{picture.Id} is {picture.Width} × {picture.Height} px: an image is made only from a picture of at least {PoolImage.MinUsableSide} px on each side.");
+                }
                 // First, so it is what the image is made from, and made from at once once there are images.
                 sheet = Replace(sheet, reference with
                 {
@@ -324,7 +329,7 @@ internal sealed class ReferenceEdits(
         await runner.MakeSegmentAsync(projectId, Stage, ReferenceImage.KeyOf(referenceId, next), cancellationToken);
     }
 
-    /// <summary>Once the images exist: every image of the reference made again, or its first one made.</summary>
+    /// <summary>Once the images exist: every image of the reference made again, those never made made, or its first one made.</summary>
     private async Task MakeImagesOfAsync(Guid projectId, string referenceId, CancellationToken cancellationToken)
     {
         if ((await SheetAsync(projectId, cancellationToken)).Phase != ReferencePhase.Images)
@@ -333,7 +338,8 @@ internal sealed class ReferenceEdits(
         }
         var images = await cells.ReferenceImagesAsync(projectId, cancellationToken);
         var numbers = images.Where(i => i.ReferenceId == referenceId).Select(i => i.Number).ToList();
-        if (numbers.Count == 0)
+        var unmade = (await cells.UnmadeKeysAsync(projectId, Stage, cancellationToken)).Where(k => k.StartsWith(referenceId + "/", StringComparison.Ordinal)).ToList();
+        if (numbers.Count == 0 && unmade.Count == 0)
         {
             await runner.MakeSegmentAsync(projectId, Stage, ReferenceImage.KeyOf(referenceId, 1), cancellationToken);
             return;
@@ -341,6 +347,10 @@ internal sealed class ReferenceEdits(
         foreach (var number in numbers)
         {
             await runner.RegenerateSegmentAsync(projectId, Stage, ReferenceImage.KeyOf(referenceId, number), cancellationToken);
+        }
+        foreach (var key in unmade)
+        {
+            await runner.MakeSegmentAsync(projectId, Stage, key, cancellationToken);
         }
     }
 

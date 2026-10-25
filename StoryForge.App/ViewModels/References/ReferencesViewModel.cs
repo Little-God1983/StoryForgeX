@@ -21,11 +21,14 @@ public sealed partial class ReferencesViewModel(IStoryForgeClient client, Guid p
     public Guid ProjectId { get; } = projectId;
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(IsRunning), nameof(IsReview), nameof(IsApproved), nameof(IsFailed), nameof(ShowsListBar), nameof(ShowsGateBar), nameof(ShowsTextOnlyBar), nameof(CanPropose))]
+    [NotifyPropertyChangedFor(nameof(IsRunning), nameof(IsMaking), nameof(IsReview), nameof(IsApproved), nameof(IsFailed), nameof(ShowsListBar), nameof(ShowsGateBar), nameof(ShowsTextOnlyBar), nameof(CanPropose))]
     [NotifyCanExecuteChangedFor(nameof(ProposeCommand), nameof(MakeImagesCommand), nameof(CancelCommand), nameof(RetryCommand), nameof(ApproveRemainingCommand), nameof(ApproveTextOnlyCommand), nameof(AddReferenceCommand))]
     private StageState _state;
 
     public bool IsRunning => State == StageState.Running;
+
+    /// <summary>The stage runs, or one of its images is made again: the bar shows it, with Cancel.</summary>
+    public bool IsMaking => IsRunning || !ImagesIdle;
 
     public bool IsReview => State is StageState.NeedsReview or StageState.Stale;
 
@@ -226,11 +229,11 @@ public sealed partial class ReferencesViewModel(IStoryForgeClient client, Guid p
     /// <summary>What the bars offer depends on the list and on whether an action is on its way.</summary>
     private void NotifyActions()
     {
-        foreach (var name in new[] { nameof(CanPropose), nameof(ShowsListBar), nameof(ShowsGateBar), nameof(ShowsTextOnlyBar), nameof(ListBarTitle), nameof(ListBarText), nameof(TextOnlyBarText) })
+        foreach (var name in new[] { nameof(IsMaking), nameof(CanPropose), nameof(ShowsListBar), nameof(ShowsGateBar), nameof(ShowsTextOnlyBar), nameof(ListBarTitle), nameof(ListBarText), nameof(TextOnlyBarText) })
         {
             OnPropertyChanged(name);
         }
-        foreach (var command in new IRelayCommand[] { ProposeCommand, MakeImagesCommand, AddReferenceCommand, MakeReferenceCommand, ApproveRemainingCommand, RetryCommand, ApproveTextOnlyCommand })
+        foreach (var command in new IRelayCommand[] { CancelCommand, ProposeCommand, MakeImagesCommand, AddReferenceCommand, MakeReferenceCommand, ApproveRemainingCommand, RetryCommand, ApproveTextOnlyCommand })
         {
             command.NotifyCanExecuteChanged();
         }
@@ -256,7 +259,10 @@ public sealed partial class ReferencesViewModel(IStoryForgeClient client, Guid p
     [RelayCommand(CanExecute = nameof(CanMakeImages))]
     private Task MakeImagesAsync() => ActAsync("make the images", () => client.MakeReferenceImagesAsync(ProjectId));
 
-    private bool CanAddReference() => !IsRunning && ImagesIdle && !_acting && NewName.Trim().Length > 0;
+    // Only once there is a list: before it is proposed there is nothing to add to.
+    private bool HasList => _view is { Version: > 0 };
+
+    private bool CanAddReference() => HasList && !IsRunning && ImagesIdle && !_acting && NewName.Trim().Length > 0;
 
     [RelayCommand(CanExecute = nameof(CanAddReference))]
     private async Task AddReferenceAsync()
@@ -268,7 +274,7 @@ public sealed partial class ReferencesViewModel(IStoryForgeClient client, Guid p
         }
     }
 
-    private bool CanMakeReference(string name) => !IsRunning && ImagesIdle && !_acting;
+    private bool CanMakeReference(string name) => HasList && !IsRunning && ImagesIdle && !_acting;
 
     [RelayCommand(CanExecute = nameof(CanMakeReference))]
     private Task MakeReferenceAsync(string name) =>
@@ -279,8 +285,16 @@ public sealed partial class ReferencesViewModel(IStoryForgeClient client, Guid p
     [RelayCommand(CanExecute = nameof(CanApproveRemaining))]
     private Task ApproveRemainingAsync() => ActAsync("approve the references", () => client.ApproveSegmentsAsync(ProjectId, PipelineStage.References));
 
-    [RelayCommand(CanExecute = nameof(IsRunning))]
-    private Task CancelAsync() => ActAsync("cancel the references", () => client.CancelAsync(ProjectId, PipelineStage.References));
+    [RelayCommand(CanExecute = nameof(IsMaking))]
+    private Task CancelAsync() => IsRunning
+        ? ActAsync("cancel the references", () => client.CancelAsync(ProjectId, PipelineStage.References))
+        : ActAsync("cancel the image", async () =>
+        {
+            foreach (var key in Cards.SelectMany(c => c.View.Images).Where(i => i.State == StageState.Running).Select(i => i.Key).ToList())
+            {
+                await client.CancelSegmentAsync(ProjectId, PipelineStage.References, key);
+            }
+        });
 
     [RelayCommand(CanExecute = nameof(CanPropose))]
     private Task ProposeAsync() => ActAsync("propose the references", () => client.RegenerateAsync(ProjectId, PipelineStage.References));

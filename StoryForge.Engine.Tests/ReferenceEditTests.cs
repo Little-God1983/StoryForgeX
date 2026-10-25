@@ -717,4 +717,45 @@ public sealed partial class ReferencesRunTests
         Assert.Contains("512", refused.Message);
         Assert.DoesNotContain((await client.GetReferencesAsync(projectId)).Pool, p => p.Image.Origin == PoolOrigin.Own);
     }
+
+    [Fact]
+    public async Task A_new_picture_makes_the_images_never_made_too()
+    {
+        var (client, projectId) = await ImagedAsync();
+        _comfy.Failure = "ComfyUI is not reachable.";
+        await client.AddReferenceImageAsync(projectId, "R01");
+        await ReferencesAsync(client, projectId, v => v.References[0].Images is [_, { State: StageState.Failed }]);
+        _comfy.Failure = null;
+        var own = Path.Combine(_engine.DataDirectory, "karlach artwork.png");
+        await File.WriteAllBytesAsync(own, Png(900, 900));
+
+        await client.AddOwnPictureAsync(projectId, "R01", own);
+        var view = await ScriptRunTests.WaitForAsync(() => client.GetReferencesAsync(projectId), v => v.References[0].Images.All(i => i is { Version: > 0, State: not StageState.Running }));
+
+        Assert.Equal(["R01/1", "R01/2"], view.References[0].Images.Select(i => i.Key));
+    }
+
+    [Fact]
+    public async Task A_picture_too_small_to_make_from_is_not_used()
+    {
+        _pictures.ByName["Karlach"] = [FakePictures.Picture("Karlach.png"), FakePictures.Picture("Tiny.png", 200, 200, main: false)];
+        var (client, projectId) = await ListedAsync();
+        var tiny = (await client.GetReferencesAsync(projectId)).Pool.Single(p => p.Image.TooSmall).Image.Id;
+
+        await Assert.ThrowsAsync<ArgumentException>(() =>
+            client.ChangeReferencesAsync(projectId, new ReferenceChange(ReferenceChangeKind.UseSource, ReferenceId: "R02", PoolImageId: tiny)));
+    }
+
+    [Fact]
+    public async Task Approving_the_rest_while_an_image_was_never_made_says_to_make_the_images()
+    {
+        var (client, projectId) = await ImagedAsync();
+        _comfy.Failure = "ComfyUI is not reachable.";
+        await client.AddReferenceImageAsync(projectId, "R01");
+        await ReferencesAsync(client, projectId, v => v.References[0].Images is [_, { State: StageState.Failed }]);
+
+        var refused = await Assert.ThrowsAsync<InvalidOperationException>(() => client.ApproveSegmentsAsync(projectId, PipelineStage.References));
+
+        Assert.Equal("1 image was never made: make the images first.", refused.Message);
+    }
 }

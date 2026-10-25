@@ -263,7 +263,8 @@ public sealed partial class ReferencesViewModel
 
     private bool PictureIdle() => SelectedPicture is not null && !IsRunning && ImagesIdle && !_acting;
 
-    private bool CanUsePicture() => PictureIdle() && UseFor is not null;
+    // One too small to make an image from would be passed over.
+    private bool CanUsePicture() => PictureIdle() && UseFor is not null && !SelectedPicture!.TooSmall;
 
     [RelayCommand(CanExecute = nameof(CanUsePicture))]
     private Task UsePictureAsync()

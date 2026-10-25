@@ -92,7 +92,7 @@
   <DockPanel>
     <!-- Where the references stand. -->
     <StackPanel DockPanel.Dock="Top">
-      <Border Style="{StaticResource BarStyle}" Background="#172536" BorderBrush="#2B4A6B" Visibility="{Binding IsRunning, Converter={StaticResource Visible}}">
+      <Border Style="{StaticResource BarStyle}" Background="#172536" BorderBrush="#2B4A6B" Visibility="{Binding IsMaking, Converter={StaticResource Visible}}">
         <DockPanel>
           <Button DockPanel.Dock="Right" Content="Cancel" Style="{StaticResource SecondaryButtonStyle}" Command="{Binding CancelCommand}" AutomationProperties.Name="Cancel the references" />
           <TextBlock Text="Making the references" FontSize="14" FontWeight="SemiBold" Foreground="#6FB3EE" VerticalAlignment="Center" Margin="0,0,14,0" />

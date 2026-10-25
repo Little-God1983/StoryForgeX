@@ -170,19 +170,22 @@ public sealed class ReferencesScreenTests
     {
         var (_, screen, _) = await OpenAsync(id => Images(id));
 
+        screen.Pool[1].SelectCommand.Execute(null);
+        screen.UseFor = screen.UseForChoices.Single(c => c.Id == "R03");
+        await screen.UsePictureCommand.ExecuteAsync(null);
         screen.Pool[2].SelectCommand.Execute(null);
+        screen.UseFor = screen.UseForChoices.Single(c => c.Id == "R03");
 
         Assert.True(screen.ShowsPicture);
         Assert.True(screen.SelectedPicture!.TooSmall);
         Assert.Equal("200 × 200 · bg3.wiki", screen.SelectedPicture.Meta);
-        screen.UseFor = screen.UseForChoices.Single(c => c.Id == "R03");
-        await screen.UsePictureCommand.ExecuteAsync(null);
+        Assert.False(screen.UsePictureCommand.CanExecute(null));   // too small to make an image from
         screen.OpenPageCommand.Execute(null);
         await screen.DiscardPictureCommand.ExecuteAsync(null);
 
         Assert.Equal(
         [
-            new ReferenceChange(ReferenceChangeKind.UseSource, ReferenceId: "R03", PoolImageId: "P03"),
+            new ReferenceChange(ReferenceChangeKind.UseSource, ReferenceId: "R03", PoolImageId: "P02"),
             new ReferenceChange(ReferenceChangeKind.DiscardFromPool, PoolImageId: "P03"),
         ], _client.ReferenceChanges);
         Assert.Equal(["https://bg3.wiki/wiki/Karlach"], _opened);
@@ -496,5 +499,29 @@ public sealed class ReferencesScreenTests
         var picture = new PoolImageView(new PoolImage("P01", "https://static.wikia.nocookie.net/forgottenrealms/images/5/5e/Karlach_portrait.png/revision/latest?cb=20230801", "https://forgottenrealms.fandom.com/wiki/Karlach", "", 997, 1148, "pool/P01.png", PoolOrigin.Found), null, []);
 
         Assert.Equal("Karlach portrait.png", new PoolPictureViewModel(picture, _ => { }).Caption);
+    }
+
+    [Fact]
+    public async Task One_image_being_made_shows_in_the_bar_and_can_be_cancelled()
+    {
+        var (_, screen, _) = await OpenAsync(id => Images(id) with
+        {
+            References = [.. Images(id).References.Select(r => r.Reference.Id == "R02" ? r with { Images = [Image("R02", ImageMaking.PartlyMadeUp, StageState.Running)] } : r)],
+        });
+
+        Assert.True(screen.IsMaking);
+        await screen.CancelCommand.ExecuteAsync(null);
+
+        Assert.Equal([("cancel", "R02/1")], _client.ShotActions);
+    }
+
+    [Fact]
+    public async Task Nothing_is_added_to_a_list_that_was_not_proposed_yet()
+    {
+        var (_, screen, _) = await OpenAsync(id => new ReferencesView(id, StageState.NotStarted, null, [], ReferencePhase.List, [], [], [], false, Labels, StoryboardApproved: true));
+
+        screen.NewName = "Karlach";
+
+        Assert.False(screen.AddReferenceCommand.CanExecute(null));
     }
 }

@@ -54,11 +54,21 @@ internal sealed class SegmentCells(
             }
             if (stage == PipelineStage.References)
             {
-                var nothing = 0;
+                // A run that stopped before them: making the images is the fix, not another picture.
+                var never = segments.Count(s => s.CurrentVersion is null);
+                if (never > 0)
+                {
+                    throw new InvalidOperationException($"{never} {(never == 1 ? "image was" : "images were")} never made: make the images first.");
+                }
+                var without = new HashSet<string>();
                 foreach (var segment in segments)
                 {
-                    nothing += await MadeAsync(db, segment, segment.CurrentVersion ?? 0, cancellationToken) ? 0 : 1;
+                    if (!await MadeAsync(db, segment, segment.CurrentVersion ?? 0, cancellationToken))
+                    {
+                        without.Add(References.ReferencesStage.Parse(segment.Key).ReferenceId);
+                    }
                 }
+                var nothing = without.Count;
                 if (nothing > 0)
                 {
                     throw new InvalidOperationException(
