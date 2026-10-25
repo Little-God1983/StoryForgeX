@@ -55,6 +55,9 @@ public sealed partial class ScriptMatrixViewModel
     /// <summary>The storyboard as last loaded: its words and cast, for the Board panel.</summary>
     private StoryboardView? _board;
 
+    /// <summary>Folding needs shots to fold away.</summary>
+    public bool ShowsFoldAll => HasShots;
+
     /// <summary>"Fold all" while any segment is open, else "Open all".</summary>
     public string FoldAllLabel => Rows.Any(r => r.IsOpen) ? "Fold all" : "Open all";
 
@@ -167,6 +170,7 @@ public sealed partial class ScriptMatrixViewModel
             ? ""
             : $"Pacing: shots of {board.Pacing} · {count} shots · shortest {Seconds(board.Shots.Min(s => s.Shot.Seconds))} s · longest {Seconds(board.Shots.Max(s => s.Shot.Seconds))} s · max clip {board.MaxClipSeconds} s";
         OnPropertyChanged(nameof(FoldAllLabel));
+        OnPropertyChanged(nameof(ShowsFoldAll));
         ApproveRemainingBoardCommand.NotifyCanExecuteChanged();
         RegenerateBoardCommand.NotifyCanExecuteChanged();
     }

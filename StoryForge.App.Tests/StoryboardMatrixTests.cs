@@ -87,6 +87,7 @@ public sealed class StoryboardMatrixTests
     {
         var (matrix, _) = await OpenAsync();
         var script = matrix.Script!;
+        Assert.True(script.ShowsFoldAll);
         Assert.Equal("Fold all", script.FoldAllLabel);
 
         script.FoldAllCommand.Execute(null);
@@ -142,6 +143,7 @@ public sealed class StoryboardMatrixTests
         Assert.Empty(row.Shots);
         Assert.False(row.HasShots);
         Assert.False(matrix.Script.IsBoardReview);
+        Assert.False(matrix.Script.ShowsFoldAll);
         Assert.DoesNotContain("shots", matrix.Script.LengthSummary);
     }
 

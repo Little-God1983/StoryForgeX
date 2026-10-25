@@ -1,4 +1,7 @@
 using StoryForge.Client;
+using StoryForge.Engine.Providers;
+using StoryForge.Engine.Research;
+using StoryForge.Engine.Script;
 using StoryForge.Engine.Storyboard;
 
 namespace StoryForge.Engine.Tests;
@@ -212,5 +215,27 @@ public sealed class StoryboardCheckTests
         var shots = StoryboardCheck.ToShots(output, [Segment("S01", 20)], used: ["S01/0001"], random: () => draws.Dequeue());
 
         Assert.Equal(["S01/0002", "S01/0003"], shots.Select(s => s.Key));
+    }
+
+    [Fact]
+    public void Every_answer_schema_passes_through_cmd_unchanged()
+    {
+        // claude.cmd runs through cmd.exe: a number field once came out as a pattern with ^ and |.
+        foreach (var schema in new[] { ClaudeCliStoryboardAgent.Schema, ClaudeCliStoryboardAgent.ShotSchema, ClaudeCliScriptAgent.Schema, ClaudeCliScriptAgent.SegmentSchema })
+        {
+            CmdShim.RequireSafe("claude.cmd", ClaudeCli.Arguments(null, [], "system.md", schema, "", null));
+        }
+    }
+
+    [Fact]
+    public void A_shot_starts_at_a_whole_number_in_the_schema()
+    {
+        using var schema = System.Text.Json.JsonDocument.Parse(ClaudeCliStoryboardAgent.Schema);
+
+        var firstWord = schema.RootElement.GetProperty("properties").GetProperty("segments").GetProperty("items")
+            .GetProperty("properties").GetProperty("shots").GetProperty("items").GetProperty("properties").GetProperty("firstWord");
+
+        Assert.Equal("integer", firstWord.GetProperty("type").GetString());
+        Assert.False(firstWord.TryGetProperty("pattern", out _));
     }
 }

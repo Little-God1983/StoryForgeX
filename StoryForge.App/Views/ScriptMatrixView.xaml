@@ -286,7 +286,7 @@
             </Grid.ColumnDefinitions>
             <DockPanel Grid.Column="0" Margin="0,0,10,0">
               <Button DockPanel.Dock="Right" Content="{Binding FoldAllLabel}" Style="{StaticResource SmallButtonStyle}" Padding="8,2" FontSize="11"
-                      Command="{Binding FoldAllCommand}" />
+                      Command="{Binding FoldAllCommand}" Visibility="{Binding ShowsFoldAll, Converter={StaticResource Visible}}" />
               <TextBlock Text="SEGMENT · SHOT" Style="{StaticResource SectionLabelStyle}" VerticalAlignment="Center" />
             </DockPanel>
             <TextBlock Grid.Column="1" Text="SCRIPT" Style="{StaticResource SectionLabelStyle}" />
