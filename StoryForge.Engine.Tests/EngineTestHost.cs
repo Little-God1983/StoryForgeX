@@ -8,6 +8,7 @@ using StoryForge.Engine.Data;
 using StoryForge.Engine.Pipeline;
 using StoryForge.Engine.Research;
 using StoryForge.Engine.Script;
+using StoryForge.Engine.Storyboard;
 using StoryForge.Engine.Voice;
 
 namespace StoryForge.Engine.Tests;
@@ -37,6 +38,7 @@ internal sealed class EngineTestHost : IDisposable
         // No test ever reaches the real Claude CLI, ComfyUI or ffmpeg: they refuse unless a test puts its own in.
         builder.Services.Replace(ServiceDescriptor.Singleton<IResearchAgent>(new NoModel()));
         builder.Services.Replace(ServiceDescriptor.Singleton<IScriptAgent>(new NoModel()));
+        builder.Services.Replace(ServiceDescriptor.Singleton<IStoryboardAgent>(new NoModel()));
         builder.Services.Replace(ServiceDescriptor.Singleton<IComfyUi>(new NoModel()));
         builder.Services.Replace(ServiceDescriptor.Singleton<IAudioConverter>(new NoModel()));
         replace?.Invoke(builder.Services);
@@ -54,7 +56,7 @@ internal sealed class EngineTestHost : IDisposable
         (await StartAsync(replace)).Services.GetRequiredService<IStoryForgeClient>();
 
     /// <summary>A model (or ComfyUI, or ffmpeg) that is not there: every stage that asks it fails with a plain reason.</summary>
-    private sealed class NoModel : IResearchAgent, IScriptAgent, IComfyUi, IAudioConverter
+    private sealed class NoModel : IResearchAgent, IScriptAgent, IStoryboardAgent, IComfyUi, IAudioConverter
     {
         private const string Reason = "No model in this test.";
 
@@ -66,6 +68,13 @@ internal sealed class EngineTestHost : IDisposable
 
         public Task<ScriptAnswer<ScriptPart>> RewriteAsync(ScriptRequest request, IReadOnlyList<Segment> script, string segmentId, string? session,
             IReadOnlyList<string> problems, IProgress<ActivityLine> activity, CancellationToken cancellationToken) => throw new StageFailedException(Reason);
+
+        public Task<ScriptAnswer<StoryboardOutput>> PlanAsync(StoryboardRequest request, string? session, IReadOnlyList<string> problems,
+            IProgress<ActivityLine> activity, CancellationToken cancellationToken) => throw new StageFailedException(Reason);
+
+        public Task<ScriptAnswer<ShotRewriteOutput>> RewriteShotAsync(StoryboardRequest request, IReadOnlyList<Shot> board, IReadOnlyList<CastMember> cast,
+            string shotKey, string? session, IReadOnlyList<string> problems, IProgress<ActivityLine> activity, CancellationToken cancellationToken) =>
+            throw new StageFailedException(Reason);
 
         public Task<string> UploadAsync(string path, CancellationToken cancellationToken) => throw new StageFailedException(Reason);
 

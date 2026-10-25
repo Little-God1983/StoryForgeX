@@ -31,6 +31,13 @@ internal static class ShotTiming
         return seconds > maxClipSeconds ? $"{label} lasts {Seconds(seconds)} s; the video model makes at most {maxClipSeconds} s. Cut it." : null;
     }
 
+    /// <summary>A shot as the screen names it, by its place in its segment: "S01·2".</summary>
+    public static string Label(IEnumerable<Shot> board, string key)
+    {
+        var shot = board.First(s => s.Key == key);
+        return $"{shot.SegmentId}·{1 + board.Count(s => s.SegmentId == shot.SegmentId && s.FirstWord < shot.FirstWord)}";
+    }
+
     /// <summary>"1.45", "25".</summary>
     public static string Seconds(double seconds) => Math.Round(seconds, 2).ToString("0.##", System.Globalization.CultureInfo.InvariantCulture);
 }

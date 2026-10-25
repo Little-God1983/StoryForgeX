@@ -156,4 +156,27 @@ public sealed class StoryboardCheckTests
     {
         Assert.Equal(["The answer had no storyboard."], Problems(null!, Segment("S01", 10)));
     }
+
+    [Fact]
+    public void The_answer_schemas_are_plain_ASCII_for_cmd()
+    {
+        foreach (var json in new[] { ClaudeCliStoryboardAgent.Schema, ClaudeCliStoryboardAgent.ShotSchema })
+        {
+            Assert.All(json, c => Assert.True(c < 128, $"'{c}' is not plain ASCII"));
+        }
+    }
+
+    [Fact]
+    public void The_prompt_numbers_the_words_and_names_the_pacing_and_the_limits()
+    {
+        var request = new StoryboardRequest(Guid.NewGuid(), "A lore video.",
+            [new(new Segment("S01", "Hook", "w0 w1 w2", ["F01"]), Segment("S01", 3))], "Prefer close-ups.", "", new Pacing(3, 5, 8), 20);
+
+        var prompt = ClaudeCliStoryboardAgent.FirstPrompt(request);
+
+        Assert.Contains("[0] w0 0 [1] w1 0.5 [2] w2 1", prompt);
+        Assert.Contains("shots of 3 to 8 seconds, about 5 seconds", prompt);
+        Assert.Contains("never longer than 20 seconds", prompt);
+        Assert.Contains("Prefer close-ups.", prompt);
+    }
 }

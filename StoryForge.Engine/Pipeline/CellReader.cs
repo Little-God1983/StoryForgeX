@@ -83,4 +83,58 @@ internal sealed class CellReader(IDbContextFactory<StoryForgeDbContext> contextF
                 .Select(v => StoredJson.Read<Segment>(v.OutputJson)),
         ];
     }
+
+    /// <summary>
+    /// The voice of every segment as approved, with its version, in segment order: what the
+    /// storyboard is cut from. A segment not approved (yet) counts with its current version.
+    /// </summary>
+    public async Task<IReadOnlyList<(VoiceClip Clip, int Version)>> ApprovedVoicesAsync(Guid projectId, CancellationToken cancellationToken) =>
+        [.. (await ReadSegmentsAsync(projectId, PipelineStage.Voice, c => c.ApprovedVersion ?? c.CurrentVersion, cancellationToken))
+            .Select(v => (StoredJson.Read<VoiceClip>(v.OutputJson), v.Version))];
+
+    /// <summary>One version of a segment's voice; null when there is no such version.</summary>
+    public async Task<VoiceClip?> VoiceAsync(Guid projectId, string segmentId, int version, CancellationToken cancellationToken)
+    {
+        await using var db = await contextFactory.CreateDbContextAsync(cancellationToken);
+        var entry = await db.CellVersions.AsNoTracking().FirstOrDefaultAsync(
+            v => v.ProjectId == projectId && v.Stage == PipelineStage.Voice && v.Key == segmentId && v.Version == version, cancellationToken);
+        return entry is null ? null : StoredJson.Read<VoiceClip>(entry.OutputJson);
+    }
+
+    /// <summary>The storyboard as it was last planned as a whole; null before it was.</summary>
+    public async Task<StoryboardSheet?> CurrentStoryboardAsync(Guid projectId, CancellationToken cancellationToken)
+    {
+        await using var db = await contextFactory.CreateDbContextAsync(cancellationToken);
+        var version = await db.Cells.AsNoTracking()
+            .Where(c => c.ProjectId == projectId && c.Stage == PipelineStage.Storyboard && c.Key == "")
+            .Select(c => c.CurrentVersion)
+            .FirstOrDefaultAsync(cancellationToken);
+        var entry = version is null ? null : await db.CellVersions.AsNoTracking().FirstOrDefaultAsync(
+            v => v.ProjectId == projectId && v.Stage == PipelineStage.Storyboard && v.Key == "" && v.Version == version, cancellationToken);
+        return entry is null ? null : StoredJson.Read<StoryboardSheet>(entry.OutputJson);
+    }
+
+    /// <summary>The shots as they stand, each in its current version: by segment, then where they start.</summary>
+    public async Task<IReadOnlyList<Shot>> CurrentShotsAsync(Guid projectId, CancellationToken cancellationToken) =>
+        [.. (await ReadSegmentsAsync(projectId, PipelineStage.Storyboard, c => c.CurrentVersion, cancellationToken))
+            .Select(v => StoredJson.Read<Shot>(v.OutputJson))
+            .OrderBy(s => s.SegmentId, StringComparer.Ordinal).ThenBy(s => s.FirstWord)];
+
+    /// <summary>One version per segment cell of a stage, by key: the one <paramref name="version"/> picks.</summary>
+    private async Task<IReadOnlyList<CellVersionEntry>> ReadSegmentsAsync(Guid projectId, PipelineStage stage, Func<CellEntry, int?> version, CancellationToken cancellationToken)
+    {
+        await using var db = await contextFactory.CreateDbContextAsync(cancellationToken);
+        var cells = await db.Cells.AsNoTracking()
+            .Where(c => c.ProjectId == projectId && c.Stage == stage && c.Key != "")
+            .ToListAsync(cancellationToken);
+        var versions = await db.CellVersions.AsNoTracking()
+            .Where(v => v.ProjectId == projectId && v.Stage == stage && v.Key != "")
+            .ToListAsync(cancellationToken);
+        return
+        [
+            .. cells.OrderBy(c => c.Key, StringComparer.Ordinal)
+                .Select(c => versions.FirstOrDefault(v => v.Key == c.Key && v.Version == version(c)))
+                .OfType<CellVersionEntry>(),
+        ];
+    }
 }
