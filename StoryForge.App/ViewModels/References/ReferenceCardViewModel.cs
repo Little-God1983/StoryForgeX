@@ -20,7 +20,7 @@ public sealed record ReferenceImageChoice(ReferenceImageView Image, bool IsShown
 public sealed partial class ReferenceCardViewModel(ReferenceView view, IReadOnlyDictionary<string, string> labels, Action<ReferenceCardViewModel> select) : ObservableObject
 {
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(Name), nameof(StateText), nameof(Usage), nameof(SourcesText), nameof(Note), nameof(IsMissing), nameof(IsPartial), nameof(Images), nameof(AccessibleName))]
+    [NotifyPropertyChangedFor(nameof(Name), nameof(StateText), nameof(Usage), nameof(SourcesText), nameof(Note), nameof(IsMissing), nameof(IsPartial), nameof(Images), nameof(Thumbnail), nameof(AccessibleName))]
     private ReferenceView _view = view;
 
     [ObservableProperty]
@@ -67,6 +67,9 @@ public sealed partial class ReferenceCardViewModel(ReferenceView view, IReadOnly
     public bool IsMissing => Shown is { Version: > 0, Image.Made: ImageMaking.NoPicture };
 
     public bool IsPartial => Shown is { Image.Made: ImageMaking.PartlyMadeUp };
+
+    /// <summary>The picture of the image the card stands for.</summary>
+    public string? Thumbnail => Shown?.Path;
 
     public IReadOnlyList<ReferenceImageChoice> Images => [.. View.Images.Select((image, i) => new ReferenceImageChoice(image, i == 0))];
 

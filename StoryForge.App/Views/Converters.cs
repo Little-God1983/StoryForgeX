@@ -52,6 +52,12 @@ public sealed class ThumbnailConverter : MarkupExtension, IValueConverter
     private static readonly HashSet<string> ImageExtensions =
         new([".png", ".jpg", ".jpeg", ".webp", ".bmp", ".gif", ".tif", ".tiff"], StringComparer.OrdinalIgnoreCase);
 
+    // A screen that reloads shows the same pictures again: each is decoded once while its file stays
+    // the same. Emptied when it grows past this many, which a project does not reach.
+    private const int MaxCached = 300;
+
+    private static readonly Dictionary<(string Path, int Width, DateTime Written, long Length), BitmapImage> Cache = [];
+
     public object? Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
     {
         if (value is not string path || !ImageExtensions.Contains(Path.GetExtension(path)) || !File.Exists(path))
@@ -60,14 +66,32 @@ public sealed class ThumbnailConverter : MarkupExtension, IValueConverter
         }
         try
         {
+            // A bigger preview asks for it: ConverterParameter=600.
+            var width = parameter is string wide && int.TryParse(wide, out var asked) ? asked : 200;
+            var file = new FileInfo(path);
+            var key = (path, width, file.LastWriteTimeUtc, file.Length);
+            lock (Cache)
+            {
+                if (Cache.TryGetValue(key, out var known))
+                {
+                    return known;
+                }
+            }
             var image = new BitmapImage();
             image.BeginInit();
             image.UriSource = new Uri(path);
             image.CacheOption = BitmapCacheOption.OnLoad;
-            // A bigger preview asks for it: ConverterParameter=600.
-            image.DecodePixelWidth = parameter is string wide && int.TryParse(wide, out var width) ? width : 200;
+            image.DecodePixelWidth = width;
             image.EndInit();
             image.Freeze();
+            lock (Cache)
+            {
+                if (Cache.Count >= MaxCached)
+                {
+                    Cache.Clear();
+                }
+                Cache[key] = image;
+            }
             return image;
         }
         catch (Exception)

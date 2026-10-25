@@ -14,6 +14,7 @@ internal sealed class ReferenceSheets(IDbContextFactory<StoryForgeDbContext> con
     private const PipelineStage Stage = PipelineStage.References;
 
     /// <summary>The sheet as an edited version of the one before; a removed reference's images go with it.</summary>
+    /// <param name="removed">References whose images go ("R01"), or single images ("R01/2").</param>
     /// <returns>The image keys removed, and the stage's state.</returns>
     public async Task<(IReadOnlyList<string> Removed, StageState State)> WriteAsync(
         Guid projectId, ReferenceSheet sheet, IReadOnlyList<string> removed, CancellationToken cancellationToken)
@@ -41,7 +42,7 @@ internal sealed class ReferenceSheets(IDbContextFactory<StoryForgeDbContext> con
         cell.UpdatedAt = now;
         foreach (var id in removed)
         {
-            var images = await db.Cells.Where(c => c.ProjectId == projectId && c.Stage == Stage && c.Key.StartsWith(id + "/")).ToListAsync(cancellationToken);
+            var images = await db.Cells.Where(c => c.ProjectId == projectId && c.Stage == Stage && (c.Key == id || c.Key.StartsWith(id + "/"))).ToListAsync(cancellationToken);
             db.Cells.RemoveRange(images);
             keys.AddRange(images.Select(i => i.Key));
         }

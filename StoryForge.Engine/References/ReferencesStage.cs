@@ -40,9 +40,6 @@ internal sealed class ReferencesStage(
     /// <summary>Reference images are square, about a megapixel: what Qwen works at.</summary>
     public const int Side = 1024;
 
-    /// <summary>The most source pictures one image is made from.</summary>
-    public const int MaxSources = 3;
-
     public PipelineStage Stage => PipelineStage.References;
 
     public async Task<StageResult> RunAsync(StageContext context, CancellationToken cancellationToken)
@@ -207,7 +204,6 @@ internal sealed class ReferencesStage(
             return (new ReferenceImage(reference.Id, number, null, [], seed, ImageMaking.NoPicture, why), reference);
         }
 
-        var passedOver = new List<PoolImage>();
         foreach (var picture in usable)
         {
             PictureVerdict verdict;
@@ -224,12 +220,12 @@ internal sealed class ReferencesStage(
             if (!verdict.Usable)
             {
                 Report(context, ActivityKind.Check, $"{reference.Name}: {picture.Id} does not show it, passed over");
-                passedOver.Add(picture);
                 continue;
             }
             var looked = reference.Look.Length > 0 ? reference : reference with { Look = verdict.Look };
             var made = verdict.Complete ? ImageMaking.FromPicture : ImageMaking.PartlyMadeUp;
-            var sources = new[] { picture }.Concat(usable.Where(p => p != picture && !passedOver.Contains(p))).Take(MaxSources).ToList();
+            // Only the picture Claude looked at: another one on the page could show anyone.
+            PoolImage[] sources = [picture];
             var file = await RenderAsync(context, maker, looked, number, [.. sources.Select(s => s.File)], Prompt(looked, made, verdict.Missing), seed, cancellationToken);
             return (new ReferenceImage(reference.Id, number, file, [.. sources.Select(s => s.Id)], seed, made, made == ImageMaking.PartlyMadeUp ? verdict.Missing : ""), looked);
         }

@@ -212,6 +212,15 @@ internal sealed class PipelineRunner(
             {
                 throw new KeyNotFoundException($"The {stage} stage has no version {version}.");
             }
+            if (stage == PipelineStage.References)
+            {
+                // As a whole only when nothing is left to approve: stills, text only, or an empty list.
+                var images = await db.Cells.Where(c => c.ProjectId == projectId && c.Stage == stage && c.Key != Whole).ToListAsync(cancellationToken);
+                if (IsAnyBusy(projectId, stage) || images.Any(i => i.State != StageState.Approved) || (await WithoutImagesAsync(db, projectId, images, cancellationToken)).Count > 0)
+                {
+                    throw new InvalidOperationException("Approve every reference image first: the stills are made from them.");
+                }
+            }
             cell.CurrentVersion = version;
             cell.ApprovedVersion = version;
             cell.State = StageState.Approved;

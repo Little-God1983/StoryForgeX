@@ -236,7 +236,7 @@ public sealed partial class ReferencesViewModel(IStoryForgeClient client, Guid p
         }
     }
 
-    /// <summary>Cards that are still there keep their place and selection; the rest come and go.</summary>
+    /// <summary>Made again from the view; the selection is kept by id, and the thumbnails come from the converter's cache.</summary>
     private void Fill(ObservableCollection<ReferenceCardViewModel> cards, IEnumerable<ReferenceView> references, IReadOnlyDictionary<string, string> labels)
     {
         cards.Clear();
@@ -248,12 +248,15 @@ public sealed partial class ReferencesViewModel(IStoryForgeClient client, Guid p
 
     // ── The bars ──
 
-    private bool CanMakeImages() => (IsListPhase || HasMissingImages) && !IsRunning && !_acting;
+    /// <summary>No image of the stage is being made on its own: the engine takes no change meanwhile.</summary>
+    private bool ImagesIdle => Cards.SelectMany(c => c.View.Images).All(i => i.State != StageState.Running);
+
+    private bool CanMakeImages() => (IsListPhase || HasMissingImages) && !IsRunning && ImagesIdle && !_acting;
 
     [RelayCommand(CanExecute = nameof(CanMakeImages))]
     private Task MakeImagesAsync() => ActAsync("make the images", () => client.MakeReferenceImagesAsync(ProjectId));
 
-    private bool CanAddReference() => !IsRunning && !_acting && NewName.Trim().Length > 0;
+    private bool CanAddReference() => !IsRunning && ImagesIdle && !_acting && NewName.Trim().Length > 0;
 
     [RelayCommand(CanExecute = nameof(CanAddReference))]
     private async Task AddReferenceAsync()
@@ -265,7 +268,7 @@ public sealed partial class ReferencesViewModel(IStoryForgeClient client, Guid p
         }
     }
 
-    private bool CanMakeReference(string name) => !IsRunning && !_acting;
+    private bool CanMakeReference(string name) => !IsRunning && ImagesIdle && !_acting;
 
     [RelayCommand(CanExecute = nameof(CanMakeReference))]
     private Task MakeReferenceAsync(string name) =>

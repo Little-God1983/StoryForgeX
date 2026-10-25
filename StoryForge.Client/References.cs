@@ -141,6 +141,8 @@ public enum ReferenceChangeKind
     DropSource,
     /// <summary><see cref="ReferenceChange.PoolImageId"/> leaves the pool and every reference.</summary>
     DiscardFromPool,
+    /// <summary>One of a reference's images goes, e.g. one with nothing on it: <see cref="ReferenceChange.ImageKey"/>.</summary>
+    RemoveImage,
 }
 
 /// <summary>One change to the reference list or the pool; the fields its kind names are set.</summary>
@@ -151,4 +153,5 @@ public sealed record ReferenceChange(
     string? Name = null,
     CastKind Kind = CastKind.Character,
     string? Look = null,
-    string? PoolImageId = null);
+    string? PoolImageId = null,
+    string? ImageKey = null);

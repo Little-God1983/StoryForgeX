@@ -388,4 +388,83 @@ public sealed class ReferencesScreenTests
         Assert.Equal("approved", card.StateText);
         Assert.False(card.IsMissing);
     }
+
+    [Fact]
+    public async Task A_card_shows_the_picture_of_the_image_it_stands_for()
+    {
+        var approved = Image("R03", ImageMaking.FromPicture, StageState.Approved) with { Key = "R03/2", Number = 2, Path = @"C:\p\R03-2.png" };
+        var (_, screen, _) = await OpenAsync(id => Images(id) with
+        {
+            References = [.. Images(id).References.Select(r => r.Reference.Id == "R03" ? r with { Images = [.. r.Images, approved] } : r)],
+        });
+
+        Assert.Equal(@"C:\p\R03-2.png", screen.Places.Single().Thumbnail);
+    }
+
+    [Fact]
+    public async Task While_an_image_is_made_the_list_and_the_pool_wait()
+    {
+        var (_, screen, _) = await OpenAsync(id => Images(id) with
+        {
+            References = [.. Images(id).References.Select(r => r.Reference.Id == "R02" ? r with { Images = [Image("R02", ImageMaking.FromPicture, StageState.Running)] } : r)],
+        });
+        screen.NewName = "Raphael";
+        screen.Pool[0].SelectCommand.Execute(null);
+
+        Assert.False(screen.AddReferenceCommand.CanExecute(null));
+        Assert.False(screen.MakeReferenceCommand.CanExecute("A tavern mug"));
+        Assert.False(screen.DiscardPictureCommand.CanExecute(null));
+    }
+
+    [Fact]
+    public async Task One_of_several_images_can_be_removed()
+    {
+        var second = Image("R01", ImageMaking.NoPicture, missing: "None of the pictures found shows Karlach.") with { Key = "R01/2", Number = 2 };
+        var (_, screen, _) = await OpenAsync(id => Images(id) with
+        {
+            References = [.. Images(id).References.Select(r => r.Reference.Id == "R01" ? r with { Images = [.. r.Images, second] } : r)],
+        });
+        screen.Characters[0].SelectCommand.Execute(null);
+        screen.SelectImageCommand.Execute(2);
+
+        await screen.RemoveImageCommand.ExecuteAsync(null);
+
+        Assert.Equal(new ReferenceChange(ReferenceChangeKind.RemoveImage, ImageKey: "R01/2"), _client.ReferenceChanges.Single());
+    }
+
+    [Fact]
+    public async Task The_only_image_cannot_be_removed()
+    {
+        var (_, screen, _) = await OpenAsync(id => Images(id));
+        screen.Places[0].SelectCommand.Execute(null);
+
+        Assert.False(screen.RemoveImageCommand.CanExecute(null));
+    }
+
+    [Fact]
+    public void A_picture_unchanged_on_disk_is_decoded_once()
+    {
+        var path = System.IO.Path.Combine(System.IO.Path.GetTempPath(), $"storyforge-thumb-{Guid.NewGuid():N}.png");
+        var encoder = new System.Windows.Media.Imaging.PngBitmapEncoder();
+        encoder.Frames.Add(System.Windows.Media.Imaging.BitmapFrame.Create(
+            System.Windows.Media.Imaging.BitmapSource.Create(2, 2, 96, 96, System.Windows.Media.PixelFormats.Gray8, null, new byte[4], 2)));
+        using (var file = System.IO.File.Create(path))
+        {
+            encoder.Save(file);
+        }
+        var converter = new StoryForge.App.Views.ThumbnailConverter();
+
+        try
+        {
+            var first = converter.Convert(path, typeof(object), "400", System.Globalization.CultureInfo.InvariantCulture);
+            var second = converter.Convert(path, typeof(object), "400", System.Globalization.CultureInfo.InvariantCulture);
+
+            Assert.NotNull(first);
+            Assert.Same(first, second);
+        }
+        finally
+        {
+            System.IO.File.Delete(path);
+        }
+    }
 }

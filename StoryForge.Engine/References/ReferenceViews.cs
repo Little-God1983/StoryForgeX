@@ -33,11 +33,22 @@ internal sealed class ReferenceViews(
         // The cells first, then their versions: a version is stored with (or before) the cell that
         // points to it, so a run storing meanwhile is seen whole or not at all.
         var stageCells = await db.Cells.AsNoTracking().Where(c => c.ProjectId == projectId && c.Stage == Stage).ToListAsync(cancellationToken);
-        var versions = await db.CellVersions.AsNoTracking().Where(v => v.ProjectId == projectId && v.Stage == Stage).ToListAsync(cancellationToken);
+        // Every version's dates, but the stored output of the current ones only: each list edit keeps a whole sheet.
+        var versions = (await db.CellVersions.AsNoTracking()
+            .Where(v => v.ProjectId == projectId && v.Stage == Stage)
+            .Select(v => new { v.Key, v.Version, v.Origin, v.CreatedAt, v.BasedOn })
+            .ToListAsync(cancellationToken)).ToLookup(v => v.Key);
+        var current = stageCells.Where(c => c.CurrentVersion is not null).ToDictionary(c => c.Key, c => c.CurrentVersion!.Value);
+        var keys = current.Keys.ToList();
+        var numbers = current.Values.Distinct().ToList();
+        var outputs = (await db.CellVersions.AsNoTracking()
+            .Where(v => v.ProjectId == projectId && v.Stage == Stage && keys.Contains(v.Key) && numbers.Contains(v.Version))
+            .Select(v => new { v.Key, v.Version, v.OutputJson })
+            .ToListAsync(cancellationToken))
+            .Where(v => current[v.Key] == v.Version)
+            .ToDictionary(v => v.Key, v => v.OutputJson);
         var whole = stageCells.FirstOrDefault(c => c.Key == "");
-        var sheet = versions.FirstOrDefault(v => v.Key == "" && v.Version == whole?.CurrentVersion) is { } stored
-            ? StoredJson.Read<ReferenceSheet>(stored.OutputJson)
-            : null;
+        var sheet = outputs.TryGetValue("", out var stored) ? StoredJson.Read<ReferenceSheet>(stored) : null;
         if (whole is null)
         {
             return new ReferencesView(projectId, StageState.NotStarted, null, [], ReferencePhase.List, [], [], [], textOnly, labels, 0, storyboardApproved);
@@ -45,11 +56,11 @@ internal sealed class ReferenceViews(
 
         var images = stageCells.Where(c => c.Key != "").Select(cell =>
         {
-            var own = versions.Where(v => v.Key == cell.Key).OrderBy(v => v.Version).ToList();
+            var own = versions[cell.Key].OrderBy(v => v.Version).ToList();
             // An image being made for the first time (or failed at it) has no version yet: it shows by its state.
             var (referenceId, number) = ReferencesStage.Parse(cell.Key);
-            var image = own.FirstOrDefault(v => v.Version == cell.CurrentVersion) is { } current
-                ? StoredJson.Read<ReferenceImage>(current.OutputJson)
+            var image = outputs.TryGetValue(cell.Key, out var json)
+                ? StoredJson.Read<ReferenceImage>(json)
                 : new ReferenceImage(referenceId, number, null, [], 0, ImageMaking.FromPicture, "");
             return new ReferenceImageView(
                 cell.Key,

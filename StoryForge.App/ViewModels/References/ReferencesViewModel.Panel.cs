@@ -138,7 +138,7 @@ public sealed partial class ReferencesViewModel
         foreach (var command in new IRelayCommand[]
         {
             ApproveCommand, RegenerateCommand, ShowVersionCommand, AddImageCommand, SearchAgainCommand, AddOwnPictureCommand,
-            FromDescriptionCommand, StartEditLookCommand, SaveLookCommand, MergeCommand, RemoveCommand, UsePictureCommand, OpenPageCommand, DiscardPictureCommand,
+            FromDescriptionCommand, StartEditLookCommand, SaveLookCommand, MergeCommand, RemoveCommand, RemoveImageCommand, UsePictureCommand, OpenPageCommand, DiscardPictureCommand,
         })
         {
             command.NotifyCanExecuteChanged();
@@ -148,7 +148,7 @@ public sealed partial class ReferencesViewModel
     // ── The selected reference ──
 
     /// <summary>Changes to a reference wait while anything of the stage is made, or another change is on its way.</summary>
-    private bool CardIdle() => SelectedCard is not null && !IsRunning && !_acting && Cards.SelectMany(c => c.View.Images).All(i => i.State != StageState.Running);
+    private bool CardIdle() => SelectedCard is not null && !IsRunning && !_acting && ImagesIdle;
 
     private bool CanApprove() => CardIdle() && SelectedImage is { Version: > 0, State: not StageState.Approved } image && image.Image.Made != ImageMaking.NoPicture;
 
@@ -249,9 +249,19 @@ public sealed partial class ReferencesViewModel
         return ActAsync("remove it from the list", () => client.ChangeReferencesAsync(ProjectId, new ReferenceChange(ReferenceChangeKind.Remove, ReferenceId: id)));
     }
 
+    /// <summary>One of several images: e.g. one that came out with nothing on it. The last one stays.</summary>
+    private bool CanRemoveImage() => CardIdle() && SelectedImage is not null && SelectedCard!.View.Images.Count > 1;
+
+    [RelayCommand(CanExecute = nameof(CanRemoveImage))]
+    private Task RemoveImageAsync()
+    {
+        var key = SelectedImage!.Key;
+        return ActAsync("remove the image", () => client.ChangeReferencesAsync(ProjectId, new ReferenceChange(ReferenceChangeKind.RemoveImage, ImageKey: key)));
+    }
+
     // ── The selected pool picture ──
 
-    private bool PictureIdle() => SelectedPicture is not null && !IsRunning && !_acting;
+    private bool PictureIdle() => SelectedPicture is not null && !IsRunning && ImagesIdle && !_acting;
 
     private bool CanUsePicture() => PictureIdle() && UseFor is not null;
 

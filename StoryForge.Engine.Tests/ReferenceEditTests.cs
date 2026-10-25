@@ -435,4 +435,66 @@ public sealed partial class ReferencesRunTests
 
         Assert.Equal("There is no picture to make another image of Soul coin from. Search the sources again, add your own picture, or make it from the description.", refused.Message);
     }
+
+    [Fact]
+    public async Task An_image_that_shows_nothing_can_be_removed_and_the_rest_approved()
+    {
+        var (client, projectId) = await ImagedAsync();
+        var view = await client.GetReferencesAsync(projectId);
+        foreach (var image in view.References.SelectMany(r => r.Images))
+        {
+            await client.ApproveSegmentAsync(projectId, PipelineStage.References, image.Key, image.Version);
+        }
+        _check.Decide = request => new PictureVerdict(false, false, "", "");   // no picture shows Karlach any more
+        await client.AddReferenceImageAsync(projectId, "R01");
+        await ReferencesAsync(client, projectId, v => v.References[0].Images is [_, { Version: > 0, State: not StageState.Running }]);
+
+        await client.ChangeReferencesAsync(projectId, new ReferenceChange(ReferenceChangeKind.RemoveImage, ImageKey: "R01/2"));
+
+        var after = await client.GetReferencesAsync(projectId);
+        Assert.Single(after.References[0].Images);
+        Assert.Equal(StageState.Approved, after.State);
+    }
+
+    [Fact]
+    public async Task The_only_image_of_a_reference_is_not_removed()
+    {
+        var (client, projectId) = await ImagedAsync();
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            client.ChangeReferencesAsync(projectId, new ReferenceChange(ReferenceChangeKind.RemoveImage, ImageKey: "R02/1")));
+    }
+
+    [Fact]
+    public async Task The_stage_is_not_approved_as_a_whole_while_its_images_wait()
+    {
+        var (client, projectId) = await ImagedAsync();
+        var view = await client.GetReferencesAsync(projectId);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => client.ApproveAsync(projectId, PipelineStage.References, view.Version));
+
+        Assert.NotEqual(StageState.Approved, (await client.GetReferencesAsync(projectId)).State);
+    }
+
+    [Fact]
+    public async Task A_look_is_not_emptied_while_it_is_all_the_reference_is_made_from()
+    {
+        var (client, projectId) = await ImagedAsync();
+        await client.MakeFromDescriptionAsync(projectId, "R02");
+        await ReferencesAsync(client, projectId, v => v.References[1].Images[0] is { Version: 2, State: not StageState.Running });
+
+        await Assert.ThrowsAsync<ArgumentException>(() =>
+            client.ChangeReferencesAsync(projectId, new ReferenceChange(ReferenceChangeKind.EditLook, ReferenceId: "R02", Look: " ")));
+    }
+
+    [Fact]
+    public async Task A_removed_reference_goes_back_to_the_rest_of_the_cast()
+    {
+        var (client, projectId) = await ListedAsync();
+
+        await client.ChangeReferencesAsync(projectId, new ReferenceChange(ReferenceChangeKind.Remove, ReferenceId: "R01"));
+        await client.ChangeReferencesAsync(projectId, new ReferenceChange(ReferenceChangeKind.MakeReference, Name: "Karlach"));
+
+        Assert.Contains((await client.GetReferencesAsync(projectId)).References, r => r.Reference.Name == "Karlach");
+    }
 }

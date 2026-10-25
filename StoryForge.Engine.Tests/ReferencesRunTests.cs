@@ -177,6 +177,21 @@ public sealed partial class ReferencesRunTests : IDisposable
     }
 
     [Fact]
+    public async Task Only_the_picture_Claude_looked_at_is_sent_to_Qwen()
+    {
+        // The page's second picture could be anyone: nobody checked it.
+        _pictures.ByName["Karlach"] = [FakePictures.Picture("Karlach.png"), FakePictures.Picture("Party.png", main: false)];
+        var client = await StartAsync();
+        var project = await StoryboardApprovedAsync(client, s => s with { ReviewReferenceList = false });
+
+        var view = await ReferencesAsync(client, project.Id, ImagesMade);
+
+        Assert.Single(view.References[0].Images[0].Image.Sources);
+        var party = view.Pool.Single(p => p.Image.Caption == "Party.png").Image.Id;
+        Assert.DoesNotContain(party + ".png", _comfy.Uploaded);
+    }
+
+    [Fact]
     public async Task One_image_is_made_again_on_its_own()
     {
         var client = await StartAsync();

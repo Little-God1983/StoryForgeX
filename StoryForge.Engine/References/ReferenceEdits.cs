@@ -120,7 +120,12 @@ internal sealed class ReferenceEdits(
             case ReferenceChangeKind.Remove:
             {
                 var reference = Find(sheet, change.ReferenceId);
-                sheet = sheet with { References = [.. sheet.References.Where(r => r.Id != reference.Id)] };
+                sheet = sheet with
+                {
+                    References = [.. sheet.References.Where(r => r.Id != reference.Id)],
+                    // Back with the rest of the cast, so "Make it a reference" takes it back.
+                    Others = [.. sheet.Others.Where(o => !ReferenceList.Same(o.Name, reference.Name)), new OtherCast(reference.Name, reference.Kind, reference.Shots.Count)],
+                };
                 removed.Add(reference.Id);
                 break;
             }
@@ -146,7 +151,12 @@ internal sealed class ReferenceEdits(
             case ReferenceChangeKind.EditLook:
             {
                 var reference = Find(sheet, change.ReferenceId);
-                sheet = Replace(sheet, reference with { Look = (change.Look ?? "").Trim() });
+                var look = (change.Look ?? "").Trim();
+                if (look.Length == 0 && reference.DescriptionOnly)
+                {
+                    throw new ArgumentException($"{reference.Name} is made from its look alone: write how it looks, or pick a picture for it first.");
+                }
+                sheet = Replace(sheet, reference with { Look = look });
                 break;
             }
             case ReferenceChangeKind.UseSource:
@@ -173,6 +183,26 @@ internal sealed class ReferenceEdits(
                     References = [.. sheet.References.Select(r => r with { Sources = [.. r.Sources.Where(id => id != picture.Id)] })],
                 };
                 thrownOut = Path.Combine(await folders.RootAsync(cancellationToken), picture.File);
+                break;
+            }
+            case ReferenceChangeKind.RemoveImage:
+            {
+                var key = change.ImageKey ?? "";
+                var reference = Find(sheet, key.Split('/')[0]);
+                var made = (await cells.ReferenceImagesAsync(projectId, cancellationToken)).Select(i => ReferenceImage.KeyOf(i.ReferenceId, i.Number));
+                var keys = made.Concat(await cells.UnmadeKeysAsync(projectId, Stage, cancellationToken))
+                    .Where(k => k.StartsWith(reference.Id + "/", StringComparison.Ordinal))
+                    .Distinct()
+                    .ToList();
+                if (!keys.Contains(key))
+                {
+                    throw new KeyNotFoundException($"{reference.Name} has no image {key}.");
+                }
+                if (keys.Count < 2)
+                {
+                    throw new InvalidOperationException($"{reference.Name} keeps at least one image: make it again instead.");
+                }
+                removed.Add(key);
                 break;
             }
             default:
