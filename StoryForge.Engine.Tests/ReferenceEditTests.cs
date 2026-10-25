@@ -42,6 +42,12 @@ public sealed partial class ReferencesRunTests
     }
 
     [Fact]
+    public void A_JPEG_padded_with_fill_bytes_before_a_marker_is_read_too()
+    {
+        Assert.Equal((640, 480), ImageSize.Of([0xFF, 0xD8, 0xFF, 0xE0, 0, 4, 0, 0, 0xFF, 0xFF, 0xFF, 0xC0, 0, 11, 8, 1, 224, 2, 128, 3]));
+    }
+
+    [Fact]
     public void The_blank_canvas_is_a_light_square_picture()
     {
         var png = BlankCanvas.Png(1024);
@@ -85,6 +91,20 @@ public sealed partial class ReferencesRunTests
         var view = await ReferencesAsync(client, projectId, v => v.State == StageState.Approved);
         Assert.Equal(["Karlach"], view.References.Select(r => r.Reference.Name));
         Assert.Equal(StageState.Approved, view.State);
+    }
+
+    [Fact]
+    public async Task A_reference_removed_after_the_stage_was_approved_leaves_the_approved_list_too()
+    {
+        var (client, projectId) = await ImagedAsync();
+        await client.ApproveSegmentsAsync(projectId, PipelineStage.References);
+        await ReferencesAsync(client, projectId, v => v.State == StageState.Approved);
+
+        await client.ChangeReferencesAsync(projectId, new ReferenceChange(ReferenceChangeKind.Remove, ReferenceId: "R02"));
+
+        await using var db = await _engine.DbAsync();
+        var whole = db.Cells.Single(c => c.ProjectId == projectId && c.Stage == PipelineStage.References && c.Key == "");
+        Assert.Equal((StageState.Approved, whole.CurrentVersion), (whole.State, whole.ApprovedVersion));
     }
 
     [Fact]
@@ -148,6 +168,37 @@ public sealed partial class ReferencesRunTests
         Assert.Equal(("coin artwork.png", 900, 900, ""), (picture.Url, picture.Width, picture.Height, picture.Page));
         Assert.Equal(picture.Id, view.References[1].Reference.Sources[0]);
         Assert.Equal(ImageMaking.PartlyMadeUp, view.References[1].Images[0].Image.Made);   // Claude said "the back" is missing
+    }
+
+    [Fact]
+    public async Task Your_own_picture_is_used_even_when_Claude_does_not_recognise_it()
+    {
+        _pictures.ByName["Soul coin"] = [];
+        var (client, projectId) = await ImagedAsync();
+        var own = Path.Combine(_engine.DataDirectory, "coin fan art.png");
+        await File.WriteAllBytesAsync(own, Png(900, 900));
+        _check.ByName["Soul coin"] = new PictureVerdict(false, false, "", "");
+
+        await client.AddOwnPictureAsync(projectId, "R02", own);
+        var view = await ReferencesAsync(client, projectId, v => v.References[1].Images[0] is { Version: 2, State: not StageState.Running });
+
+        var picture = view.Pool.Single(p => p.Image.Origin == PoolOrigin.Own).Image;
+        Assert.Equal(ImageMaking.FromPicture, view.References[1].Images[0].Image.Made);
+        Assert.Equal([picture.Id], view.References[1].Images[0].Image.Sources);
+    }
+
+    [Fact]
+    public async Task A_picture_you_picked_is_used_even_when_Claude_does_not_recognise_it()
+    {
+        var (client, projectId) = await ImagedAsync();
+        var coin = (await client.GetReferencesAsync(projectId)).Pool.Single(p => p.Image.Caption == "Coin.png").Image.Id;
+        _check.ByName["Karlach"] = new PictureVerdict(false, false, "", "");
+
+        await client.ChangeReferencesAsync(projectId, new ReferenceChange(ReferenceChangeKind.UseSource, ReferenceId: "R01", PoolImageId: coin));
+        var view = await ReferencesAsync(client, projectId, v => v.References[0].Images[0] is { Version: 2, State: not StageState.Running });
+
+        Assert.Equal(ImageMaking.FromPicture, view.References[0].Images[0].Image.Made);
+        Assert.Equal([coin], view.References[0].Images[0].Image.Sources);
     }
 
     [Fact]

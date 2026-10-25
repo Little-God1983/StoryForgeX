@@ -41,6 +41,11 @@ internal static class ImageSize
             {
                 return null;
             }
+            if (file[at + 1] == 0xFF)
+            {
+                at++;   // a fill byte: any number may stand before a marker
+                continue;
+            }
             var marker = file[at + 1];
             var length = BinaryPrimitives.ReadUInt16BigEndian(file[(at + 2)..]);
             if (marker is >= 0xC0 and <= 0xCF and not 0xC4 and not 0xC8 and not 0xCC)

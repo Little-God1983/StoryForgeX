@@ -222,13 +222,19 @@ internal sealed class ReferencesStage(
             {
                 throw new StageFailedException($"{reference.Name}: {ex.Message}");
             }
-            if (!verdict.Usable)
+            // Your own picture, or one you picked, is made from even when Claude does not know it: you do.
+            var yours = picture.Origin == PoolOrigin.Own || (reference.Chosen ?? []).Contains(picture.Id);
+            if (!verdict.Usable && !yours)
             {
                 Report(context, ActivityKind.Check, $"{reference.Name}: {picture.Id} does not show it, passed over");
                 continue;
             }
+            if (!verdict.Usable)
+            {
+                Report(context, ActivityKind.Check, $"{reference.Name}: Claude does not see it in {picture.Id}; made from it because you chose it");
+            }
             var looked = reference.Look.Length > 0 ? reference : reference with { Look = verdict.Look };
-            var made = verdict.Complete ? ImageMaking.FromPicture : ImageMaking.PartlyMadeUp;
+            var made = verdict.Complete || !verdict.Usable ? ImageMaking.FromPicture : ImageMaking.PartlyMadeUp;
             // Only the picture Claude looked at: another one on the page could show anyone.
             PoolImage[] sources = [picture];
             var file = await RenderAsync(context, await workflow(), looked, number, [.. sources.Select(s => s.File)], Prompt(looked, made, verdict.Missing), seed, cancellationToken);

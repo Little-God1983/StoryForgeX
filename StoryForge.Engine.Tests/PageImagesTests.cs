@@ -133,4 +133,19 @@ public sealed class PageImagesTests
 
         Assert.Equal("File:Zz portrait.png", Assert.Single(images).FileTitle);
     }
+
+    [Fact]
+    public async Task A_picture_listed_after_hundreds_of_item_icons_is_found_too()
+    {
+        // A place page lists every item found there; their icons sort before its one real picture.
+        var files = Enumerable.Range(1, 250).Select(i => $$$"""{"title":"File:Aa {{{i:000}}} icon.png"}""").Append("""{"title":"File:Zz portrait.png"}""");
+        var web = BgWiki()
+            .On("https://bg3.wiki/w/api.php?action=query&titles=Karlach&prop=pageimages", _ => Json(
+                $$$"""{"query":{"pages":[{"title":"Karlach","images":[{{{string.Join(",", files)}}}]}]}}"""))
+            .On("https://bg3.wiki/w/api.php?action=query&titles=File", request => Json(Info(request.RequestUri!)));
+
+        var images = await ImagesAsync(web);
+
+        Assert.Equal("File:Zz portrait.png", Assert.Single(images).FileTitle);
+    }
 }

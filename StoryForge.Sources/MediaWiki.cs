@@ -135,10 +135,11 @@ internal sealed class MediaWiki(SiteWeb web)
                 ? [.. images.EnumerateArray().Select(i => i.GetProperty("title").GetString() ?? "").Where(t => t.Length > 0)]
                 : [];
         }
-        // Photos and drawings only (no SVG logos), the main picture first, at most so many files.
+        // Photos and drawings only (no SVG logos), the main picture first and icons last, at most so many files.
         files = [.. files
             .Where(f => PictureEndings.Contains(Path.GetExtension(f)))
             .OrderByDescending(f => main is not null && NameOf(f) == main)
+            .ThenBy(f => NameOf(f).Contains("icon", StringComparison.OrdinalIgnoreCase))
             .Take(MaxPageFiles)];
         if (files.Count == 0)
         {

@@ -41,6 +41,8 @@ internal sealed class ReferenceSheets(IDbContextFactory<StoryForgeDbContext> con
             CreatedAt = now,
         });
         cell.CurrentVersion = next;
+        // An approved stage stays approved with the list as you changed it; one image made again takes the approval back.
+        cell.ApprovedVersion = cell.State == StageState.Approved ? next : cell.ApprovedVersion;
         cell.UpdatedAt = now;
         foreach (var id in removed)
         {
