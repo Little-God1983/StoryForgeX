@@ -13,7 +13,7 @@ namespace StoryForge.App.ViewModels.Script;
 public sealed partial class ScriptMatrixViewModel
 {
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(IsBoardRunning), nameof(IsBoardReview), nameof(IsBoardApproved), nameof(IsBoardFailed))]
+    [NotifyPropertyChangedFor(nameof(IsBoardRunning), nameof(IsBoardReview), nameof(IsBoardApproved), nameof(IsBoardFailed), nameof(CanPlanBoard))]
     [NotifyCanExecuteChangedFor(nameof(ApproveRemainingBoardCommand), nameof(RegenerateBoardCommand), nameof(CancelBoardCommand), nameof(ApproveSegmentCommand), nameof(RegenerateSegmentCommand))]
     private StageState _boardState;
 
@@ -24,6 +24,12 @@ public sealed partial class ScriptMatrixViewModel
     public bool IsBoardApproved => BoardState == StageState.Approved;
 
     public bool IsBoardFailed => BoardState == StageState.Failed;
+
+    /// <summary>
+    /// The voice is approved and the storyboard was never planned: a project voiced before the
+    /// storyboard stage existed starts it from here.
+    /// </summary>
+    public bool CanPlanBoard => BoardState == StageState.NotStarted && IsVoiceApproved;
 
     [ObservableProperty]
     private string? _boardError;

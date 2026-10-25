@@ -172,7 +172,7 @@ public sealed partial class ScriptMatrixViewModel(IStoryForgeClient client, Guid
     public bool IsNotStarted => State == StageState.NotStarted;
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(IsVoiceRunning), nameof(IsVoiceReview), nameof(IsVoiceApproved), nameof(IsVoiceFailed))]
+    [NotifyPropertyChangedFor(nameof(IsVoiceRunning), nameof(IsVoiceReview), nameof(IsVoiceApproved), nameof(IsVoiceFailed), nameof(CanPlanBoard))]
     [NotifyCanExecuteChangedFor(nameof(ApproveRemainingVoiceCommand), nameof(RegenerateVoiceCommand), nameof(CancelVoiceCommand), nameof(ApproveSegmentCommand), nameof(RegenerateSegmentCommand))]
     private StageState _voiceState;
 

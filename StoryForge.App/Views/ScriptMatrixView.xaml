@@ -183,6 +183,15 @@
       </Border>
 
       <!-- Where the storyboard stands, once the voice is approved. -->
+      <Border Style="{StaticResource BarStyle}" Background="{StaticResource CardBrush}" BorderBrush="{StaticResource BorderBrush}"
+              Visibility="{Binding CanPlanBoard, Converter={StaticResource Visible}}">
+        <DockPanel>
+          <Button DockPanel.Dock="Right" Content="Plan the storyboard" Style="{StaticResource PrimaryButtonStyle}" MinHeight="36" FontSize="13"
+                  Command="{Binding RegenerateBoardCommand}" />
+          <TextBlock VerticalAlignment="Center" FontSize="13" Foreground="{StaticResource TextSoftBrush}" TextWrapping="Wrap"
+                     Text="The voice is approved. The storyboard cuts every segment into shots, timed to its words." />
+        </DockPanel>
+      </Border>
       <Border Style="{StaticResource BarStyle}" Background="#172536" BorderBrush="#2B4A6B"
               Visibility="{Binding IsBoardRunning, Converter={StaticResource Visible}}">
         <DockPanel>

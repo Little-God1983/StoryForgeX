@@ -214,4 +214,26 @@ public sealed class StoryboardMatrixTests
 
         Assert.True(matrix.Stages.Single(s => s.Stage == PipelineStage.Storyboard).CanOpen);
     }
+
+    [Fact]
+    public async Task With_the_voice_approved_and_no_storyboard_yet_a_bar_offers_to_plan_it()
+    {
+        var (matrix, project) = await OpenAsync(Planned(Guid.Empty, StageState.NotStarted) with { Shots = [] });
+        var script = matrix.Script!;
+
+        Assert.True(script.CanPlanBoard);
+        await script.RegenerateBoardCommand.ExecuteAsync(null);
+
+        Assert.Equal((project.Id, PipelineStage.Storyboard), _client.Regenerated.Single());
+    }
+
+    [Fact]
+    public async Task Before_the_voice_is_approved_there_is_nothing_to_plan()
+    {
+        var (matrix, project) = await OpenAsync(Planned(Guid.Empty, StageState.NotStarted) with { Shots = [] });
+        _client.Voices[project.Id] = new VoiceView(project.Id, StageState.NeedsReview, null, [], [], 0, 60);
+        await matrix.Script!.LoadAsync();
+
+        Assert.False(matrix.Script.CanPlanBoard);
+    }
 }
