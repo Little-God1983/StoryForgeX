@@ -217,7 +217,8 @@ public sealed partial class ReferencesViewModel
         IsEditingLook = true;
     }
 
-    private bool CanSaveLook() => IsEditingLook && SelectedCard is not null && !_acting;
+    // Your text stays while the references are made; it is saved once they are done.
+    private bool CanSaveLook() => IsEditingLook && SelectedCard is not null && !IsRunning && ImagesIdle && !_acting;
 
     [RelayCommand(CanExecute = nameof(CanSaveLook))]
     private async Task SaveLookAsync()

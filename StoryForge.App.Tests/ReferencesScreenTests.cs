@@ -549,4 +549,21 @@ public sealed class ReferencesScreenTests
 
         Assert.Equal([false, true], screen.Places.Single().Images.Select(i => i.IsShown));
     }
+
+    [Fact]
+    public async Task A_look_waits_to_be_saved_while_an_image_is_made()
+    {
+        var (_, screen, project) = await OpenAsync(id => Images(id));
+        screen.Characters[0].SelectCommand.Execute(null);
+        screen.StartEditLookCommand.Execute(null);
+
+        _client.References[project.Id] = Images(project.Id) with
+        {
+            References = [.. Images(project.Id).References.Select(r => r.Reference.Id == "R02" ? r with { Images = [Image("R02", ImageMaking.PartlyMadeUp, StageState.Running)] } : r)],
+        };
+        await screen.LoadAsync();
+
+        Assert.True(screen.IsEditingLook);
+        Assert.False(screen.SaveLookCommand.CanExecute(null));
+    }
 }
