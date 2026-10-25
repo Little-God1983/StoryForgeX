@@ -524,4 +524,29 @@ public sealed class ReferencesScreenTests
 
         Assert.False(screen.AddReferenceCommand.CanExecute(null));
     }
+
+    [Fact]
+    public async Task A_name_that_was_added_is_cleared_even_when_the_screen_could_not_reload()
+    {
+        var (_, screen, _) = await OpenAsync(id => Images(id));
+        _client.ReferencesLoadFailure = "The database is busy.";
+        screen.NewName = "Gale";
+
+        await screen.AddReferenceCommand.ExecuteAsync(null);
+
+        Assert.Equal("Gale", _client.ReferenceChanges.Single().Name);
+        Assert.Equal("", screen.NewName);
+    }
+
+    [Fact]
+    public async Task A_card_stands_for_an_image_that_was_made_rather_than_one_that_shows_nothing()
+    {
+        var made = Image("R03", ImageMaking.FromPicture) with { Key = "R03/2", Number = 2 };
+        var (_, screen, _) = await OpenAsync(id => Images(id) with
+        {
+            References = [.. Images(id).References.Select(r => r.Reference.Id == "R03" ? r with { Images = [.. r.Images, made] } : r)],
+        });
+
+        Assert.Equal([false, true], screen.Places.Single().Images.Select(i => i.IsShown));
+    }
 }

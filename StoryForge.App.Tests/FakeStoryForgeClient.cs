@@ -627,9 +627,14 @@ internal sealed class FakeStoryForgeClient : IStoryForgeClient
 
     public List<ReferenceChange> ReferenceChanges { get; } = [];
 
+    /// <summary>While set, loading the references fails with it.</summary>
+    public string? ReferencesLoadFailure { get; set; }
+
     public Task<ReferencesView> GetReferencesAsync(Guid projectId, CancellationToken cancellationToken = default) =>
-        Task.FromResult(References.GetValueOrDefault(projectId)
-            ?? new ReferencesView(projectId, StageState.NotStarted, null, [], ReferencePhase.List, [], [], [], false, new Dictionary<string, string>()));
+        ReferencesLoadFailure is { } failure
+            ? Task.FromException<ReferencesView>(new InvalidOperationException(failure))
+            : Task.FromResult(References.GetValueOrDefault(projectId)
+                ?? new ReferencesView(projectId, StageState.NotStarted, null, [], ReferencePhase.List, [], [], [], false, new Dictionary<string, string>()));
 
     public Task ChangeReferencesAsync(Guid projectId, ReferenceChange change, CancellationToken cancellationToken = default)
     {

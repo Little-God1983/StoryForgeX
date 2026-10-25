@@ -223,8 +223,7 @@ public sealed partial class ReferencesViewModel
     private async Task SaveLookAsync()
     {
         var id = SelectedCard!.Id;
-        await ActAsync("save the look", () => client.ChangeReferencesAsync(ProjectId, new ReferenceChange(ReferenceChangeKind.EditLook, ReferenceId: id, Look: EditLook.Trim())));
-        if (ActionError is null)
+        if (await ActAsync("save the look", () => client.ChangeReferencesAsync(ProjectId, new ReferenceChange(ReferenceChangeKind.EditLook, ReferenceId: id, Look: EditLook.Trim()))))
         {
             IsEditingLook = false;   // saved; when it was not, your text stays to try again
         }

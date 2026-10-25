@@ -267,8 +267,7 @@ public sealed partial class ReferencesViewModel(IStoryForgeClient client, Guid p
     [RelayCommand(CanExecute = nameof(CanAddReference))]
     private async Task AddReferenceAsync()
     {
-        await ActAsync("add it to the list", () => client.ChangeReferencesAsync(ProjectId, new ReferenceChange(ReferenceChangeKind.Add, Name: NewName.Trim(), Kind: NewKind)));
-        if (ActionError is null)
+        if (await ActAsync("add it to the list", () => client.ChangeReferencesAsync(ProjectId, new ReferenceChange(ReferenceChangeKind.Add, Name: NewName.Trim(), Kind: NewKind))))
         {
             NewName = "";
         }
@@ -314,9 +313,10 @@ public sealed partial class ReferencesViewModel(IStoryForgeClient client, Guid p
 
     /// <summary>
     /// Runs one action; the engine's update then reloads the screen. The reason shows when it did
-    /// not go through. While it is on its way, the others wait.
+    /// not go through. While it is on its way, the others wait. True when it went through, even if
+    /// the reload after it did not.
     /// </summary>
-    private async Task ActAsync(string what, Func<Task> action)
+    private async Task<bool> ActAsync(string what, Func<Task> action)
     {
         _acting = true;
         RefreshPanel();
@@ -326,11 +326,13 @@ public sealed partial class ReferencesViewModel(IStoryForgeClient client, Guid p
             await action();
             ActionError = null;
             await LoadAsync();
+            return true;
         }
         catch (Exception ex)
         {
             Debug.WriteLine($"Could not {what}: {ex}");
             ActionError = $"Could not {what}: {ex.Message}";
+            return false;
         }
         finally
         {
