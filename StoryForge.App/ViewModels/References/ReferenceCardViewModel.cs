@@ -71,7 +71,7 @@ public sealed partial class ReferenceCardViewModel(ReferenceView view, IReadOnly
     /// <summary>The picture of the image the card stands for.</summary>
     public string? Thumbnail => Shown?.Path;
 
-    public IReadOnlyList<ReferenceImageChoice> Images => [.. View.Images.Select((image, i) => new ReferenceImageChoice(image, i == 0))];
+    public IReadOnlyList<ReferenceImageChoice> Images => [.. View.Images.Select(image => new ReferenceImageChoice(image, image == Shown))];
 
     /// <summary>"S01·2", "S03·1" …: the shots it is in.</summary>
     public IReadOnlyList<string> Shots => [.. View.Reference.Shots.Select(key => labels.TryGetValue(key, out var label) ? label : key)];

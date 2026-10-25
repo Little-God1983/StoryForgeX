@@ -79,7 +79,7 @@ internal sealed class ReferenceEdits(
         var sheet = await SheetAsync(projectId, cancellationToken);
         var shots = await cells.CurrentShotsAsync(projectId, cancellationToken);
         List<string> removed = [];
-        string? added = null;
+        string? remake = null;
         string? thrownOut = null;
         switch (change.Change)
         {
@@ -114,7 +114,7 @@ internal sealed class ReferenceEdits(
                 };
                 // Searched at once, in either phase: a reference must not say "no picture found" unsearched.
                 sheet = await SearchAsync(project, sheet, reference.Id, cancellationToken);
-                added = reference.Id;
+                remake = reference.Id;
                 break;
             }
             case ReferenceChangeKind.Remove:
@@ -141,6 +141,7 @@ internal sealed class ReferenceEdits(
                 {
                     Shots = [.. into.Shots.Concat(from.Shots).Distinct()],
                     Sources = [.. into.Sources.Concat(from.Sources).Distinct()],
+                    Chosen = [.. (into.Chosen ?? []).Concat(from.Chosen ?? []).Distinct()],
                     Look = into.Look.Length > 0 ? into.Look : from.Look,
                     KeyReason = into.KeyReason.Length > 0 ? into.KeyReason : from.KeyReason,
                 };
@@ -163,14 +164,25 @@ internal sealed class ReferenceEdits(
             {
                 var reference = Find(sheet, change.ReferenceId);
                 var picture = FindPicture(sheet, change.PoolImageId);
-                sheet = Replace(sheet, reference with { Sources = [.. reference.Sources.Append(picture.Id).Distinct()], DescriptionOnly = false });
+                // First, so it is what the image is made from, and made from at once once there are images.
+                sheet = Replace(sheet, reference with
+                {
+                    Sources = [picture.Id, .. reference.Sources.Where(id => id != picture.Id)],
+                    Chosen = [.. (reference.Chosen ?? []).Append(picture.Id).Distinct()],
+                    DescriptionOnly = false,
+                });
+                remake = reference.Id;
                 break;
             }
             case ReferenceChangeKind.DropSource:
             {
                 var reference = Find(sheet, change.ReferenceId);
                 var picture = FindPicture(sheet, change.PoolImageId);
-                sheet = Replace(sheet, reference with { Sources = [.. reference.Sources.Where(id => id != picture.Id)] });
+                sheet = Replace(sheet, reference with
+                {
+                    Sources = [.. reference.Sources.Where(id => id != picture.Id)],
+                    Chosen = [.. (reference.Chosen ?? []).Where(id => id != picture.Id)],
+                });
                 break;
             }
             case ReferenceChangeKind.DiscardFromPool:
@@ -180,7 +192,7 @@ internal sealed class ReferenceEdits(
                 {
                     Pool = [.. sheet.Pool.Where(p => p.Id != picture.Id)],
                     Discarded = [.. sheet.Discarded ?? [], picture],
-                    References = [.. sheet.References.Select(r => r with { Sources = [.. r.Sources.Where(id => id != picture.Id)] })],
+                    References = [.. sheet.References.Select(r => r with { Sources = [.. r.Sources.Where(id => id != picture.Id)], Chosen = [.. (r.Chosen ?? []).Where(id => id != picture.Id)] })],
                 };
                 thrownOut = Path.Combine(await folders.RootAsync(cancellationToken), picture.File);
                 break;
@@ -213,9 +225,9 @@ internal sealed class ReferenceEdits(
         {
             File.Delete(thrownOut);   // once the sheet no longer names it
         }
-        if (added is not null)
+        if (remake is not null)
         {
-            await MakeImagesOfAsync(projectId, added, cancellationToken);
+            await MakeImagesOfAsync(projectId, remake, cancellationToken);
         }
         if (removed.Count > 0)
         {
@@ -321,11 +333,12 @@ internal sealed class ReferenceEdits(
         }
     }
 
-    /// <summary>The pictures the sources have now for one reference; your own pictures stay with it.</summary>
+    /// <summary>The pictures the sources have now for one reference; your own pictures and those you picked stay with it.</summary>
     private async Task<ReferenceSheet> SearchAsync(Project project, ReferenceSheet sheet, string referenceId, CancellationToken cancellationToken)
     {
         var reference = sheet.References.First(r => r.Id == referenceId);
-        var own = reference.Sources.Where(id => sheet.Pool.Any(p => p.Id == id && p.Origin == PoolOrigin.Own)).ToList();
+        // Your own pictures and the ones you picked stay; the rest is what the sources have now.
+        var own = reference.Sources.Where(id => (reference.Chosen ?? []).Contains(id) || sheet.Pool.Any(p => p.Id == id && p.Origin == PoolOrigin.Own)).ToList();
         var (found, images) = await pool.BuildAsync(
             [reference with { Sources = own }], sheet.Pool, sheet.Discarded ?? [], project.Setup.ResearchSources, [],
             await folders.RootAsync(cancellationToken), ProjectFolders.Of(project), cancellationToken);

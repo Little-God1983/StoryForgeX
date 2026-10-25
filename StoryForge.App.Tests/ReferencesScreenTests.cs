@@ -467,4 +467,26 @@ public sealed class ReferencesScreenTests
             System.IO.File.Delete(path);
         }
     }
+
+    [Fact]
+    public async Task The_image_a_card_stands_for_is_the_one_marked_on_it()
+    {
+        var approved = Image("R03", ImageMaking.FromPicture, StageState.Approved) with { Key = "R03/2", Number = 2 };
+        var (_, screen, _) = await OpenAsync(id => Images(id) with
+        {
+            References = [.. Images(id).References.Select(r => r.Reference.Id == "R03" ? r with { Images = [.. r.Images, approved] } : r)],
+        });
+
+        Assert.Equal([false, true], screen.Places.Single().Images.Select(i => i.IsShown));
+    }
+
+    [Fact]
+    public void Decoded_pictures_kept_for_the_screen_stay_within_a_memory_budget()
+    {
+        Assert.True(StoryForge.App.Views.ThumbnailConverter.MaxCachedBytes <= 128L * 1024 * 1024);
+        var kept = StoryForge.App.Views.ThumbnailConverter.Keep(
+            new Dictionary<string, long> { ["a"] = 60, ["b"] = 30, ["c"] = 30 }, ["a", "b", "c"], budget: 100);
+
+        Assert.Equal(["b", "c"], kept);   // the oldest goes first
+    }
 }

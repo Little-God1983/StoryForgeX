@@ -104,4 +104,33 @@ public sealed class PageImagesTests
 
         Assert.Equal(["File:Karlach.png", "File:Karlach camp.jpg"], images.Take(2).Select(i => i.FileTitle));
     }
+
+    [Fact]
+    public async Task On_a_wiki_that_names_its_files_otherwise_the_page_image_still_comes_first()
+    {
+        var web = BgWiki()
+            .On("https://bg3.wiki/w/api.php?action=query&titles=Karlach&prop=pageimages", _ => Json(
+                """{"query":{"pages":[{"title":"Karlach","pageimage":"Karlach_portrait.png","images":[{"title":"Datei:Camp scene.jpg"},{"title":"Datei:Karlach portrait.png"}]}]}}"""))
+            .On("https://bg3.wiki/w/api.php?action=query&titles=Datei", _ => Json(
+                """{"query":{"pages":[{"title":"Datei:Camp scene.jpg","imageinfo":[{"url":"https://bg3.wiki/w/images/Camp.jpg","width":1920,"height":1080,"mime":"image/jpeg","extmetadata":[]}]},{"title":"Datei:Karlach portrait.png","imageinfo":[{"url":"https://bg3.wiki/w/images/Karlach.png","width":800,"height":1200,"mime":"image/png","extmetadata":[]}]}]}}"""));
+
+        var images = await ImagesAsync(web);
+
+        Assert.Equal(("Datei:Karlach portrait.png", true), (images[0].FileTitle, images[0].IsMain));
+    }
+
+    [Fact]
+    public async Task Pictures_past_the_first_fifty_files_are_found_too()
+    {
+        // Item icons sort first; the one real picture comes after them.
+        var files = Enumerable.Range(1, 55).Select(i => $$$"""{"title":"File:Aa {{{i:00}}} icon.png"}""").Append("""{"title":"File:Zz portrait.png"}""");
+        var web = BgWiki()
+            .On("https://bg3.wiki/w/api.php?action=query&titles=Karlach&prop=pageimages", _ => Json(
+                $$$"""{"query":{"pages":[{"title":"Karlach","images":[{{{string.Join(",", files)}}}]}]}}"""))
+            .On("https://bg3.wiki/w/api.php?action=query&titles=File", request => Json(Info(request.RequestUri!)));
+
+        var images = await ImagesAsync(web);
+
+        Assert.Equal("File:Zz portrait.png", Assert.Single(images).FileTitle);
+    }
 }

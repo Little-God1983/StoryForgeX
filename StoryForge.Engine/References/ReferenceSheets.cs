@@ -13,7 +13,7 @@ internal sealed class ReferenceSheets(IDbContextFactory<StoryForgeDbContext> con
 {
     private const PipelineStage Stage = PipelineStage.References;
 
-    /// <summary>The sheet as an edited version of the one before; a removed reference's images go with it.</summary>
+    /// <summary>The sheet as an edited version of the one before (or the first, as a run proposed it); a removed reference's images go with it.</summary>
     /// <param name="removed">References whose images go ("R01"), or single images ("R01/2").</param>
     /// <returns>The image keys removed, and the stage's state.</returns>
     public async Task<(IReadOnlyList<string> Removed, StageState State)> WriteAsync(
@@ -22,8 +22,10 @@ internal sealed class ReferenceSheets(IDbContextFactory<StoryForgeDbContext> con
         var keys = new List<string>();
         await using var db = await contextFactory.CreateDbContextAsync(cancellationToken);
         var cell = await db.Cells.FirstAsync(c => c.ProjectId == projectId && c.Stage == Stage && c.Key == "", cancellationToken);
-        var current = await db.CellVersions.FirstAsync(v => v.ProjectId == projectId && v.Stage == Stage && v.Key == "" && v.Version == cell.CurrentVersion, cancellationToken);
-        var next = 1 + await db.CellVersions.Where(v => v.ProjectId == projectId && v.Stage == Stage && v.Key == "").MaxAsync(v => v.Version, cancellationToken);
+        var current = cell.CurrentVersion is { } at
+            ? await db.CellVersions.FirstAsync(v => v.ProjectId == projectId && v.Stage == Stage && v.Key == "" && v.Version == at, cancellationToken)
+            : null;
+        var next = 1 + (await db.CellVersions.Where(v => v.ProjectId == projectId && v.Stage == Stage && v.Key == "").MaxAsync(v => (int?)v.Version, cancellationToken) ?? 0);
         var now = clock.GetUtcNow();
         db.CellVersions.Add(new CellVersionEntry
         {
@@ -31,9 +33,9 @@ internal sealed class ReferenceSheets(IDbContextFactory<StoryForgeDbContext> con
             Stage = Stage,
             Key = "",
             Version = next,
-            Origin = VersionOrigin.Edited,
-            BasedOn = current.Version,
-            InputHash = current.InputHash,
+            Origin = current is null ? VersionOrigin.Generated : VersionOrigin.Edited,
+            BasedOn = current?.Version,
+            InputHash = current?.InputHash ?? InputHash.Of(new { stage = Stage, sheet }),
             SchemaVersion = ReferenceSheet.SchemaVersion,
             OutputJson = StoredJson.Write(sheet),
             CreatedAt = now,

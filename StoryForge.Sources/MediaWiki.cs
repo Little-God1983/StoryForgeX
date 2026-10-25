@@ -106,6 +106,12 @@ internal sealed class MediaWiki(SiteWeb web)
 
     private static readonly string[] PictureTypes = ["image/png", "image/jpeg", "image/webp"];
 
+    // The file endings those are saved as: only such files are asked about.
+    private static readonly HashSet<string> PictureEndings = new([".png", ".jpg", ".jpeg", ".webp"], StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>The most files of one page asked about: a page can list a great many item icons.</summary>
+    private const int MaxPageFiles = 200;
+
     /// <summary>
     /// The pictures a page shows: its main picture (the page image) first, then the biggest of the
     /// others, at most <see cref="MaxPageImages"/>. Icons, drawings (SVG) and anything that is not a
@@ -115,7 +121,7 @@ internal sealed class MediaWiki(SiteWeb web)
     {
         string? main;
         List<string> files;
-        using (var json = await ApiAsync(wiki, $"action=query&titles={Uri.EscapeDataString(title)}&prop=pageimages%7Cimages&piprop=name&imlimit=50&redirects=1", cancellationToken))
+        using (var json = await ApiAsync(wiki, $"action=query&titles={Uri.EscapeDataString(title)}&prop=pageimages%7Cimages&piprop=name&imlimit=max&redirects=1", cancellationToken))
         {
             if (!json.RootElement.TryGetProperty("query", out var query) || !query.TryGetProperty("pages", out var pages)
                 || pages.ValueKind != JsonValueKind.Array || pages.GetArrayLength() == 0)
@@ -123,26 +129,28 @@ internal sealed class MediaWiki(SiteWeb web)
                 return [];
             }
             var page = pages[0];
-            main = page.TryGetProperty("pageimage", out var image) ? "File:" + image.GetString()?.Replace('_', ' ') : null;
+            // A name without its namespace: a wiki may call it "Datei:" or "Fichier:" rather than "File:".
+            main = page.TryGetProperty("pageimage", out var image) ? image.GetString()?.Replace('_', ' ') : null;
             files = page.TryGetProperty("images", out var images)
                 ? [.. images.EnumerateArray().Select(i => i.GetProperty("title").GetString() ?? "").Where(t => t.Length > 0)]
                 : [];
         }
-        if (main is not null)
-        {
-            files.Remove(main);
-            files.Insert(0, main);
-        }
+        // Photos and drawings only (no SVG logos), the main picture first, at most so many files.
+        files = [.. files
+            .Where(f => PictureEndings.Contains(Path.GetExtension(f)))
+            .OrderByDescending(f => main is not null && NameOf(f) == main)
+            .Take(MaxPageFiles)];
         if (files.Count == 0)
         {
             return [];
         }
 
-        // Asked for in one go (the API takes up to 50 titles); the answer comes in any order.
+        // 50 titles at a time, what the API takes; the answer comes in any order.
         var found = new Dictionary<string, PageImage>();
-        var titles = Uri.EscapeDataString(string.Join('|', files.Take(50)));
-        using (var json = await ApiAsync(wiki, $"action=query&titles={titles}&prop=imageinfo&iiprop=url%7Csize%7Cmime%7Cextmetadata&iiextmetadatafilter=ImageDescription", cancellationToken))
+        foreach (var batch in files.Chunk(50))
         {
+            var titles = Uri.EscapeDataString(string.Join('|', batch));
+            using var json = await ApiAsync(wiki, $"action=query&titles={titles}&prop=imageinfo&iiprop=url%7Csize%7Cmime%7Cextmetadata&iiextmetadatafilter=ImageDescription", cancellationToken);
             if (json.RootElement.TryGetProperty("query", out var query) && query.TryGetProperty("pages", out var pages) && pages.ValueKind == JsonValueKind.Array)
             {
                 foreach (var page in pages.EnumerateArray())
@@ -175,8 +183,11 @@ internal sealed class MediaWiki(SiteWeb web)
             && description.TryGetProperty("value", out var value) && value.ValueKind == JsonValueKind.String
             ? HtmlText.ToText(value.GetString() ?? "").Trim()
             : "";
-        return new PageImage(address, title, width, height, caption, title == main);
+        return new PageImage(address, title, width, height, caption, main is not null && NameOf(title) == main);
     }
+
+    /// <summary>"File:Karlach portrait.png" → "Karlach portrait.png".</summary>
+    private static string NameOf(string title) => title[(title.IndexOf(':', StringComparison.Ordinal) + 1)..];
 
     private static string PageUrl(WikiSite wiki, string title) =>
         wiki.ArticleUrl.Replace("$1", Uri.EscapeDataString(title.Replace(' ', '_')).Replace("%2F", "/", StringComparison.Ordinal), StringComparison.Ordinal);

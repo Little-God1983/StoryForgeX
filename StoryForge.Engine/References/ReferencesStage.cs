@@ -61,11 +61,16 @@ internal sealed class ReferencesStage(
                 return Result(sheet, null);
             }
             sheet = sheet with { Phase = ReferencePhase.Images };
+            // Kept before any image is made: a run that stops partway keeps the list and the pool.
+            await sheets.WriteAsync(project.Id, sheet, [], cancellationToken);
         }
 
         // Every image each reference has (one to start with), made again.
         var existing = await cells.ReferenceImagesAsync(project.Id, cancellationToken);
-        Maker? maker = null;   // an empty list makes nothing, so needs no workflow
+        // Asked for once something is made: an empty list, or one with no usable picture, needs no workflow.
+        var root = await folders.RootAsync(cancellationToken);
+        Maker? made = null;
+        async Task<Maker> WorkflowAsync() => made ??= await MakerAsync(context, cancellationToken);
         var results = new List<CellResult>();
         var references = new List<Reference>();
         foreach (var reference in sheet.References)
@@ -74,8 +79,7 @@ internal sealed class ReferencesStage(
             var numbers = existing.Where(i => i.ReferenceId == reference.Id).Select(i => i.Number).DefaultIfEmpty(1).Distinct().Order();
             foreach (var number in numbers)
             {
-                maker ??= await MakerAsync(context, cancellationToken);
-                (var image, updated) = await MakeAsync(context, maker, sheet, updated, number, cancellationToken);
+                (var image, updated) = await MakeAsync(context, root, WorkflowAsync, sheet, updated, number, cancellationToken);
                 var result = new CellResult(ReferenceImage.KeyOf(reference.Id, number), StoredJson.Write(image), ReferenceSheet.SchemaVersion, Hash(project.Setup, updated));
                 if (context.StoreSegment is { } store)
                 {
@@ -96,8 +100,8 @@ internal sealed class ReferencesStage(
             ?? throw new StageFailedException("There are no references yet.");
         var (referenceId, number) = Parse(key);
         var reference = sheet.References.FirstOrDefault(r => r.Id == referenceId) ?? throw new StageFailedException($"There is no reference {referenceId}.");
-        var maker = await MakerAsync(context, cancellationToken);
-        var (image, updated) = await MakeAsync(context, maker, sheet, reference, number, cancellationToken);
+        var root = await folders.RootAsync(cancellationToken);
+        var (image, updated) = await MakeAsync(context, root, () => MakerAsync(context, cancellationToken), sheet, reference, number, cancellationToken);
         if (updated.Look != reference.Look)
         {
             // Claude saw how it looks: the sheet keeps it, so its next images are made the same way.
@@ -185,11 +189,12 @@ internal sealed class ReferencesStage(
     /// Returns the reference with the look Claude saw, when it had none.
     /// </summary>
     private async Task<(ReferenceImage Image, Reference Reference)> MakeAsync(
-        StageContext context, Maker maker, ReferenceSheet sheet, Reference reference, int number, CancellationToken cancellationToken)
+        StageContext context, string root, Func<Task<Maker>> workflow, ReferenceSheet sheet, Reference reference, int number, CancellationToken cancellationToken)
     {
         var seed = Random.Shared.Next();
         if (reference.DescriptionOnly)
         {
+            var maker = await workflow();
             var canvas = await CanvasAsync(maker, cancellationToken);
             var file = await RenderAsync(context, maker, reference, number, [canvas], Prompt(reference, ImageMaking.FromDescription, ""), seed, cancellationToken);
             return (new ReferenceImage(reference.Id, number, file, [], seed, ImageMaking.FromDescription, ""), reference);
@@ -210,7 +215,7 @@ internal sealed class ReferencesStage(
             try
             {
                 verdict = await check.CheckAsync(
-                    new PictureCheckRequest(context.Project.Id, reference.Name, reference.Kind, reference.KeyReason, Path.Combine(maker.Root, picture.File), context.Project.Setup.Writing.Model),
+                    new PictureCheckRequest(context.Project.Id, reference.Name, reference.Kind, reference.KeyReason, Path.Combine(root, picture.File), context.Project.Setup.Writing.Model),
                     context.Activity, cancellationToken);
             }
             catch (StageFailedException ex)
@@ -226,7 +231,7 @@ internal sealed class ReferencesStage(
             var made = verdict.Complete ? ImageMaking.FromPicture : ImageMaking.PartlyMadeUp;
             // Only the picture Claude looked at: another one on the page could show anyone.
             PoolImage[] sources = [picture];
-            var file = await RenderAsync(context, maker, looked, number, [.. sources.Select(s => s.File)], Prompt(looked, made, verdict.Missing), seed, cancellationToken);
+            var file = await RenderAsync(context, await workflow(), looked, number, [.. sources.Select(s => s.File)], Prompt(looked, made, verdict.Missing), seed, cancellationToken);
             return (new ReferenceImage(reference.Id, number, file, [.. sources.Select(s => s.Id)], seed, made, made == ImageMaking.PartlyMadeUp ? verdict.Missing : ""), looked);
         }
         Report(context, ActivityKind.Check, $"{reference.Name}: none of the pictures shows it. Nothing is made until you choose.");

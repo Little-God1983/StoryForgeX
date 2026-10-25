@@ -497,4 +497,62 @@ public sealed partial class ReferencesRunTests
 
         Assert.Contains((await client.GetReferencesAsync(projectId)).References, r => r.Reference.Name == "Karlach");
     }
+
+    [Fact]
+    public async Task A_run_that_fails_partway_keeps_the_list_it_proposed()
+    {
+        _comfy.Failure = "ComfyUI is not reachable.";
+        _comfy.FailFor = "Soul coin";
+        var client = await StartAsync();
+        var project = await StoryboardApprovedAsync(client, s => s with { ReviewReferenceList = false });
+
+        var failed = await ReferencesAsync(client, project.Id, v => v.State == StageState.Failed);
+
+        Assert.Equal(2, failed.References.Count);
+        Assert.Single(failed.References[0].Images);
+        _comfy.Failure = null;
+        var runs = _comfy.Workflows.Count;
+        await client.MakeReferenceImagesAsync(project.Id);
+        await ScriptRunTests.WaitForAsync(() => client.GetReferencesAsync(project.Id), v => v.References[1].Images is [{ Version: > 0, State: not StageState.Running }]);
+        Assert.Equal(runs + 1, _comfy.Workflows.Count);   // the soul coin only, no new list
+    }
+
+    [Fact]
+    public async Task A_picture_you_picked_stays_when_the_sources_are_searched_again()
+    {
+        var (client, projectId) = await ListedAsync();
+        var coin = (await client.GetReferencesAsync(projectId)).Pool.Single(p => p.Image.Caption == "Coin.png").Image.Id;
+        await client.ChangeReferencesAsync(projectId, new ReferenceChange(ReferenceChangeKind.UseSource, ReferenceId: "R01", PoolImageId: coin));
+
+        await client.SearchSourcesAgainAsync(projectId, "R01");
+
+        Assert.Contains(coin, (await client.GetReferencesAsync(projectId)).References[0].Reference.Sources);
+    }
+
+    [Fact]
+    public async Task A_picture_you_picked_is_what_the_image_is_made_from()
+    {
+        var (client, projectId) = await ImagedAsync();
+        var coin = (await client.GetReferencesAsync(projectId)).Pool.Single(p => p.Image.Caption == "Coin.png").Image.Id;
+
+        await client.ChangeReferencesAsync(projectId, new ReferenceChange(ReferenceChangeKind.UseSource, ReferenceId: "R01", PoolImageId: coin));
+        var view = await ReferencesAsync(client, projectId, v => v.References[0].Images[0] is { Version: 2, State: not StageState.Running });
+
+        Assert.Equal(coin, view.References[0].Reference.Sources[0]);
+        Assert.Equal([coin], view.References[0].Images[0].Image.Sources);
+    }
+
+    [Fact]
+    public async Task References_with_no_usable_picture_need_no_image_workflow()
+    {
+        _pictures.ByName["Karlach"] = [FakePictures.Picture("Tiny.png", 200, 200)];
+        _pictures.ByName["Soul coin"] = [FakePictures.Picture("Tiny coin.png", 200, 200, page: "https://bg3.wiki/wiki/Soul_Coin")];
+        var client = await StartAsync();
+        var project = await StoryboardApprovedAsync(client, s => s with { ReviewReferenceList = false, Stills = s.Stills with { Provider = "Elsewhere" } });
+
+        var view = await ReferencesAsync(client, project.Id, ImagesMade);
+
+        Assert.Null(view.Error);
+        Assert.All(view.References, r => Assert.Equal(ImageMaking.NoPicture, r.Images.Single().Image.Made));
+    }
 }

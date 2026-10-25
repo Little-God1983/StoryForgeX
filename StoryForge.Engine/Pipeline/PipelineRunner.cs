@@ -152,15 +152,27 @@ internal sealed class PipelineRunner(
         {
             throw new InvalidOperationException($"The {stage} stage has no segments to make one by one.");
         }
+        var created = false;
         await using (var db = await contextFactory.CreateDbContextAsync(cancellationToken))
         {
             if (!await db.Cells.AnyAsync(c => c.ProjectId == projectId && c.Stage == stage && c.Key == key, cancellationToken))
             {
                 db.Cells.Add(new CellEntry { ProjectId = projectId, Stage = stage, Key = key, State = StageState.NotStarted, UpdatedAt = clock.GetUtcNow() });
                 await db.SaveChangesAsync(cancellationToken);
+                created = true;
             }
         }
-        await EnqueueAsync(projectId, stage, key, cancellationToken);
+        try
+        {
+            await EnqueueAsync(projectId, stage, key, cancellationToken);
+        }
+        catch (InvalidOperationException) when (created)
+        {
+            // Refused (the whole stage is being written): no empty cell is left to wait for an image.
+            await using var db = await contextFactory.CreateDbContextAsync(CancellationToken.None);
+            await db.Cells.Where(c => c.ProjectId == projectId && c.Stage == stage && c.Key == key && c.CurrentVersion == null).ExecuteDeleteAsync(CancellationToken.None);
+            throw;
+        }
     }
 
     public async Task CancelAsync(Guid projectId, PipelineStage stage, string key = Whole)

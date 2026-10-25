@@ -32,6 +32,7 @@ public sealed record PoolImage(string Id, string Url, string Page, string Captio
 /// <param name="Shots">The keys of the shots it is in.</param>
 /// <param name="Sources">The pool pictures it is made from, by id, the first one first; one too small makes nothing.</param>
 /// <param name="DescriptionOnly">You chose to make it from its look alone.</param>
+/// <param name="Chosen">The pool pictures you picked for it ("Use it"): kept when the sources are searched again.</param>
 public sealed record Reference(
     string Id,
     string Name,
@@ -40,7 +41,8 @@ public sealed record Reference(
     string Look,
     IReadOnlyList<string> Shots,
     IReadOnlyList<string> Sources,
-    bool DescriptionOnly = false);
+    bool DescriptionOnly = false,
+    IReadOnlyList<string>? Chosen = null);
 
 /// <summary>On the cast but not a reference: shown in one shot and not key to the story.</summary>
 public sealed record OtherCast(string Name, CastKind Kind, int Shots);
