@@ -538,4 +538,120 @@ public sealed class NewProjectPageTests
 
         Assert.Equal("Calm narrator", ((NewProjectPageViewModel)main.CurrentPage).Voice.Slots[0].Selected!.Name);
     }
+
+    [Fact]
+    public async Task The_pacing_starts_as_the_storyboard_profiles_and_stays_out_of_the_setup()
+    {
+        AddOneOfEach();
+        _client.AddProfile(ProfileKind.Storyboard, "Quick cuts", Empty with { Pacing = new Pacing(2, 3, 5) });
+        var page = await ShownPage();
+        page.Writing.Slots[2].Selected = page.Writing.Slots[2].Choices.Single(p => p.Name == "Quick cuts");
+        await page.WhenSettled();
+        FillBrief(page);
+
+        Assert.Equal("2–5 s, about 3 s · profile default", page.Pacing.Options[0].Label);
+        await page.StartCommand.ExecuteAsync(null);
+
+        Assert.Null(Assert.Single(_client.Projects).Setup.Pacing);
+    }
+
+    [Fact]
+    public async Task A_profile_without_a_pacing_uses_the_built_in_one()
+    {
+        AddOneOfEach();
+
+        var page = await ShownPage();
+
+        Assert.Equal("3–8 s, about 5 s · built-in default", page.Pacing.Options[0].Label);
+    }
+
+    [Fact]
+    public async Task A_custom_pacing_goes_into_the_setup()
+    {
+        AddOneOfEach();
+        var page = await ShownPage();
+        FillBrief(page);
+
+        page.Pacing.SelectedIndex = GenerationSizeViewModel.CustomIndex;
+        Assert.Equal(("3", "5", "8"), (page.Pacing.CustomMin, page.Pacing.CustomTypical, page.Pacing.CustomMax));
+        page.Pacing.CustomMin = "2";
+        page.Pacing.CustomTypical = "4";
+        page.Pacing.CustomMax = "6";
+        await page.StartCommand.ExecuteAsync(null);
+
+        Assert.Equal(new Pacing(2, 4, 6), Assert.Single(_client.Projects).Setup.Pacing);
+    }
+
+    [Theory]
+    [InlineData("1", "4", "6")]
+    [InlineData("5", "4", "6")]
+    [InlineData("3", "5", "40")]
+    [InlineData("3", "five", "8")]
+    public async Task An_impossible_custom_pacing_keeps_start_off(string min, string typical, string max)
+    {
+        AddOneOfEach();
+        var page = await ShownPage();
+        FillBrief(page);
+
+        page.Pacing.SelectedIndex = GenerationSizeViewModel.CustomIndex;
+        (page.Pacing.CustomMin, page.Pacing.CustomTypical, page.Pacing.CustomMax) = (min, typical, max);
+
+        Assert.False(page.CanStart);
+        Assert.Contains("a valid pacing", page.MissingText);
+    }
+
+    [Fact]
+    public async Task The_shot_estimate_follows_the_target_length_and_the_pacing()
+    {
+        AddOneOfEach();
+        var page = await ShownPage();
+
+        Assert.Equal("about 48 shots → 48 stills, 48 clips", page.ShotEstimate);   // 4:00 at about 5 s
+        page.TargetSeconds = 60;
+        Assert.Equal("about 12 shots → 12 stills, 12 clips", page.ShotEstimate);
+        page.Pacing.SelectedIndex = GenerationSizeViewModel.CustomIndex;
+        page.Pacing.CustomTypical = "4";
+        Assert.Equal("about 15 shots → 15 stills, 15 clips", page.ShotEstimate);
+    }
+
+    [Fact]
+    public async Task A_profile_pacing_longer_than_the_max_clip_is_held_to_it_and_start_stays_on()
+    {
+        // The storyboard holds the profile's 3–8 s to clips of 6 s: nothing for you to fix.
+        AddOneOfEach();
+        var page = await ShownPage();
+        FillBrief(page);
+
+        page.MaxClip.SelectedIndex = GenerationSizeViewModel.CustomIndex;
+        page.MaxClip.CustomSeconds = "6";
+
+        Assert.Null(page.PacingProblem);
+        Assert.True(page.CanStart);
+    }
+
+    [Fact]
+    public async Task A_custom_pacing_longer_than_the_max_clip_keeps_start_off()
+    {
+        AddOneOfEach();
+        var page = await ShownPage();
+        FillBrief(page);
+
+        page.Pacing.SelectedIndex = GenerationSizeViewModel.CustomIndex;
+        page.Pacing.CustomMax = "40";   // the video profile makes 30 s
+
+        Assert.Equal("Shots of up to 40 s are longer than the video model makes (30 s).", page.PacingProblem);
+        Assert.False(page.CanStart);
+    }
+
+    [Fact]
+    public async Task The_shot_estimate_counts_with_the_pacing_held_to_the_clips()
+    {
+        AddOneOfEach();
+        var page = await ShownPage();
+
+        page.MaxClip.SelectedIndex = GenerationSizeViewModel.CustomIndex;
+        page.MaxClip.CustomSeconds = "4";   // the profile's about 5 s becomes about 4 s
+
+        Assert.Equal("about 60 shots → 60 stills, 60 clips", page.ShotEstimate);
+    }
 }

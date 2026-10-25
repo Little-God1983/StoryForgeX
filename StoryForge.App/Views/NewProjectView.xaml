@@ -200,7 +200,25 @@
                         Command="{Binding ApplyToAllCommand}" CommandParameter="{Binding Writing}"
                         ToolTip="Copy provider, model and matching profiles to every stage" />
               </UniformGrid>
-              <ContentPresenter Content="{Binding Writing}" ContentTemplate="{StaticResource CardCommonTemplate}" />
+              <StackPanel>
+                <ContentPresenter Content="{Binding Writing}" ContentTemplate="{StaticResource CardCommonTemplate}" />
+                <StackPanel Style="{StaticResource CardFieldStyle}">
+                  <TextBlock Text="Pacing" Style="{StaticResource FieldLabelStyle}" />
+                  <ComboBox ItemsSource="{Binding Pacing.Options}" DisplayMemberPath="Label" SelectedIndex="{Binding Pacing.SelectedIndex}" AutomationProperties.Name="Pacing" />
+                  <UniformGrid Columns="3" Margin="0,6,0,0" Visibility="{Binding Pacing.IsCustom, Converter={StaticResource Visible}}">
+                    <TextBox Text="{Binding Pacing.CustomMin, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,3,0" ToolTip="Shortest shot (s)"
+                             AutomationProperties.Name="Shortest shot in seconds" />
+                    <TextBox Text="{Binding Pacing.CustomTypical, UpdateSourceTrigger=PropertyChanged}" Margin="3,0,3,0" ToolTip="Typical shot (s)"
+                             AutomationProperties.Name="Typical shot in seconds" />
+                    <TextBox Text="{Binding Pacing.CustomMax, UpdateSourceTrigger=PropertyChanged}" Margin="3,0,0,0" ToolTip="Longest shot (s)"
+                             AutomationProperties.Name="Longest shot in seconds" />
+                  </UniformGrid>
+                  <TextBlock Text="{Binding PacingProblem}" FontSize="12" Foreground="{StaticResource ErrorTextBrush}" TextWrapping="Wrap" Margin="0,4,0,0"
+                             Visibility="{Binding PacingProblem, Converter={views:NullToCollapsedConverter}}" />
+                  <TextBlock Text="{Binding ShotEstimate}" FontSize="12" FontFamily="{StaticResource MonoFont}" Foreground="{StaticResource TextMutedBrush}" Margin="0,4,0,0"
+                             AutomationProperties.AutomationId="ShotEstimate" />
+                </StackPanel>
+              </StackPanel>
             </DockPanel>
           </Border>
 

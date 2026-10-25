@@ -273,6 +273,9 @@ internal sealed class FakeStoryForgeClient : IStoryForgeClient
 
     public event EventHandler<StageUpdate>? StageUpdated;
 
+    /// <summary>The stages a whole run of is under way, as announced through <see cref="Raise"/>.</summary>
+    private readonly HashSet<(Guid ProjectId, PipelineStage Stage)> _running = [];
+
     /// <summary>Raises <see cref="StageUpdated"/> as the engine would, and keeps the project's stage state in step.</summary>
     public void Raise(StageUpdate update)
     {
@@ -287,6 +290,26 @@ internal sealed class FakeStoryForgeClient : IStoryForgeClient
         if (FactSheets.TryGetValue(update.ProjectId, out var view) && update.Stage == PipelineStage.Research)
         {
             FactSheets[update.ProjectId] = view with { State = update.State };
+        }
+        // The engine says a whole run started once its cell is running, with its log and error from
+        // before cleared: a load from then on reads that. For the voice, no segment of the new run is
+        // stored yet, so each reads running too.
+        // Only the first update of a run: later ones are its log lines, after segments were stored.
+        if (update.Key is null && update.State == StageState.Running && _running.Add((update.ProjectId, update.Stage)))
+        {
+            if (update.Stage == PipelineStage.Voice)
+            {
+                var voice = Voices.GetValueOrDefault(update.ProjectId) ?? new VoiceView(update.ProjectId, StageState.NotStarted, null, [], [], 0, 240);
+                Voices[update.ProjectId] = voice with { State = StageState.Running, Error = null, Activity = [], Segments = [.. voice.Segments.Select(s => s with { State = StageState.Running })] };
+            }
+            else if (update.Stage == PipelineStage.Storyboard && Storyboards.TryGetValue(update.ProjectId, out var board))
+            {
+                Storyboards[update.ProjectId] = board with { State = StageState.Running, Error = null, Activity = [] };
+            }
+        }
+        else if (update.Key is null && update.State != StageState.Running)
+        {
+            _running.Remove((update.ProjectId, update.Stage));
         }
         StageUpdated?.Invoke(this, update);
     }
@@ -413,6 +436,11 @@ internal sealed class FakeStoryForgeClient : IStoryForgeClient
             VoiceActions.Add(("cancel", segmentId, 0));
             return Task.CompletedTask;
         }
+        if (stage == PipelineStage.Storyboard)
+        {
+            ShotActions.Add(("cancel", segmentId));
+            return Task.CompletedTask;
+        }
         CancelledSegments.Add((projectId, segmentId));
         return Task.CompletedTask;
     }
@@ -443,6 +471,12 @@ internal sealed class FakeStoryForgeClient : IStoryForgeClient
             ChangeVoice(projectId, segmentId, s => s with { State = StageState.Approved, ApprovedVersion = version });
             return Task.CompletedTask;
         }
+        if (stage == PipelineStage.Storyboard)
+        {
+            ShotActions.Add(($"approve v{version}", segmentId));
+            ChangeShot(projectId, segmentId, s => s with { State = StageState.Approved, ApprovedVersion = version });
+            return Task.CompletedTask;
+        }
         ApprovedSegments.Add((projectId, segmentId, version));
         ChangeSegment(projectId, segmentId, s => s with { State = StageState.Approved, ApprovedVersion = version });
         return Task.CompletedTask;
@@ -454,6 +488,11 @@ internal sealed class FakeStoryForgeClient : IStoryForgeClient
         if (stage == PipelineStage.Voice)
         {
             VoiceActions.Add(("approve all", "", 0));
+            return Task.CompletedTask;
+        }
+        if (stage == PipelineStage.Storyboard)
+        {
+            ShotActions.Add(("approve all", ""));
             return Task.CompletedTask;
         }
         ApprovedScripts.Add(projectId);
@@ -470,6 +509,11 @@ internal sealed class FakeStoryForgeClient : IStoryForgeClient
         if (stage == PipelineStage.Voice)
         {
             VoiceActions.Add(("regenerate", segmentId, 0));
+            return Task.CompletedTask;
+        }
+        if (stage == PipelineStage.Storyboard)
+        {
+            ShotActions.Add(("regenerate", segmentId));
             return Task.CompletedTask;
         }
         RegeneratedSegments.Add((projectId, segmentId));
@@ -500,6 +544,12 @@ internal sealed class FakeStoryForgeClient : IStoryForgeClient
             ChangeVoice(projectId, segmentId, s => s with { Version = version });
             return Task.CompletedTask;
         }
+        if (stage == PipelineStage.Storyboard)
+        {
+            ShotActions.Add(($"select v{version}", segmentId));
+            ChangeShot(projectId, segmentId, s => s with { Version = version });
+            return Task.CompletedTask;
+        }
         SelectedSegmentVersions.Add((projectId, segmentId, version));
         ChangeSegment(projectId, segmentId, s => s with { Version = version });
         return Task.CompletedTask;
@@ -513,12 +563,60 @@ internal sealed class FakeStoryForgeClient : IStoryForgeClient
         }
     }
 
+    private void ChangeShot(Guid projectId, string key, Func<ShotView, ShotView> change)
+    {
+        if (Storyboards.TryGetValue(projectId, out var view))
+        {
+            Storyboards[projectId] = view with { Shots = [.. view.Shots.Select(s => s.Key == key ? change(s) : s)] };
+        }
+    }
+
     private void ChangeVoice(Guid projectId, string segmentId, Func<VoiceSegmentView, VoiceSegmentView> change)
     {
         if (Voices.TryGetValue(projectId, out var view))
         {
             Voices[projectId] = view with { Segments = [.. view.Segments.Select(s => s.Id == segmentId ? change(s) : s)] };
         }
+    }
+
+    /// <summary>The storyboard per project; a project without one has a storyboard not started.</summary>
+    public Dictionary<Guid, StoryboardView> Storyboards { get; } = [];
+
+    /// <summary>What was asked of shots: the action and the shot, e.g. ("move End +1", "S01/a").</summary>
+    public List<(string Action, string ShotKey)> ShotActions { get; } = [];
+
+    public List<(string ShotKey, ShotChange Change)> ShotChanges { get; } = [];
+
+    public Task<StoryboardView> GetStoryboardAsync(Guid projectId, CancellationToken cancellationToken = default) =>
+        Task.FromResult(Storyboards.GetValueOrDefault(projectId)
+            ?? new StoryboardView(projectId, StageState.NotStarted, null, [], [], [], new Dictionary<string, IReadOnlyList<SpokenWord>>(), Pacing.Default, 20));
+
+    public Task EditShotAsync(Guid projectId, string shotKey, ShotChange change, CancellationToken cancellationToken = default)
+    {
+        ThrowIfFailing();
+        ShotChanges.Add((shotKey, change));
+        return Task.CompletedTask;
+    }
+
+    public Task MoveCutAsync(Guid projectId, string shotKey, ShotEdge edge, int words, CancellationToken cancellationToken = default)
+    {
+        ThrowIfFailing();
+        ShotActions.Add(($"move {edge} {words:+0;-0}", shotKey));
+        return Task.CompletedTask;
+    }
+
+    public Task SplitShotAsync(Guid projectId, string shotKey, int atWord, CancellationToken cancellationToken = default)
+    {
+        ThrowIfFailing();
+        ShotActions.Add(($"split at {atWord}", shotKey));
+        return Task.CompletedTask;
+    }
+
+    public Task MergeShotAsync(Guid projectId, string shotKey, CancellationToken cancellationToken = default)
+    {
+        ThrowIfFailing();
+        ShotActions.Add(("merge", shotKey));
+        return Task.CompletedTask;
     }
 
     private void ThrowIfFailing()

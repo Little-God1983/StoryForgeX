@@ -21,8 +21,8 @@ public sealed record StageChip(PipelineStage Stage, string Name, StageState Stat
     /// <summary>"Research", "Research – review": the chip's text, as on the canvas.</summary>
     public string Label => State is StageState.NotStarted or StageState.Approved ? Name : $"{Name} – {StateText}";
 
-    /// <summary>Research opens the fact sheet, Script and Voice the matrix; the others arrive with their issues.</summary>
-    public bool CanOpen => Stage is PipelineStage.Research or PipelineStage.Script or PipelineStage.Voice;
+    /// <summary>Research opens the fact sheet; Script, Voice and Board the matrix; the others arrive with their issues.</summary>
+    public bool CanOpen => Stage is PipelineStage.Research or PipelineStage.Script or PipelineStage.Voice or PipelineStage.Storyboard;
 
     // What screen readers announce.
     public override string ToString() => $"{Name}: {StateText}";
@@ -140,7 +140,7 @@ public sealed partial class ResultMatrixPageViewModel : PageViewModel
         {
             await ShowFactSheetAsync();
         }
-        else if (chip.Stage is PipelineStage.Script or PipelineStage.Voice)
+        else if (chip.Stage is PipelineStage.Script or PipelineStage.Voice or PipelineStage.Storyboard)
         {
             ShowMatrix();
         }

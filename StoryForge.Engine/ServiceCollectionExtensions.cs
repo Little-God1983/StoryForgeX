@@ -13,6 +13,7 @@ using StoryForge.Engine.Research;
 using StoryForge.Engine.Script;
 using StoryForge.Engine.Secrets;
 using StoryForge.Engine.Settings;
+using StoryForge.Engine.Storyboard;
 using StoryForge.Engine.Voice;
 
 namespace StoryForge.Engine;
@@ -74,6 +75,10 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IAudioConverter, FfmpegAudioConverter>();
         services.AddSingleton<IStageWorker, VoiceStage>();
         services.AddSingleton<VoiceSegments>();
+        services.AddSingleton<IStoryboardAgent, ClaudeCliStoryboardAgent>();
+        services.AddSingleton<IStageWorker, StoryboardStage>();
+        services.AddSingleton<StoryboardShots>();
+        services.AddSingleton<StoryboardEdits>();
         // After DatabaseInitializer: hosted services start in order, and the runner reads the database.
         services.AddSingleton<PipelineRunner>();
         services.AddHostedService(provider => provider.GetRequiredService<PipelineRunner>());

@@ -133,4 +133,35 @@ public interface IStoryForgeClient
     /// <summary>The Voice stage: its state, each segment's audio with its words and versions, and the voice total.</summary>
     /// <exception cref="KeyNotFoundException">No such project.</exception>
     Task<VoiceView> GetVoiceAsync(Guid projectId, CancellationToken cancellationToken = default);
+
+    /// <summary>The Storyboard stage: its state, its shots with their versions, and the words they were cut from.</summary>
+    /// <exception cref="KeyNotFoundException">No such project.</exception>
+    Task<StoryboardView> GetStoryboardAsync(Guid projectId, CancellationToken cancellationToken = default);
+
+    /// <summary>Your change to a shot's description, who and what is in it, or "continues the shot before": its next version, to approve.</summary>
+    /// <exception cref="KeyNotFoundException">No such project or shot.</exception>
+    /// <exception cref="ArgumentException">The description is empty, or more than <see cref="Shot.MaxCast"/> are in it.</exception>
+    /// <exception cref="InvalidOperationException">The shot or the storyboard is running.</exception>
+    Task EditShotAsync(Guid projectId, string shotKey, ShotChange change, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Moves where a shot starts or ends by <paramref name="words"/> (1 later, -1 earlier). The shot
+    /// next to it grows or shrinks, so the segment still adds up to its audio; both get a new version.
+    /// </summary>
+    /// <exception cref="KeyNotFoundException">No such project or shot.</exception>
+    /// <exception cref="ArgumentException">The cut is at the segment's edge, or a shot would break a length limit.</exception>
+    /// <exception cref="InvalidOperationException">A shot or the storyboard is running.</exception>
+    Task MoveCutAsync(Guid projectId, string shotKey, ShotEdge edge, int words, CancellationToken cancellationToken = default);
+
+    /// <summary>Splits a shot in two: the new shot starts at word <paramref name="atWord"/> of the segment.</summary>
+    /// <exception cref="KeyNotFoundException">No such project or shot.</exception>
+    /// <exception cref="ArgumentException">The word is not inside the shot, or a half would break a length limit.</exception>
+    /// <exception cref="InvalidOperationException">The shot or the storyboard is running.</exception>
+    Task SplitShotAsync(Guid projectId, string shotKey, int atWord, CancellationToken cancellationToken = default);
+
+    /// <summary>Merges a shot with the next shot of its segment.</summary>
+    /// <exception cref="KeyNotFoundException">No such project or shot.</exception>
+    /// <exception cref="ArgumentException">It is the segment's last shot, or the merged shot would be longer than a clip.</exception>
+    /// <exception cref="InvalidOperationException">A shot or the storyboard is running.</exception>
+    Task MergeShotAsync(Guid projectId, string shotKey, CancellationToken cancellationToken = default);
 }

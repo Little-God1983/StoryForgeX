@@ -193,6 +193,7 @@ internal sealed class ProfileStore(
     {
         Require(content.Steps is null or >= 1, "Steps must be at least 1.");
         Require(content.MaxClipSeconds is null or >= 1, "Max clip length must be at least 1 second.");
+        Require(content.Pacing?.Problem() is null, content.Pacing?.Problem() ?? "");
         foreach (var size in content.Sizes ?? [])
         {
             Require(!string.IsNullOrWhiteSpace(size.Aspect), "Every size needs an aspect, e.g. 16:9.");
@@ -265,7 +266,8 @@ internal sealed class ProfileStore(
         ProfileKind.Storyboard => ProfileContent.Empty with
         {
             Provider = "Claude CLI",
-            Instructions = "Split the script into shots. For every shot give what is seen, the camera, and the line of narration it covers.",
+            Instructions = "Cut the narration into shots. For every shot say what is seen, who and what is in it, and whether it continues the shot before.",
+            Pacing = Pacing.Default,
         },
         ProfileKind.Image => ProfileContent.Empty with
         {

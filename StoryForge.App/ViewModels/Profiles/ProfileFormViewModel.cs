@@ -53,6 +53,8 @@ public sealed partial class ProfileFormViewModel : ObservableValidator
 
     public bool IsVoice => Kind == ProfileKind.Voice;
 
+    public bool IsStoryboard => Kind == ProfileKind.Storyboard;
+
     public string ReferenceFilesTitle => IsVoice ? "Reference audio" : "Reference images";
 
     public string InstructionsLabel => Kind switch
@@ -129,6 +131,31 @@ public sealed partial class ProfileFormViewModel : ObservableValidator
     [ObservableProperty]
     private string _voice = "";
 
+    /// <summary>Storyboard only: the pacing, as typed; all three empty means the built-in one.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(PacingProblem))]
+    private string _pacingMin = "";
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(PacingProblem))]
+    private string _pacingTypical = "";
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(PacingProblem))]
+    private string _pacingMax = "";
+
+    private Pacing? TypedPacing =>
+        NumberText.Parse(PacingMin) is { } min && NumberText.Parse(PacingTypical) is { } typical && NumberText.Parse(PacingMax) is { } max
+            ? new Pacing(min, typical, max)
+            : null;
+
+    private bool NoPacing => PacingMin.Trim().Length + PacingTypical.Trim().Length + PacingMax.Trim().Length == 0;
+
+    /// <summary>Why the pacing cannot be saved; null when it can.</summary>
+    public string? PacingProblem => !IsStoryboard || NoPacing
+        ? null
+        : TypedPacing is { } pacing ? pacing.Problem() : "Every length is a whole number of seconds.";
+
     public ObservableCollection<WorkflowInputRowViewModel> Inputs { get; } = [];
 
     public ObservableCollection<SizeRowViewModel> Sizes { get; } = [];
@@ -144,7 +171,7 @@ public sealed partial class ProfileFormViewModel : ObservableValidator
     /// <summary>Raised after any field, row or reference file changed (not while loading).</summary>
     public event EventHandler? Changed;
 
-    public bool HasAnyErrors => HasErrors || Sizes.Any(s => s.HasErrors);
+    public bool HasAnyErrors => HasErrors || Sizes.Any(s => s.HasErrors) || PacingProblem is not null;
 
     public void SetTemplates(IReadOnlyList<string> templates)
     {
@@ -172,6 +199,9 @@ public sealed partial class ProfileFormViewModel : ObservableValidator
             NegativePrompt = content.NegativePrompt;
             Steps = NumberText.Format(content.Steps);
             MaxClipSeconds = NumberText.Format(content.MaxClipSeconds);
+            PacingMin = NumberText.Format(content.Pacing?.MinSeconds);
+            PacingTypical = NumberText.Format(content.Pacing?.TypicalSeconds);
+            PacingMax = NumberText.Format(content.Pacing?.MaxSeconds);
             Voice = content.Voice;
             Replace(Inputs, content.Inputs.Select(i => new WorkflowInputRowViewModel(i.Key, i.Node, IsReadOnly)));
             Replace(Sizes, content.Sizes.Select(s => new SizeRowViewModel(s.Aspect, s.Width, s.Height, IsReadOnly)));
@@ -201,6 +231,7 @@ public sealed partial class ProfileFormViewModel : ObservableValidator
         ReferenceFiles = [.. ReferenceFiles],
         MaxClipSeconds = NumberText.Parse(MaxClipSeconds),
         Voice = Voice.Trim(),
+        Pacing = IsStoryboard ? TypedPacing : _loaded.Pacing,
     };
 
     public static ValidationResult? ValidateSteps(string text, ValidationContext context) =>

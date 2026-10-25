@@ -2,11 +2,13 @@ using Microsoft.EntityFrameworkCore;
 using StoryForge.Client;
 using StoryForge.Engine.Data;
 using StoryForge.Engine.Projects;
+using StoryForge.Engine.Storyboard;
 
 namespace StoryForge.Engine.Pipeline;
 
 /// <summary>
-/// What you do to the segments of a stage with a cell per segment (the script, the voice): approve
+/// What you do to the segments of a stage with a cell per segment (the script, the voice, the
+/// storyboard's shots): approve
 /// one or all, switch one back to an older version. Each change settles the stage: approved once
 /// every segment is, and then the run goes on.
 /// </summary>
@@ -17,19 +19,19 @@ internal sealed class SegmentCells(
     TimeProvider clock)
 {
     /// <summary>The stages whose segments are cells of their own.</summary>
-    public static bool HasSegments(PipelineStage stage) => stage is PipelineStage.Script or PipelineStage.Voice;
+    public static bool HasSegments(PipelineStage stage) => stage is PipelineStage.Script or PipelineStage.Voice or PipelineStage.Storyboard;
 
     public async Task ApproveAsync(Guid projectId, PipelineStage stage, string segmentId, int version, CancellationToken cancellationToken)
     {
         RequireIdle(projectId, stage, segmentId);
-        await ChangeAsync(projectId, stage, segmentId, (db, cell) =>
+        await ChangeAsync(projectId, stage, segmentId, async (db, cell) =>
         {
             RequireVersion(db, cell, version);
+            await RequireSameCutAsync(db, cell, version, cancellationToken);
             cell.CurrentVersion = version;
             cell.ApprovedVersion = version;
             cell.State = StageState.Approved;
             cell.Error = null;
-            return Task.CompletedTask;
         }, cancellationToken);
     }
 
@@ -74,14 +76,14 @@ internal sealed class SegmentCells(
     {
         RequireIdle(projectId, stage, segmentId);
         var gated = await GatedAsync(projectId, stage, cancellationToken);
-        await ChangeAsync(projectId, stage, segmentId, (db, cell) =>
+        await ChangeAsync(projectId, stage, segmentId, async (db, cell) =>
         {
             RequireVersion(db, cell, version);
+            await RequireSameCutAsync(db, cell, version, cancellationToken);
             cell.CurrentVersion = version;
             cell.ApprovedVersion = gated ? cell.ApprovedVersion : version;
             cell.State = version == cell.ApprovedVersion ? StageState.Approved : StageState.NeedsReview;
             cell.Error = null;
-            return Task.CompletedTask;
         }, cancellationToken);
     }
 
@@ -127,6 +129,32 @@ internal sealed class SegmentCells(
         }
     }
 
+    /// <summary>
+    /// A shot's version may only come back where it cuts as the shot does now: one that starts or
+    /// ends elsewhere would overlap the shot next to it, or leave words no shot covers.
+    /// </summary>
+    private static async Task RequireSameCutAsync(StoryForgeDbContext db, CellEntry cell, int version, CancellationToken cancellationToken)
+    {
+        if (cell.Stage != PipelineStage.Storyboard || version == cell.CurrentVersion)
+        {
+            return;
+        }
+        var versions = await db.CellVersions.AsNoTracking()
+            .Where(v => v.ProjectId == cell.ProjectId && v.Stage == cell.Stage && v.Key == cell.Key && (v.Version == version || v.Version == cell.CurrentVersion))
+            .ToListAsync(cancellationToken);
+        var wanted = StoredJson.Read<Shot>(versions.First(v => v.Version == version).OutputJson);
+        var current = StoredJson.Read<Shot>(versions.First(v => v.Version == cell.CurrentVersion).OutputJson);
+        if (wanted.FirstWord == current.FirstWord && wanted.WordCount == current.WordCount)
+        {
+            return;
+        }
+        var board = await db.Cells.AsNoTracking().Where(c => c.ProjectId == cell.ProjectId && c.Stage == cell.Stage && c.Key != "")
+            .Join(db.CellVersions.AsNoTracking(), c => new { c.ProjectId, c.Stage, c.Key, Version = c.CurrentVersion ?? 0 }, v => new { v.ProjectId, v.Stage, v.Key, v.Version }, (c, v) => v.OutputJson)
+            .ToListAsync(cancellationToken);
+        var label = ShotTiming.Label([.. board.Select(StoredJson.Read<Shot>)], cell.Key);
+        throw new InvalidOperationException($"v{version} of {label} cuts elsewhere: move the cut back instead, so the shots still add up to the audio.");
+    }
+
     private static void RequireSegments(PipelineStage stage)
     {
         if (!HasSegments(stage))
@@ -135,7 +163,17 @@ internal sealed class SegmentCells(
         }
     }
 
-    private static string Name(PipelineStage stage) => stage == PipelineStage.Voice ? "voice" : "script";
+    private static string Name(PipelineStage stage) => stage switch
+    {
+        PipelineStage.Voice => "voice",
+        PipelineStage.Storyboard => "storyboard",
+        _ => "script",
+    };
 
-    private static string Doing(PipelineStage stage) => stage == PipelineStage.Voice ? "spoken" : "written";
+    private static string Doing(PipelineStage stage) => stage switch
+    {
+        PipelineStage.Voice => "spoken",
+        PipelineStage.Storyboard => "planned",
+        _ => "written",
+    };
 }

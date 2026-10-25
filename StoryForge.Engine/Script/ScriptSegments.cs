@@ -23,15 +23,19 @@ internal sealed class ScriptSegments(
     public async Task<ScriptView> GetAsync(Guid projectId, CancellationToken cancellationToken)
     {
         var setup = (await projects.GetAsync(projectId, cancellationToken)).Setup;
-        var script = await cells.CurrentScriptAsync(projectId, cancellationToken);
+        await using var db = await contextFactory.CreateDbContextAsync(cancellationToken);
+        // The cells first, then their versions: a version is stored with (or before) the cell that
+        // points to it, so a run storing the script meanwhile is seen whole or not at all.
+        var stageCells = await db.Cells.AsNoTracking().Where(c => c.ProjectId == projectId && c.Stage == Stage).ToListAsync(cancellationToken);
+        var versions = await db.CellVersions.AsNoTracking().Where(v => v.ProjectId == projectId && v.Stage == Stage).ToListAsync(cancellationToken);
+        var whole = stageCells.FirstOrDefault(c => c.Key == "");
+        var script = versions.FirstOrDefault(v => v.Key == "" && v.Version == whole?.CurrentVersion) is { } stored
+            ? StoredJson.Read<ScriptSheet>(stored.OutputJson)
+            : null;
         // The sheet the script was written from: its segments name that sheet's facts.
         var facts = (script is { FactsVersion: > 0 } ? await cells.FactSheetAsync(projectId, script.FactsVersion, cancellationToken) : null)?.Facts
             ?? (await cells.ApprovedFactSheetAsync(projectId, cancellationToken))?.Sheet.Facts
             ?? [];
-        await using var db = await contextFactory.CreateDbContextAsync(cancellationToken);
-        var stageCells = await db.Cells.AsNoTracking().Where(c => c.ProjectId == projectId && c.Stage == Stage).ToListAsync(cancellationToken);
-        var versions = await db.CellVersions.AsNoTracking().Where(v => v.ProjectId == projectId && v.Stage == Stage).ToListAsync(cancellationToken);
-        var whole = stageCells.FirstOrDefault(c => c.Key == "");
         if (whole is null)
         {
             return new ScriptView(projectId, StageState.NotStarted, null, [], [], "", 0, setup.Output.TargetSeconds, facts);

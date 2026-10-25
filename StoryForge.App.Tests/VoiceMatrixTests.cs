@@ -483,4 +483,28 @@ public sealed class VoiceMatrixTests
             Ended?.Invoke(this, EventArgs.Empty);
         }
     }
+
+    [Fact]
+    public async Task The_script_approval_still_shows_when_the_voice_starts_before_its_load_is_back()
+    {
+        var (matrix, project) = await OpenAsync();
+        _client.Scripts[project.Id] = _client.Scripts[project.Id] with { State = StageState.NeedsReview };
+        await matrix.Script!.LoadAsync();
+        Assert.True(matrix.Script.IsReview);
+
+        // The script is approved; the load that brings it waits, and the voice starts meanwhile.
+        var gate = new TaskCompletionSource();
+        _client.VoiceLoadGate = gate.Task;
+        _client.Scripts[project.Id] = _client.Scripts[project.Id] with { State = StageState.Approved };
+        _client.Raise(new StageUpdate(project.Id, PipelineStage.Script, StageState.Approved));
+        var approving = matrix.Updating;
+        _client.Raise(new StageUpdate(project.Id, PipelineStage.Voice, StageState.Running));
+        var starting = matrix.Updating;
+        gate.SetResult();
+        await approving;
+        await starting;
+
+        Assert.True(matrix.Script.IsApproved);
+        Assert.True(matrix.Script.IsVoiceRunning);
+    }
 }

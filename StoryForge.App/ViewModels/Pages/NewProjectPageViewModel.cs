@@ -60,8 +60,11 @@ public sealed partial class NewProjectPageViewModel : PageViewModel
         Clips = new StageCardViewModel("Video clips", 3, ComfyUi, [new("Minimax H3", "Minimax H3"), new("LTX 2.5", "LTX 2.5 (fallback)")],
             VideoSlot);
         Cards = [Writing, Voice, Stills, Clips];
+        StoryboardSlot = Writing.Slots[2];
 
         ResearchSlot.PropertyChanged += (_, e) => OnSlotChanged(e, ResearchSlot, ApplyResearchProfile);
+        StoryboardSlot.PropertyChanged += (_, e) => OnSlotChanged(e, StoryboardSlot,
+            (content, _, sameProfile) => Pacing.UseDefault(content, keepCustom: sameProfile));
         ImageSlot.PropertyChanged += (_, e) => OnSlotChanged(e, ImageSlot,
             (content, _, sameProfile) => StillSize.UseDefaultFor(Aspect, content, keepCustom: sameProfile));
         VideoSlot.PropertyChanged += (_, e) => OnSlotChanged(e, VideoSlot, (content, _, sameProfile) =>
@@ -73,7 +76,7 @@ public sealed partial class NewProjectPageViewModel : PageViewModel
         {
             slot.PropertyChanged += (_, _) => UpdateMissing();
         }
-        foreach (var watched in new INotifyPropertyChanged[] { StillSize, ClipSize, MaxClip })
+        foreach (var watched in new INotifyPropertyChanged[] { StillSize, ClipSize, MaxClip, Pacing })
         {
             watched.PropertyChanged += (_, _) => UpdateMissing();
         }
@@ -127,6 +130,8 @@ public sealed partial class NewProjectPageViewModel : PageViewModel
 
     public ProfileSlotViewModel VideoSlot { get; }
 
+    public ProfileSlotViewModel StoryboardSlot { get; }
+
     [ObservableProperty]
     private Consistency _consistency = Consistency.ReferenceImages;
 
@@ -135,6 +140,18 @@ public sealed partial class NewProjectPageViewModel : PageViewModel
     public GenerationSizeViewModel ClipSize { get; } = new();
 
     public MaxClipViewModel MaxClip { get; } = new();
+
+    /// <summary>How long shots should be: the storyboard profile's, or a custom one.</summary>
+    public PacingViewModel Pacing { get; } = new();
+
+    /// <summary>Why the custom pacing cannot be used; null when it can.</summary>
+    public string? PacingProblem => Pacing.Problem(MaxClip.Value);
+
+    /// <summary>"about 48 shots → 48 stills, 48 clips": the target length over the typical shot, before anything is spent.</summary>
+    public string ShotEstimate => TargetLength() is { } target && Pacing.Effective?.HeldTo(MaxClip.Value ?? int.MaxValue) is { TypicalSeconds: > 0 } pacing
+        && Math.Max(1, (int)Math.Round((double)target / pacing.TypicalSeconds)) is var shots
+        ? $"about {shots} shots → {shots} stills, {shots} clips"
+        : "";
 
     // ── Output ──
 
@@ -302,7 +319,8 @@ public sealed partial class NewProjectPageViewModel : PageViewModel
         new ClipsSetup(Clips.Provider, Clips.Model, VideoSlot.ToRef()!, MaxClip.Value!.Value, ClipSize.Value!),
         new OutputSetup(Aspect, SelectedDelivery.Value.Width, SelectedDelivery.Value.Height, TargetLength()!.Value, Language, Assembly),
         [.. RunPlan.Where(s => s.IsGated).Select(s => s.Stage)],
-        StopAtGates ? RunMode.StopAtGates : RunMode.RunThrough);
+        StopAtGates ? RunMode.StopAtGates : RunMode.RunThrough,
+        Pacing.Override);
 
     private int? TargetLength()
     {
@@ -428,7 +446,7 @@ public sealed partial class NewProjectPageViewModel : PageViewModel
         missing.AddRange(Cards.SelectMany(c => c.Slots).Where(s => s.Selected is null).Select(s => $"a {s.Label.ToLowerInvariant()}"));
         // A profile's defaults (sizes, sources, clip length) must be in before Start, or the new
         // profile would be saved with the old one's values.
-        missing.AddRange(new[] { ResearchSlot, ImageSlot, VideoSlot }
+        missing.AddRange(new[] { ResearchSlot, StoryboardSlot, ImageSlot, VideoSlot }
             .Where(s => s.Selected is not null && _applied.GetValueOrDefault(s) != s.Selected)
             .Select(s => $"the defaults of {s.Selected!.Name} (loading, or they could not be read)"));
         if (StillSize.Problem is { } still)
@@ -447,6 +465,12 @@ public sealed partial class NewProjectPageViewModel : PageViewModel
         {
             missing.Add("a valid target length");
         }
+        if (PacingProblem is not null)
+        {
+            missing.Add("a valid pacing");
+        }
+        OnPropertyChanged(nameof(PacingProblem));
+        OnPropertyChanged(nameof(ShotEstimate));
         MissingText = missing.Count == 0 ? null : $"Needs {JoinAnd(missing)}.";
         OnPropertyChanged(nameof(MissingText));
         OnPropertyChanged(nameof(CanStart));

@@ -36,6 +36,7 @@ public sealed record GenerationSize(string Aspect, int Width, int Height);
 /// <param name="ReferenceFiles">Media only: reference images (or reference audio for a voice), as stored by the engine.</param>
 /// <param name="MaxClipSeconds">Video only: the longest clip the model makes.</param>
 /// <param name="Voice">Voice only: the voice the TTS workflow uses.</param>
+/// <param name="Pacing">Storyboard only: how long shots should be.</param>
 public sealed record ProfileContent(
     string Instructions,
     IReadOnlyList<string> ResearchSources,
@@ -48,7 +49,8 @@ public sealed record ProfileContent(
     IReadOnlyList<GenerationSize> Sizes,
     IReadOnlyList<string> ReferenceFiles,
     int? MaxClipSeconds,
-    string Voice)
+    string Voice,
+    Pacing? Pacing = null)
 {
     /// <summary>Every text empty, every list empty, no numbers set.</summary>
     public static ProfileContent Empty { get; } = new("", [], "", "", "", "", [], null, [], [], null, "");

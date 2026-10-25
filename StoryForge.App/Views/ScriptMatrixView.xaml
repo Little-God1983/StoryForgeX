@@ -182,6 +182,63 @@
         </DockPanel>
       </Border>
 
+      <!-- Where the storyboard stands, once the voice is approved. -->
+      <Border Style="{StaticResource BarStyle}" Background="{StaticResource CardBrush}" BorderBrush="{StaticResource BorderBrush}"
+              Visibility="{Binding CanPlanBoard, Converter={StaticResource Visible}}">
+        <DockPanel>
+          <Button DockPanel.Dock="Right" Content="Plan the storyboard" Style="{StaticResource PrimaryButtonStyle}" MinHeight="36" FontSize="13"
+                  Command="{Binding RegenerateBoardCommand}" />
+          <TextBlock VerticalAlignment="Center" FontSize="13" Foreground="{StaticResource TextSoftBrush}" TextWrapping="Wrap"
+                     Text="The voice is approved. The storyboard cuts every segment into shots, timed to its words." />
+        </DockPanel>
+      </Border>
+      <Border Style="{StaticResource BarStyle}" Background="#172536" BorderBrush="#2B4A6B"
+              Visibility="{Binding IsBoardRunning, Converter={StaticResource Visible}}">
+        <DockPanel>
+          <Button DockPanel.Dock="Right" Content="Cancel" Style="{StaticResource SecondaryButtonStyle}" Command="{Binding CancelBoardCommand}"
+                  AutomationProperties.Name="Cancel the storyboard" />
+          <TextBlock Text="Planning the shots" FontSize="14" FontWeight="SemiBold" Foreground="#6FB3EE" VerticalAlignment="Center" Margin="0,0,14,0" />
+          <TextBlock Text="{Binding BoardProgress}" VerticalAlignment="Center" FontSize="13" Foreground="#BCD3EA" TextTrimming="CharacterEllipsis"
+                     FontFamily="{StaticResource MonoFont}" AutomationProperties.AutomationId="BoardProgress" />
+        </DockPanel>
+      </Border>
+
+      <Border Style="{StaticResource BarStyle}" Background="{StaticResource AccentSoftBrush}" BorderBrush="#5A4520"
+              Visibility="{Binding IsBoardReview, Converter={StaticResource Visible}}">
+        <DockPanel>
+          <Button DockPanel.Dock="Right" Content="Approve remaining" Style="{StaticResource PrimaryButtonStyle}" MinHeight="36" FontSize="13"
+                  Margin="8,0,0,0" Command="{Binding ApproveRemainingBoardCommand}" AutomationProperties.Name="Approve remaining shots" />
+          <Button DockPanel.Dock="Right" Content="Regenerate storyboard" Style="{StaticResource SecondaryButtonStyle}" Command="{Binding RegenerateBoardCommand}" />
+          <TextBlock Text="Gate: Storyboard" FontSize="14" FontWeight="SemiBold" Foreground="{StaticResource AccentTextBrush}" VerticalAlignment="Center" Margin="0,0,14,0" />
+          <TextBlock VerticalAlignment="Center" FontSize="13" Foreground="#D9C9A8" TextWrapping="Wrap">
+            <Run Text="{Binding BoardApprovedSummary, Mode=OneWay}" /> This stop is always on: References start when every shot is approved.
+          </TextBlock>
+        </DockPanel>
+      </Border>
+
+      <Border Style="{StaticResource BarStyle}" Background="{StaticResource PillOkBackBrush}" BorderBrush="#2F5A50"
+              Visibility="{Binding IsBoardApproved, Converter={StaticResource Visible}}">
+        <DockPanel>
+          <Button DockPanel.Dock="Right" Content="Regenerate storyboard" Style="{StaticResource SecondaryButtonStyle}" Command="{Binding RegenerateBoardCommand}" />
+          <TextBlock Text="Storyboard approved" FontSize="14" FontWeight="SemiBold" Foreground="{StaticResource PillOkTextBrush}" VerticalAlignment="Center" Margin="0,0,14,0" />
+          <TextBlock VerticalAlignment="Center" FontSize="13" Foreground="{StaticResource TextSoftBrush}" TextWrapping="Wrap"
+                     Text="Every shot is approved. References arrive with #9." />
+        </DockPanel>
+      </Border>
+
+      <Border Style="{StaticResource BarStyle}" Background="{StaticResource PillErrorBackBrush}" BorderBrush="#6B3A33"
+              Visibility="{Binding IsBoardFailed, Converter={StaticResource Visible}}">
+        <DockPanel>
+          <Button DockPanel.Dock="Right" Content="Retry" Style="{StaticResource PrimaryButtonStyle}" MinHeight="36" FontSize="13"
+                  Background="{StaticResource ErrorTextBrush}" Command="{Binding RegenerateBoardCommand}" AutomationProperties.Name="Retry the storyboard" />
+          <StackPanel VerticalAlignment="Center" Margin="0,0,14,0">
+            <TextBlock Text="Storyboard failed" FontSize="14" FontWeight="SemiBold" Foreground="{StaticResource PillErrorTextBrush}" />
+            <TextBlock Text="{Binding BoardError}" FontSize="13" Foreground="#E2C1BB" TextWrapping="Wrap" Margin="0,2,0,0"
+                       AutomationProperties.AutomationId="BoardError" />
+          </StackPanel>
+        </DockPanel>
+      </Border>
+
       <Border Background="{StaticResource PillErrorBackBrush}" CornerRadius="8" Padding="12,8" Margin="0,0,0,14"
               Visibility="{Binding ActionError, Converter={views:NullToCollapsedConverter}}">
         <TextBlock Text="{Binding ActionError}" Foreground="{StaticResource PillErrorTextBrush}" FontSize="13" TextWrapping="Wrap" />
@@ -192,6 +249,9 @@
                    AutomationProperties.AutomationId="ScriptLength" />
         <TextBlock Text="{Binding LengthNote}" FontSize="13" Foreground="{StaticResource AccentTextBrush}" TextWrapping="Wrap" Margin="0,4,0,0"
                    Visibility="{Binding LengthNote, Converter={views:NullToCollapsedConverter}}" />
+        <TextBlock Text="{Binding PacingSummary}" FontFamily="{StaticResource MonoFont}" FontSize="12" Foreground="{StaticResource TextMutedBrush}" Margin="0,4,0,0"
+                   AutomationProperties.AutomationId="PacingSummary"
+                   Visibility="{Binding PacingSummary, Converter={views:NullToCollapsedConverter}}" />
       </StackPanel>
     </StackPanel>
 
@@ -224,7 +284,11 @@
               <ColumnDefinition Width="*" />
               <ColumnDefinition Width="*" />
             </Grid.ColumnDefinitions>
-            <TextBlock Grid.Column="0" Text="SEGMENT" Style="{StaticResource SectionLabelStyle}" />
+            <DockPanel Grid.Column="0" Margin="0,0,10,0">
+              <Button DockPanel.Dock="Right" Content="{Binding FoldAllLabel}" Style="{StaticResource SmallButtonStyle}" Padding="8,2" FontSize="11"
+                      Command="{Binding FoldAllCommand}" Visibility="{Binding ShowsFoldAll, Converter={StaticResource Visible}}" />
+              <TextBlock Text="SEGMENT · SHOT" Style="{StaticResource SectionLabelStyle}" VerticalAlignment="Center" />
+            </DockPanel>
             <TextBlock Grid.Column="1" Text="SCRIPT" Style="{StaticResource SectionLabelStyle}" />
             <TextBlock Grid.Column="2" Text="VOICE" Style="{StaticResource SectionLabelStyle}" Margin="6,0,0,0" />
             <TextBlock Grid.Column="3" Text="BOARD" Style="{StaticResource SectionLabelStyle}" Margin="6,0,0,0" />
@@ -235,6 +299,7 @@
             <ItemsControl ItemsSource="{Binding Rows}" Focusable="False" AutomationProperties.Name="Segments">
               <ItemsControl.ItemTemplate>
                 <DataTemplate DataType="{x:Type script:SegmentRowViewModel}">
+                  <StackPanel>
                   <Grid Margin="4,0,4,6">
                     <Grid.ColumnDefinitions>
                       <ColumnDefinition Width="220" />
@@ -244,10 +309,50 @@
                       <ColumnDefinition Width="*" />
                       <ColumnDefinition Width="*" />
                     </Grid.ColumnDefinitions>
-                    <StackPanel Grid.Column="0" VerticalAlignment="Center" Margin="6,0,10,0">
-                      <TextBlock Text="{Binding Id}" FontFamily="{StaticResource MonoFont}" FontSize="13" FontWeight="SemiBold" />
-                      <TextBlock Text="{Binding Title}" FontSize="12" Foreground="{StaticResource TextMutedBrush}" TextTrimming="CharacterEllipsis" ToolTip="{Binding Title}" />
-                    </StackPanel>
+                    <Button Grid.Column="0" Command="{Binding ToggleCommand}" Cursor="Hand" Margin="0,0,10,0" HorizontalContentAlignment="Stretch"
+                            IsEnabled="{Binding HasShots}" AutomationProperties.Name="{Binding Id, StringFormat='Fold or open {0}'}"
+                            FocusVisualStyle="{StaticResource RoundedFocusVisual}">
+                      <Button.Template>
+                        <ControlTemplate TargetType="Button">
+                          <Border Background="Transparent" Padding="0,2">
+                            <ContentPresenter VerticalAlignment="Center" />
+                          </Border>
+                        </ControlTemplate>
+                      </Button.Template>
+                      <DockPanel>
+                        <Path x:Name="Chevron" DockPanel.Dock="Left" Data="M 0 0 L 5 5 L 0 10" Stroke="{StaticResource TextSoftBrush}" StrokeThickness="2"
+                              VerticalAlignment="Center" Margin="6,0,8,0" RenderTransformOrigin="0.5,0.5">
+                          <Path.Style>
+                            <Style TargetType="Path">
+                              <Setter Property="Visibility" Value="Hidden" />
+                              <Setter Property="RenderTransform">
+                                <Setter.Value>
+                                  <RotateTransform Angle="0" />
+                                </Setter.Value>
+                              </Setter>
+                              <Style.Triggers>
+                                <DataTrigger Binding="{Binding HasShots}" Value="True">
+                                  <Setter Property="Visibility" Value="Visible" />
+                                </DataTrigger>
+                                <DataTrigger Binding="{Binding IsOpen}" Value="True">
+                                  <Setter Property="RenderTransform">
+                                    <Setter.Value>
+                                      <RotateTransform Angle="90" />
+                                    </Setter.Value>
+                                  </Setter>
+                                </DataTrigger>
+                              </Style.Triggers>
+                            </Style>
+                          </Path.Style>
+                        </Path>
+                        <StackPanel>
+                          <TextBlock Text="{Binding Id}" FontFamily="{StaticResource MonoFont}" FontSize="13" FontWeight="SemiBold" Foreground="{StaticResource TextBrush}" />
+                          <TextBlock Text="{Binding Title}" FontSize="12" Foreground="{StaticResource TextMutedBrush}" TextTrimming="CharacterEllipsis" ToolTip="{Binding Title}" />
+                          <TextBlock Text="{Binding ShotsText}" FontSize="11" FontFamily="{StaticResource MonoFont}" Foreground="{StaticResource TextMutedBrush}"
+                                     Visibility="{Binding HasShots, Converter={StaticResource Visible}}" />
+                        </StackPanel>
+                      </DockPanel>
+                    </Button>
                     <Button Grid.Column="1" Style="{StaticResource CellStyle}" Command="{Binding SelectCommand}" AutomationProperties.Name="{Binding AccessibleName}">
                       <DockPanel>
                         <TextBlock DockPanel.Dock="Right" Text="{Binding VersionText}" FontFamily="{StaticResource MonoFont}" />
@@ -261,10 +366,47 @@
                         <TextBlock Text="{Binding StateText}" FontWeight="SemiBold" />
                       </DockPanel>
                     </Button>
-                    <Border Grid.Column="3" Style="{StaticResource LaterCellStyle}" />
+                    <!-- Folded: what the shots need, in the Board column. -->
+                    <Border Grid.Column="3" Style="{StaticResource LaterCellStyle}">
+                      <TextBlock Text="{Binding BoardSummary}" FontFamily="{StaticResource MonoFont}" FontSize="12" Foreground="{StaticResource TextSoftBrush}"
+                                 HorizontalAlignment="Center" VerticalAlignment="Center" AutomationProperties.Name="{Binding BoardSummaryName}"
+                                 Visibility="{Binding ShowsSummary, Converter={StaticResource Visible}}" />
+                    </Border>
                     <Border Grid.Column="4" Style="{StaticResource LaterCellStyle}" />
                     <Border Grid.Column="5" Style="{StaticResource LaterCellStyle}" />
                   </Grid>
+
+                  <!-- Its shots, indented: each with its Board cell; Still and Clip arrive with #10 and #12. -->
+                  <ItemsControl ItemsSource="{Binding Shots}" Focusable="False" AutomationProperties.Name="{Binding Id, StringFormat='Shots of {0}'}"
+                                Visibility="{Binding ShowsShots, Converter={StaticResource Visible}}">
+                    <ItemsControl.ItemTemplate>
+                      <DataTemplate DataType="{x:Type script:ShotRowViewModel}">
+                        <Grid Margin="4,0,4,6">
+                          <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="220" />
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="*" />
+                          </Grid.ColumnDefinitions>
+                          <StackPanel Grid.Column="0" VerticalAlignment="Center" Margin="36,0,10,0">
+                            <TextBlock Text="{Binding Label}" FontFamily="{StaticResource MonoFont}" FontSize="13" FontWeight="SemiBold" />
+                            <TextBlock Text="{Binding Description}" FontSize="12" Foreground="{StaticResource TextMutedBrush}" TextTrimming="CharacterEllipsis" ToolTip="{Binding Description}" />
+                          </StackPanel>
+                          <Button Grid.Column="3" Style="{StaticResource CellStyle}" Margin="6,0,0,0" Command="{Binding SelectCommand}" AutomationProperties.Name="{Binding AccessibleName}">
+                            <DockPanel>
+                              <TextBlock DockPanel.Dock="Right" Text="{Binding VersionText}" FontFamily="{StaticResource MonoFont}" />
+                              <TextBlock Text="{Binding StateText}" FontWeight="SemiBold" />
+                            </DockPanel>
+                          </Button>
+                          <Border Grid.Column="4" Style="{StaticResource LaterCellStyle}" />
+                          <Border Grid.Column="5" Style="{StaticResource LaterCellStyle}" />
+                        </Grid>
+                      </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                  </ItemsControl>
+                  </StackPanel>
                 </DataTemplate>
               </ItemsControl.ItemTemplate>
             </ItemsControl>
@@ -275,13 +417,18 @@
         <Border Grid.Column="1" Background="{StaticResource NavBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="10" Padding="20"
                 Visibility="{Binding HasSelection, Converter={StaticResource Visible}}">
           <DockPanel>
-            <StackPanel DockPanel.Dock="Bottom" Margin="0,14,0,0" Visibility="{Binding IsNotEditing, Converter={StaticResource Visible}}">
+            <StackPanel DockPanel.Dock="Bottom" Margin="0,14,0,0" Visibility="{Binding IsNotEditingAny, Converter={StaticResource Visible}}">
               <UniformGrid Columns="2">
                 <Button Content="Approve" Style="{StaticResource PrimaryButtonStyle}" Margin="0,0,4,0" Background="#58B7A6" Command="{Binding ApproveSegmentCommand}" />
                 <Button Content="Regenerate" Style="{StaticResource SecondaryButtonStyle}" MinHeight="44" Margin="4,0,0,0" Command="{Binding RegenerateSegmentCommand}" />
               </UniformGrid>
               <Button Content="Edit text…" Style="{StaticResource SecondaryButtonStyle}" MinHeight="44" Margin="0,8,0,0" Command="{Binding StartEditCommand}"
                       Visibility="{Binding IsScriptPanel, Converter={StaticResource Visible}}" />
+              <UniformGrid Columns="2" Margin="0,8,0,0" Visibility="{Binding IsBoardPanel, Converter={StaticResource Visible}}">
+                <Button Content="Edit description…" Style="{StaticResource SecondaryButtonStyle}" MinHeight="44" Margin="0,0,4,0" Command="{Binding StartEditShotCommand}" />
+                <Button Content="Merge with next" Style="{StaticResource SecondaryButtonStyle}" MinHeight="44" Margin="4,0,0,0" Command="{Binding MergeWithNextCommand}"
+                        AutomationProperties.Name="Merge with the next shot" />
+              </UniformGrid>
               <Button Content="Cancel" Style="{StaticResource SecondaryButtonStyle}" MinHeight="44" Margin="0,8,0,0" Command="{Binding CancelSegmentCommand}"
                       AutomationProperties.Name="Cancel the segment"
                       Visibility="{Binding SelectedIsRunning, Converter={StaticResource Visible}}" />
@@ -371,6 +518,118 @@
                   </Border>
                   <TextBlock FontSize="12" Foreground="{StaticResource TextMutedBrush}" TextWrapping="Wrap" Margin="0,8,0,0"
                              Text="When each word is heard is estimated from the text. Click a word to hear from there." />
+                </StackPanel>
+
+                <!-- A Board cell: what board 8 drew, as the panel. -->
+                <StackPanel Visibility="{Binding IsBoardPanel, Converter={StaticResource Visible}}">
+                  <TextBlock Text="Shows" Style="{StaticResource FieldLabelStyle}" />
+                  <Border Background="{StaticResource CardBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="8" Padding="12,10"
+                          Visibility="{Binding IsNotEditingShot, Converter={StaticResource Visible}}">
+                    <TextBlock Text="{Binding BoardShows}" FontSize="14" TextWrapping="Wrap" LineHeight="21" AutomationProperties.AutomationId="BoardShows" />
+                  </Border>
+                  <StackPanel Visibility="{Binding IsEditingShot, Converter={StaticResource Visible}}">
+                    <TextBox Text="{Binding EditShotDescription, UpdateSourceTrigger=PropertyChanged}" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="90"
+                             VerticalContentAlignment="Top" FontSize="14" Padding="10,8" AutomationProperties.Name="Shot description" />
+                    <UniformGrid Columns="2" Margin="0,8,0,0">
+                      <Button Content="Save" Style="{StaticResource PrimaryButtonStyle}" Margin="0,0,4,0" Command="{Binding SaveShotDescriptionCommand}"
+                              AutomationProperties.Name="Save the description" />
+                      <Button Content="Cancel" Style="{StaticResource SecondaryButtonStyle}" MinHeight="44" Margin="4,0,0,0" Command="{Binding CancelEditShotCommand}"
+                              AutomationProperties.Name="Cancel the description" />
+                    </UniformGrid>
+                  </StackPanel>
+
+                  <TextBlock Style="{StaticResource FieldLabelStyle}" Margin="0,14,0,6">
+                    <Run Text="Covers" /> <Run Text="(the narration of" /> <Run Text="{Binding Selected.Id, Mode=OneWay}" /><Run Text="; this shot lit)" />
+                  </TextBlock>
+                  <Border Background="{StaticResource CardBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="8" Padding="10,8">
+                    <ItemsControl ItemsSource="{Binding BoardWords}" Focusable="False" AutomationProperties.Name="Words of the segment">
+                      <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate>
+                          <WrapPanel />
+                        </ItemsPanelTemplate>
+                      </ItemsControl.ItemsPanel>
+                      <ItemsControl.ItemTemplate>
+                        <DataTemplate DataType="{x:Type script:BoardWord}">
+                          <Button Command="{Binding DataContext.SplitAtCommand, RelativeSource={RelativeSource AncestorType=UserControl}}" CommandParameter="{Binding Index}"
+                                  Margin="0,0,1,3" AutomationProperties.Name="{Binding Text, StringFormat='Split here, at {0}'}" FocusVisualStyle="{StaticResource RoundedFocusVisual}">
+                            <Button.Template>
+                              <ControlTemplate TargetType="Button">
+                                <Border x:Name="Back" CornerRadius="4" Padding="3,1" Background="Transparent">
+                                  <TextBlock x:Name="Word" Text="{Binding Text}" FontSize="14" Foreground="{StaticResource TextMutedBrush}" />
+                                </Border>
+                                <ControlTemplate.Triggers>
+                                  <DataTrigger Binding="{Binding IsInShot}" Value="True">
+                                    <Setter TargetName="Back" Property="Background" Value="{StaticResource AccentSoftBrush}" />
+                                    <Setter TargetName="Word" Property="Foreground" Value="{StaticResource AccentTextBrush}" />
+                                  </DataTrigger>
+                                  <DataTrigger Binding="{Binding CanSplit}" Value="True">
+                                    <Setter Property="Cursor" Value="Hand" />
+                                    <Setter Property="ToolTip" Value="Split the shot here" />
+                                  </DataTrigger>
+                                </ControlTemplate.Triggers>
+                              </ControlTemplate>
+                            </Button.Template>
+                          </Button>
+                        </DataTemplate>
+                      </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                  </Border>
+
+                  <DockPanel Margin="0,10,0,0">
+                    <Button DockPanel.Dock="Right" Content="later ▶" Style="{StaticResource SmallButtonStyle}" Margin="6,0,0,0" Command="{Binding StartLaterCommand}"
+                            AutomationProperties.Name="Start one word later" />
+                    <Button DockPanel.Dock="Right" Content="◀ earlier" Style="{StaticResource SmallButtonStyle}" Command="{Binding StartEarlierCommand}"
+                            AutomationProperties.Name="Start one word earlier" />
+                    <TextBlock VerticalAlignment="Center" FontSize="13" Foreground="{StaticResource TextSoftBrush}">
+                      <Run Text="Starts at “" /><Run Text="{Binding BoardStartWord, Mode=OneWay}" /><Run Text="”" />
+                    </TextBlock>
+                  </DockPanel>
+                  <DockPanel Margin="0,6,0,0">
+                    <Button DockPanel.Dock="Right" Content="later ▶" Style="{StaticResource SmallButtonStyle}" Margin="6,0,0,0" Command="{Binding EndLaterCommand}"
+                            AutomationProperties.Name="End one word later" />
+                    <Button DockPanel.Dock="Right" Content="◀ earlier" Style="{StaticResource SmallButtonStyle}" Command="{Binding EndEarlierCommand}"
+                            AutomationProperties.Name="End one word earlier" />
+                    <TextBlock VerticalAlignment="Center" FontSize="13" Foreground="{StaticResource TextSoftBrush}">
+                      <Run Text="Ends after “" /><Run Text="{Binding BoardEndWord, Mode=OneWay}" /><Run Text="”" />
+                    </TextBlock>
+                  </DockPanel>
+                  <TextBlock FontSize="12" Foreground="{StaticResource TextMutedBrush}" TextWrapping="Wrap" Margin="0,6,0,0"
+                             Text="Cuts fall between words. Moving one changes the shot next to it, so the segment still adds up to its audio. Click a word in the shot to split it there." />
+
+                  <TextBlock Text="Who and where (up to 4: what Minimax takes per clip)" Style="{StaticResource FieldLabelStyle}" Margin="0,14,0,6" />
+                  <ItemsControl ItemsSource="{Binding BoardCast}" Focusable="False" AutomationProperties.Name="Who and what is in the shot">
+                    <ItemsControl.ItemsPanel>
+                      <ItemsPanelTemplate>
+                        <WrapPanel />
+                      </ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                    <ItemsControl.ItemTemplate>
+                      <DataTemplate>
+                        <Button Content="{Binding}" ContentStringFormat="{}{0}  ×" Style="{StaticResource SmallButtonStyle}" Margin="0,0,6,6"
+                                Command="{Binding DataContext.RemoveCastCommand, RelativeSource={RelativeSource AncestorType=UserControl}}" CommandParameter="{Binding}"
+                                AutomationProperties.Name="{Binding StringFormat='Take {0} out of the shot'}" />
+                      </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                  </ItemsControl>
+                  <ItemsControl ItemsSource="{Binding BoardCastChoices}" Focusable="False" AutomationProperties.Name="Who and what can be added">
+                    <ItemsControl.ItemsPanel>
+                      <ItemsPanelTemplate>
+                        <WrapPanel />
+                      </ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                    <ItemsControl.ItemTemplate>
+                      <DataTemplate>
+                        <Button Content="{Binding}" ContentStringFormat="+ {0}" Style="{StaticResource SmallButtonStyle}" Margin="0,0,6,6" Foreground="{StaticResource TextMutedBrush}"
+                                Command="{Binding DataContext.AddCastCommand, RelativeSource={RelativeSource AncestorType=UserControl}}" CommandParameter="{Binding}"
+                                AutomationProperties.Name="{Binding StringFormat='Put {0} in the shot'}" />
+                      </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                  </ItemsControl>
+
+                  <CheckBox IsChecked="{Binding BoardContinues}" IsEnabled="{Binding CanEditBoard}" Margin="0,10,0,0" Foreground="{StaticResource TextBrush}" FontSize="13"
+                            AutomationProperties.Name="Continues the shot before">
+                    <TextBlock Text="Continues the shot before (same scene, the camera moves on)" TextWrapping="Wrap" />
+                  </CheckBox>
                 </StackPanel>
 
                 <StackPanel Visibility="{Binding IsScriptPanel, Converter={StaticResource Visible}}">

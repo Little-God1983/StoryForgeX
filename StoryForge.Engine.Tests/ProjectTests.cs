@@ -259,4 +259,44 @@ public sealed class ProjectTests : IDisposable
 
         await Assert.ThrowsAsync<KeyNotFoundException>(() => client.GetProjectAsync(Guid.NewGuid()));
     }
+
+    [Fact]
+    public async Task A_project_keeps_its_own_pacing()
+    {
+        var client = await _engine.StartClientAsync();
+        var setup = await ValidSetup(client) with { Pacing = new Pacing(2, 4, 6) };
+
+        var created = await client.CreateProjectAsync(setup);
+
+        Assert.Equal(new Pacing(2, 4, 6), (await client.GetProjectAsync(created.Id)).Setup.Pacing);
+    }
+
+    [Fact]
+    public async Task A_project_saved_before_pacing_reads_without_one()
+    {
+        var client = await _engine.StartClientAsync();
+        var created = await client.CreateProjectAsync(await ValidSetup(client));
+        await using (var db = await _engine.DbAsync())
+        {
+            var entry = db.Projects.Single();
+            var json = System.Text.Json.Nodes.JsonNode.Parse(entry.SetupJson)!.AsObject();
+            json.Remove("Pacing");
+            entry.SetupJson = json.ToJsonString();
+            await db.SaveChangesAsync();
+        }
+
+        Assert.Null((await client.GetProjectAsync(created.Id)).Setup.Pacing);
+    }
+
+    [Theory]
+    [InlineData(1, 4, 6)]
+    [InlineData(5, 4, 6)]
+    [InlineData(3, 5, 25)]
+    public async Task An_impossible_pacing_is_refused(int min, int typical, int max)
+    {
+        var client = await _engine.StartClientAsync();
+        var setup = await ValidSetup(client) with { Pacing = new Pacing(min, typical, max) };   // clips up to 20 s
+
+        await Assert.ThrowsAsync<ArgumentException>(() => client.CreateProjectAsync(setup));
+    }
 }

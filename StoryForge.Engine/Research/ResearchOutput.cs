@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Text.Json.Serialization;
 using System.Text.Json.Schema;
 using System.Text.Json.Serialization.Metadata;
 
@@ -37,6 +38,9 @@ internal static class OutputSchema
     {
         RespectNullableAnnotations = true,
         RespectRequiredConstructorParameters = true,
+        // Numbers as numbers: the web defaults also take "12", and the schema for that is a
+        // pattern full of ^ and |, which cmd.exe would mangle on the way to claude.cmd.
+        NumberHandling = JsonNumberHandling.Strict,
         TypeInfoResolver = new DefaultJsonTypeInfoResolver(),
     };
 
