@@ -615,8 +615,9 @@ public sealed class NewProjectPageTests
     }
 
     [Fact]
-    public async Task A_profile_pacing_longer_than_the_max_clip_keeps_start_off()
+    public async Task A_profile_pacing_longer_than_the_max_clip_is_held_to_it_and_start_stays_on()
     {
+        // The storyboard holds the profile's 3–8 s to clips of 6 s: nothing for you to fix.
         AddOneOfEach();
         var page = await ShownPage();
         FillBrief(page);
@@ -624,7 +625,21 @@ public sealed class NewProjectPageTests
         page.MaxClip.SelectedIndex = GenerationSizeViewModel.CustomIndex;
         page.MaxClip.CustomSeconds = "6";
 
-        Assert.Equal("Shots of up to 8 s are longer than the video model makes (6 s).", page.PacingProblem);
-        Assert.Contains("a valid pacing", page.MissingText);
+        Assert.Null(page.PacingProblem);
+        Assert.True(page.CanStart);
+    }
+
+    [Fact]
+    public async Task A_custom_pacing_longer_than_the_max_clip_keeps_start_off()
+    {
+        AddOneOfEach();
+        var page = await ShownPage();
+        FillBrief(page);
+
+        page.Pacing.SelectedIndex = GenerationSizeViewModel.CustomIndex;
+        page.Pacing.CustomMax = "40";   // the video profile makes 30 s
+
+        Assert.Equal("Shots of up to 40 s are longer than the video model makes (30 s).", page.PacingProblem);
+        Assert.False(page.CanStart);
     }
 }

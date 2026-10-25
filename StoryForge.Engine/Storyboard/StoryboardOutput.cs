@@ -203,6 +203,7 @@ internal static class StoryboardCheck
     /// <summary>"house of hope" for " House of  Hope": what tells two names apart.</summary>
     private static string Normal(string? name) => string.Join(' ', (name ?? "").Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries)).ToLowerInvariant();
 
+    /// <summary>One of the three words, any case; a number or a mix ("character, place") is none of them.</summary>
     private static CastKind? ToKind(string? kind) =>
-        Enum.TryParse<CastKind>((kind ?? "").Trim(), ignoreCase: true, out var parsed) && Enum.IsDefined(parsed) ? parsed : null;
+        Enum.GetValues<CastKind>().Select(k => (CastKind?)k).FirstOrDefault(k => string.Equals(k.ToString(), (kind ?? "").Trim(), StringComparison.OrdinalIgnoreCase));
 }

@@ -267,4 +267,13 @@ public sealed class StoryboardCheckTests
 
         Assert.Equal([(0, 10), (10, 10)], shots.Select(s => (s.FirstWord, s.WordCount)));
     }
+
+    [Theory]
+    [InlineData("character, place")]
+    [InlineData("0")]
+    [InlineData("2")]
+    public void A_cast_kind_is_one_of_the_three_words_not_a_number_or_a_mix(string kind) =>
+        Assert.Contains(
+            $"The cast list says Karlach is a \"{kind}\"; it must be character, place or object.",
+            Problems(new([new("Karlach", kind, "")], [new("S01", [Shot(0)])]), Segment("S01", 10)));
 }

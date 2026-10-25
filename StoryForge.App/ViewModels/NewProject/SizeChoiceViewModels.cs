@@ -274,9 +274,12 @@ public sealed partial class PacingViewModel : ObservableObject
     /// <summary>The pacing the storyboard will use; null while a custom one is not a number.</summary>
     public Pacing? Effective => IsCustom ? Custom : _default;
 
-    /// <summary>Why the pacing cannot be used, the profile's against this project's clips too; null when it can.</summary>
+    /// <summary>
+    /// Why the custom pacing cannot be used; null when it can. The profile's is never a problem: the
+    /// storyboard holds it to the project's clips (3–8 s with clips of 6 s becomes 3–6 s).
+    /// </summary>
     public string? Problem(int? maxClipSeconds) =>
-        Effective is { } pacing ? pacing.Problem(maxClipSeconds) : "Every length is a whole number of seconds.";
+        !IsCustom ? null : Custom is { } pacing ? pacing.Problem(maxClipSeconds) : "Every length is a whole number of seconds.";
 
     /// <summary>
     /// Takes the profile's pacing. A custom one is dropped, unless <paramref name="keepCustom"/>
