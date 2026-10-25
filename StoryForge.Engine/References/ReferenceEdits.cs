@@ -144,6 +144,7 @@ internal sealed class ReferenceEdits(
                     Shots = [.. into.Shots.Concat(from.Shots).Distinct()],
                     Sources = [.. into.Sources.Concat(from.Sources).Distinct()],
                     Chosen = [.. (into.Chosen ?? []).Concat(from.Chosen ?? []).Distinct()],
+                    Dropped = [.. (into.Dropped ?? []).Concat(from.Dropped ?? []).Except(into.Sources.Concat(from.Sources)).Distinct()],
                     Look = into.Look.Length > 0 ? into.Look : from.Look,
                     KeyReason = into.KeyReason.Length > 0 ? into.KeyReason : from.KeyReason,
                     // Made from its look alone, as the one merged in was, when there is still no picture to make it from.
@@ -183,6 +184,7 @@ internal sealed class ReferenceEdits(
                 {
                     Sources = [picture.Id, .. reference.Sources.Where(id => id != picture.Id)],
                     Chosen = [.. (reference.Chosen ?? []).Append(picture.Id).Distinct()],
+                    Dropped = [.. (reference.Dropped ?? []).Where(id => id != picture.Id)],
                     DescriptionOnly = false,
                 });
                 remake = reference.Id;
@@ -196,6 +198,7 @@ internal sealed class ReferenceEdits(
                 {
                     Sources = [.. reference.Sources.Where(id => id != picture.Id)],
                     Chosen = [.. (reference.Chosen ?? []).Where(id => id != picture.Id)],
+                    Dropped = [.. (reference.Dropped ?? []).Append(picture.Id).Distinct()],
                 });
                 break;
             }
@@ -247,10 +250,8 @@ internal sealed class ReferenceEdits(
         {
             await MakeImagesOfAsync(projectId, fill, cancellationToken, onlyEmpty: true);
         }
-        if (removed.Count > 0)
-        {
-            await runner.SettleAsync(projectId, Stage, cancellationToken);   // the rest may all be approved now
-        }
+        // The rest may all be approved now; or an approved stage got a reference that still needs its image.
+        await runner.SettleAsync(projectId, Stage, cancellationToken);
     }
 
     /// <summary>Your own picture: copied into the pool and used first for the reference, which is made again from it.</summary>
@@ -379,7 +380,8 @@ internal sealed class ReferenceEdits(
         var (found, images) = await pool.BuildAsync(
             [reference with { Sources = own }], sheet.Pool, sheet.Discarded ?? [], project.Setup.ResearchSources, [],
             await folders.RootAsync(cancellationToken), ProjectFolders.Of(project), cancellationToken);
-        return Replace(sheet with { Pool = images }, found[0] with { DescriptionOnly = false });
+        // What you took off it stays off.
+        return Replace(sheet with { Pool = images }, found[0] with { Sources = [.. found[0].Sources.Except(reference.Dropped ?? [])], DescriptionOnly = false });
     }
 
     private static ReferenceSheet Replace(ReferenceSheet sheet, Reference reference) =>

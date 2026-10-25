@@ -924,4 +924,35 @@ public sealed partial class ReferencesRunTests
         Assert.Equal((before.References[0].Images[0].Version, StageState.NeedsReview), (after.References[0].Images[0].Version, after.References[0].Images[0].State));
         Assert.Equal(runs, _comfy.Workflows.Count);
     }
+
+    [Fact]
+    public async Task A_reference_added_to_an_approved_stage_takes_the_approval_back_even_when_its_image_is_cancelled()
+    {
+        var (client, projectId) = await ImagedAsync();
+        await client.ApproveSegmentsAsync(projectId, PipelineStage.References);
+        await ReferencesAsync(client, projectId, v => v.State == StageState.Approved);
+        _pictures.ByName["Gale"] = [FakePictures.Picture("Gale.png", page: "https://bg3.wiki/wiki/Gale")];
+        _comfy.Hold = new TaskCompletionSource();
+        await client.ChangeReferencesAsync(projectId, new ReferenceChange(ReferenceChangeKind.Add, Name: "Gale", Kind: CastKind.Character));
+        await ReferencesAsync(client, projectId, v => v.References[2].Images is [{ State: StageState.Running }]);
+
+        await client.CancelSegmentAsync(projectId, PipelineStage.References, "R03/1");
+        var view = await ReferencesAsync(client, projectId, v => v.References[2].Images.Count == 0);
+
+        Assert.Equal(StageState.NeedsReview, view.State);
+    }
+
+    [Fact]
+    public async Task A_picture_you_took_off_a_reference_does_not_come_back_when_its_sources_are_searched_again()
+    {
+        _pictures.ByName["Karlach"] = [FakePictures.Picture("Wyll.png"), FakePictures.Picture("Karlach.png", main: false)];
+        var (client, projectId) = await ListedAsync();
+        var wyll = (await client.GetReferencesAsync(projectId)).Pool.Single(p => p.Image.Caption == "Wyll.png").Image.Id;
+        await client.ChangeReferencesAsync(projectId, new ReferenceChange(ReferenceChangeKind.DropSource, ReferenceId: "R01", PoolImageId: wyll));
+        _pictures.ByName["Karlach"] = [FakePictures.Picture("Wyll.png"), FakePictures.Picture("Karlach.png", main: false), FakePictures.Picture("Karlach2.png", main: false)];
+
+        await client.SearchSourcesAgainAsync(projectId, "R01");
+
+        Assert.DoesNotContain(wyll, (await client.GetReferencesAsync(projectId)).References[0].Reference.Sources);
+    }
 }
