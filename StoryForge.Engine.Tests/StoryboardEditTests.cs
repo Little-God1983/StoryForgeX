@@ -46,7 +46,7 @@ public sealed class StoryboardEditTests : IDisposable
         _script.Answer(ScriptRunTests.Good());
         var project = await ScriptRunTests.ApprovedFactsAsync(client, s => s with { Gates = [.. s.Gates.Where(g => g is not (PipelineStage.Script or PipelineStage.Voice))] });
         var view = await ScriptRunTests.WaitForAsync(() => client.GetStoryboardAsync(project.Id), v => v.State is StageState.NeedsReview or StageState.Failed);
-        Assert.Null(view.Error);
+        Assert.True(view.Error is null, view.Error);
         return (client, project.Id, view);
     }
 

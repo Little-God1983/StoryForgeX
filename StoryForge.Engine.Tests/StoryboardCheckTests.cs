@@ -179,4 +179,38 @@ public sealed class StoryboardCheckTests
         Assert.Contains("never longer than 20 seconds", prompt);
         Assert.Contains("Prefer close-ups.", prompt);
     }
+
+    [Fact]
+    public void A_new_shot_key_is_never_one_the_board_already_has()
+    {
+        var draws = new Queue<string>(["3f9a", "3f9a", "b071"]);
+        var taken = new HashSet<string> { "S01/3f9a" };
+
+        var key = StoryboardCheck.NewKey("S01", taken, () => draws.Dequeue());
+
+        Assert.Equal("S01/b071", key);
+        Assert.Contains("S01/b071", taken);
+    }
+
+    [Fact]
+    public void Every_shot_of_a_large_board_gets_its_own_key()
+    {
+        var segment = Segment("S01", 2000);
+        var output = new StoryboardOutput(Cast, [new("S01", [.. Enumerable.Range(0, 400).Select(i => Shot(i * 5))])]);
+
+        var shots = StoryboardCheck.ToShots(output, [segment]);
+
+        Assert.Equal(400, shots.Select(s => s.Key).Distinct().Count());
+    }
+
+    [Fact]
+    public void A_new_board_never_takes_a_key_an_earlier_board_used()
+    {
+        var draws = new Queue<string>(["0001", "0002", "0003"]);
+        var output = new StoryboardOutput(Cast, [new("S01", [Shot(0), Shot(10)])]);
+
+        var shots = StoryboardCheck.ToShots(output, [Segment("S01", 20)], used: ["S01/0001"], random: () => draws.Dequeue());
+
+        Assert.Equal(["S01/0002", "S01/0003"], shots.Select(s => s.Key));
+    }
 }

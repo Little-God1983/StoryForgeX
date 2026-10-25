@@ -34,7 +34,7 @@ internal sealed class StoryboardStage(IStoryboardAgent agent, CellReader cells, 
             problems = StoryboardCheck.Problems(answer.Output, segments, request.MaxClipSeconds);
             if (problems.Count == 0)
             {
-                var shots = StoryboardCheck.ToShots(answer.Output!, segments);
+                var shots = StoryboardCheck.ToShots(answer.Output!, segments, await cells.UsedShotKeysAsync(context.Project.Id, cancellationToken));
                 var sheet = new StoryboardSheet(StoryboardCheck.ToCast(answer.Output!), voices, request.Pacing);
                 Report(context, string.Create(System.Globalization.CultureInfo.InvariantCulture,
                     $"{shots.Count} shots · shortest {ShotTiming.Seconds(shots.Min(s => s.Seconds))} s · longest {ShotTiming.Seconds(shots.Max(s => s.Seconds))} s · {sheet.Cast.Count} in the cast"));

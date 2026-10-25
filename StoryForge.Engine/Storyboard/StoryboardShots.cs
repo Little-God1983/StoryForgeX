@@ -24,12 +24,16 @@ internal sealed class StoryboardShots(
     public async Task<StoryboardView> GetAsync(Guid projectId, CancellationToken cancellationToken)
     {
         var setup = (await projects.GetAsync(projectId, cancellationToken)).Setup;
-        var sheet = await cells.CurrentStoryboardAsync(projectId, cancellationToken);
-        var pacing = sheet?.Pacing ?? await PacingAsync(setup, cancellationToken);
         await using var db = await contextFactory.CreateDbContextAsync(cancellationToken);
+        // The cells first, then their versions: a version is stored with (or before) the cell that
+        // points to it, so a run storing the storyboard meanwhile is seen whole or not at all.
         var stageCells = await db.Cells.AsNoTracking().Where(c => c.ProjectId == projectId && c.Stage == Stage).ToListAsync(cancellationToken);
-        var versions = await db.CellVersions.AsNoTracking().Where(v => v.ProjectId == projectId && v.Stage == Stage && v.Key != "").ToListAsync(cancellationToken);
+        var versions = await db.CellVersions.AsNoTracking().Where(v => v.ProjectId == projectId && v.Stage == Stage).ToListAsync(cancellationToken);
         var whole = stageCells.FirstOrDefault(c => c.Key == "");
+        var sheet = versions.FirstOrDefault(v => v.Key == "" && v.Version == whole?.CurrentVersion) is { } stored
+            ? StoredJson.Read<StoryboardSheet>(stored.OutputJson)
+            : null;
+        var pacing = sheet?.Pacing ?? await PacingAsync(setup, cancellationToken);
         var words = new Dictionary<string, IReadOnlyList<SpokenWord>>();
         if (whole is null)
         {
@@ -40,6 +44,7 @@ internal sealed class StoryboardShots(
             words[segmentId] = (await cells.VoiceAsync(projectId, segmentId, version, cancellationToken))?.Words ?? [];
         }
 
+        versions.RemoveAll(v => v.Key == "");
         var shown = stageCells.Where(c => c.Key != "").Select(cell =>
         {
             var own = versions.Where(v => v.Key == cell.Key).OrderBy(v => v.Version).ToList();

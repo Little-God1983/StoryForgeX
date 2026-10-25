@@ -77,10 +77,12 @@ internal static class StoryboardCheck
     }
 
     /// <summary>The shots from a checked answer: timed from the word timings, each with a key of its own.</summary>
-    public static IReadOnlyList<Shot> ToShots(StoryboardOutput output, IReadOnlyList<SegmentWords> segments)
+    /// <param name="used">Keys shots of this storyboard ever had: a new shot never takes one, nor its versions.</param>
+    public static IReadOnlyList<Shot> ToShots(StoryboardOutput output, IReadOnlyList<SegmentWords> segments, IEnumerable<string>? used = null, Func<string>? random = null)
     {
         var names = Names(output.Cast ?? []);
         var shots = new List<Shot>();
+        var keys = new HashSet<string>(used ?? []);
         foreach (var segment in segments)
         {
             var answered = output.Segments.First(a => a.SegmentId.Trim() == segment.SegmentId).Shots;
@@ -89,7 +91,7 @@ internal static class StoryboardCheck
                 var first = answered[i].FirstWord;
                 var count = (i + 1 < answered.Count ? answered[i + 1].FirstWord : segment.Words.Count) - first;
                 var (start, end) = ShotTiming.Span(segment, first, count);
-                shots.Add(new Shot(NewKey(segment.SegmentId), segment.SegmentId, first, count, start, end,
+                shots.Add(new Shot(NewKey(segment.SegmentId, keys, random), segment.SegmentId, first, count, start, end,
                     answered[i].Description.Trim(), CastOf(answered[i].Cast, names), answered[i].ContinuesPrevious));
             }
         }
@@ -103,8 +105,22 @@ internal static class StoryboardCheck
     public static IReadOnlyList<string> CastOf(IEnumerable<string>? named, IReadOnlyDictionary<string, string> names) =>
         [.. (named ?? []).Select(n => names.TryGetValue(Normal(n), out var name) ? name : (n ?? "").Trim()).Where(n => n.Length > 0).Distinct()];
 
-    /// <summary>A new shot's key: its segment and four characters of its own, e.g. "S01/3f9a".</summary>
-    public static string NewKey(string segmentId) => $"{segmentId}/{Guid.NewGuid():N}"[..(segmentId.Length + 5)];
+    /// <summary>
+    /// A new shot's key: its segment and four characters of its own, e.g. "S01/3f9a", that no shot
+    /// in <paramref name="taken"/> has; it is added there.
+    /// </summary>
+    /// <param name="random">Four characters at a time; tests pass their own.</param>
+    public static string NewKey(string segmentId, ISet<string> taken, Func<string>? random = null)
+    {
+        random ??= () => Guid.NewGuid().ToString("N")[..4];
+        string key;
+        do
+        {
+            key = $"{segmentId}/{random()}";
+        }
+        while (!taken.Add(key));
+        return key;
+    }
 
     private static IEnumerable<string> SegmentProblems(SegmentWords segment, List<ShotOutput> shots, IReadOnlyDictionary<string, string> names, int maxClipSeconds)
     {

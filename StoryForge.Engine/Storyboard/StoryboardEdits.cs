@@ -87,7 +87,7 @@ internal sealed class StoryboardEdits(
             }
             var first = board.Retime(shot, shot.FirstWord, atWord - shot.FirstWord, label);
             var second = board.Retime(
-                shot with { Key = StoryboardCheck.NewKey(shot.SegmentId), ContinuesPrevious = true },
+                shot with { Key = StoryboardCheck.NewKey(shot.SegmentId, board.Keys), ContinuesPrevious = true },
                 atWord,
                 shot.FirstWord + shot.WordCount - atWord,
                 $"{shot.SegmentId}·{board.Index + 2}");
@@ -119,7 +119,8 @@ internal sealed class StoryboardEdits(
     }
 
     /// <summary>The shot being changed, among the shots of its segment, and the words they are timed by.</summary>
-    private sealed record Board(StoryboardSheet Sheet, IReadOnlyList<Shot> Segment, int Index, SegmentWords Words, int MaxClipSeconds)
+    /// <param name="Keys">Every shot key of the storyboard, so a new shot gets one of its own.</param>
+    private sealed record Board(StoryboardSheet Sheet, IReadOnlyList<Shot> Segment, int Index, SegmentWords Words, int MaxClipSeconds, HashSet<string> Keys)
     {
         public Shot Shot => Segment[Index];
 
@@ -156,7 +157,7 @@ internal sealed class StoryboardEdits(
         {
             throw new KeyNotFoundException($"The voice {shot.SegmentId} was cut from is gone.");
         }
-        var changes = plan(new Board(sheet, segment, segment.IndexOf(shot), new SegmentWords(shot.SegmentId, clip.Words, clip.Seconds), setup.Clips.MaxClipSeconds));
+        var changes = plan(new Board(sheet, segment, segment.IndexOf(shot), new SegmentWords(shot.SegmentId, clip.Words, clip.Seconds), setup.Clips.MaxClipSeconds, [.. await cells.UsedShotKeysAsync(projectId, cancellationToken)]));
         if (changes.Count == 0)
         {
             return;

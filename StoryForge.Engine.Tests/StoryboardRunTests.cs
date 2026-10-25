@@ -82,7 +82,12 @@ public sealed class StoryboardRunTests : IDisposable
 
         var project = await VoiceApprovedAsync(client);
 
-        Assert.Equal(StageState.NeedsReview, await StageAsync(client, project.Id, PipelineStage.Storyboard, StageState.NeedsReview, StageState.Failed));
+        var state = await StageAsync(client, project.Id, PipelineStage.Storyboard, StageState.NeedsReview, StageState.Failed);
+        await using (var db = await _engine.DbAsync())
+        {
+            Assert.Null((await db.Cells.SingleAsync(c => c.Stage == PipelineStage.Storyboard && c.Key == "")).Error);
+        }
+        Assert.Equal(StageState.NeedsReview, state);
         var shots = await ShotsAsync();
         Assert.Equal(60, shots.Count);
         Assert.All(shots, s => Assert.Equal((StageState.NeedsReview, 1), (s.State, s.Version)));

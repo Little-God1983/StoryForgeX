@@ -120,6 +120,15 @@ internal sealed class CellReader(IDbContextFactory<StoryForgeDbContext> contextF
             .Select(v => StoredJson.Read<Shot>(v.OutputJson))
             .OrderBy(s => s.SegmentId, StringComparer.Ordinal).ThenBy(s => s.FirstWord)];
 
+    /// <summary>Every key a shot of the storyboard ever had, including shots merged or planned away since.</summary>
+    public async Task<IReadOnlyList<string>> UsedShotKeysAsync(Guid projectId, CancellationToken cancellationToken)
+    {
+        await using var db = await contextFactory.CreateDbContextAsync(cancellationToken);
+        return await db.CellVersions.AsNoTracking()
+            .Where(v => v.ProjectId == projectId && v.Stage == PipelineStage.Storyboard && v.Key != "")
+            .Select(v => v.Key).Distinct().ToListAsync(cancellationToken);
+    }
+
     /// <summary>One version per segment cell of a stage, by key: the one <paramref name="version"/> picks.</summary>
     private async Task<IReadOnlyList<CellVersionEntry>> ReadSegmentsAsync(Guid projectId, PipelineStage stage, Func<CellEntry, int?> version, CancellationToken cancellationToken)
     {
