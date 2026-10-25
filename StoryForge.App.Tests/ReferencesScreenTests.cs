@@ -248,4 +248,15 @@ public sealed class ReferencesScreenTests
 
         Assert.Equal(("approve all", ""), _client.ShotActions.Single());
     }
+
+    [Fact]
+    public async Task References_never_proposed_can_be_proposed_from_the_screen()
+    {
+        var (_, screen, project) = await OpenAsync(id => new ReferencesView(id, StageState.NotStarted, null, [], ReferencePhase.List, [], [], [], false, Labels));
+
+        Assert.True(screen.CanPropose);
+        await screen.ProposeCommand.ExecuteAsync(null);
+
+        Assert.Equal((project.Id, PipelineStage.References), _client.Regenerated.Single());
+    }
 }

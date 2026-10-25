@@ -20,8 +20,8 @@ public sealed partial class ReferencesViewModel(IStoryForgeClient client, Guid p
     public Guid ProjectId { get; } = projectId;
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(IsRunning), nameof(IsReview), nameof(IsApproved), nameof(IsFailed), nameof(ShowsListBar), nameof(ShowsGateBar), nameof(ShowsTextOnlyBar))]
-    [NotifyCanExecuteChangedFor(nameof(MakeImagesCommand), nameof(CancelCommand), nameof(RetryCommand), nameof(ApproveRemainingCommand), nameof(ApproveTextOnlyCommand), nameof(AddReferenceCommand))]
+    [NotifyPropertyChangedFor(nameof(IsRunning), nameof(IsReview), nameof(IsApproved), nameof(IsFailed), nameof(ShowsListBar), nameof(ShowsGateBar), nameof(ShowsTextOnlyBar), nameof(CanPropose))]
+    [NotifyCanExecuteChangedFor(nameof(ProposeCommand), nameof(MakeImagesCommand), nameof(CancelCommand), nameof(RetryCommand), nameof(ApproveRemainingCommand), nameof(ApproveTextOnlyCommand), nameof(AddReferenceCommand))]
     private StageState _state;
 
     public bool IsRunning => State == StageState.Running;
@@ -31,6 +31,12 @@ public sealed partial class ReferencesViewModel(IStoryForgeClient client, Guid p
     public bool IsApproved => State == StageState.Approved;
 
     public bool IsFailed => State == StageState.Failed;
+
+    /// <summary>
+    /// The references were never proposed: a project whose storyboard was approved before this
+    /// stage existed starts it from here.
+    /// </summary>
+    public bool CanPropose => State == StageState.NotStarted;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsListPhase), nameof(ShowsListBar), nameof(ShowsGateBar))]
@@ -238,6 +244,9 @@ public sealed partial class ReferencesViewModel(IStoryForgeClient client, Guid p
 
     [RelayCommand(CanExecute = nameof(IsRunning))]
     private Task CancelAsync() => ActAsync("cancel the references", () => client.CancelAsync(ProjectId, PipelineStage.References));
+
+    [RelayCommand(CanExecute = nameof(CanPropose))]
+    private Task ProposeAsync() => ActAsync("propose the references", () => client.RegenerateAsync(ProjectId, PipelineStage.References));
 
     [RelayCommand(CanExecute = nameof(IsFailed))]
     private Task RetryAsync() => ActAsync("make the references", () => client.RegenerateAsync(ProjectId, PipelineStage.References));
