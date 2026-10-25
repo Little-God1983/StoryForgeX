@@ -7,6 +7,7 @@ using StoryForge.Engine.Research;
 using StoryForge.Engine.Script;
 using StoryForge.Engine.Secrets;
 using StoryForge.Engine.Settings;
+using StoryForge.Engine.Storyboard;
 using StoryForge.Engine.Voice;
 
 namespace StoryForge.Engine;
@@ -23,6 +24,8 @@ internal sealed class InProcessStoryForgeClient(
     ScriptSegments script,
     SegmentCells segments,
     VoiceSegments voice,
+    StoryboardShots storyboard,
+    StoryboardEdits shotEdits,
     ProjectFolders folders) : IStoryForgeClient
 {
     public event EventHandler<StageUpdate>? StageUpdated
@@ -121,21 +124,20 @@ internal sealed class InProcessStoryForgeClient(
     public Task<VoiceView> GetVoiceAsync(Guid projectId, CancellationToken cancellationToken = default) =>
         voice.GetAsync(projectId, cancellationToken);
 
-    // The storyboard arrives with #8; these are filled in as it is built.
     public Task<StoryboardView> GetStoryboardAsync(Guid projectId, CancellationToken cancellationToken = default) =>
-        throw new NotImplementedException();
+        storyboard.GetAsync(projectId, cancellationToken);
 
     public Task EditShotAsync(Guid projectId, string shotKey, ShotChange change, CancellationToken cancellationToken = default) =>
-        throw new NotImplementedException();
+        shotEdits.EditAsync(projectId, shotKey, change, cancellationToken);
 
     public Task MoveCutAsync(Guid projectId, string shotKey, ShotEdge edge, int words, CancellationToken cancellationToken = default) =>
-        throw new NotImplementedException();
+        shotEdits.MoveCutAsync(projectId, shotKey, edge, words, cancellationToken);
 
     public Task SplitShotAsync(Guid projectId, string shotKey, int atWord, CancellationToken cancellationToken = default) =>
-        throw new NotImplementedException();
+        shotEdits.SplitAsync(projectId, shotKey, atWord, cancellationToken);
 
     public Task MergeShotAsync(Guid projectId, string shotKey, CancellationToken cancellationToken = default) =>
-        throw new NotImplementedException();
+        shotEdits.MergeAsync(projectId, shotKey, cancellationToken);
 
     internal static string SecretName(SecretKey key) => key switch
     {

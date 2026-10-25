@@ -77,6 +77,8 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<VoiceSegments>();
         services.AddSingleton<IStoryboardAgent, ClaudeCliStoryboardAgent>();
         services.AddSingleton<IStageWorker, StoryboardStage>();
+        services.AddSingleton<StoryboardShots>();
+        services.AddSingleton<StoryboardEdits>();
         // After DatabaseInitializer: hosted services start in order, and the runner reads the database.
         services.AddSingleton<PipelineRunner>();
         services.AddHostedService(provider => provider.GetRequiredService<PipelineRunner>());

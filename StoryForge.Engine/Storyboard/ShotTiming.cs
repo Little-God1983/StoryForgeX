@@ -22,13 +22,17 @@ internal static class ShotTiming
 
     /// <summary>Why a shot of this length cannot be; null when it can.</summary>
     /// <param name="label">"S01·2".</param>
-    public static string? LengthProblem(string label, double seconds, SegmentWords segment, int maxClipSeconds)
+    /// <param name="proposed">A change you asked for ("would last"), not the model's answer ("lasts … Cut it.").</param>
+    public static string? LengthProblem(string label, double seconds, SegmentWords segment, int maxClipSeconds, bool proposed = false)
     {
+        var lasts = proposed ? "would last" : "lasts";
         if (seconds < Pacing.ShortestShot && segment.Seconds >= Pacing.ShortestShot)
         {
-            return $"{label} lasts {Seconds(seconds)} s; a shot is at least {Pacing.ShortestShot} s.";
+            return $"{label} {lasts} {Seconds(seconds)} s; a shot is at least {Pacing.ShortestShot} s.";
         }
-        return seconds > maxClipSeconds ? $"{label} lasts {Seconds(seconds)} s; the video model makes at most {maxClipSeconds} s. Cut it." : null;
+        return seconds > maxClipSeconds
+            ? $"{label} {lasts} {Seconds(seconds)} s; the video model makes at most {maxClipSeconds} s.{(proposed ? "" : " Cut it.")}"
+            : null;
     }
 
     /// <summary>A shot as the screen names it, by its place in its segment: "S01·2".</summary>
