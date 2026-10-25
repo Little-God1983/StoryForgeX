@@ -24,9 +24,26 @@ internal sealed class ReferenceEdits(
 {
     private const PipelineStage Stage = PipelineStage.References;
 
+    // One change at a time per project, held from reading the sheet to saving it: a search takes
+    // seconds, and a second change meanwhile would save over it or take the same picture id.
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<Guid, SemaphoreSlim> _locks = new();
+
+    private async Task<IDisposable> LockAsync(Guid projectId, CancellationToken cancellationToken)
+    {
+        var gate = _locks.GetOrAdd(projectId, _ => new SemaphoreSlim(1, 1));
+        await gate.WaitAsync(cancellationToken);
+        return new Release(gate);
+    }
+
+    private sealed class Release(SemaphoreSlim gate) : IDisposable
+    {
+        public void Dispose() => gate.Release();
+    }
+
     /// <summary>The list is confirmed: the sheet moves on to its images, and they are made.</summary>
     public async Task MakeImagesAsync(Guid projectId, CancellationToken cancellationToken)
     {
+        using var held = await LockAsync(projectId, cancellationToken);
         RequireIdle(projectId);
         var sheet = await SheetAsync(projectId, cancellationToken);
         if (sheet.References.Count == 0)
@@ -42,6 +59,7 @@ internal sealed class ReferenceEdits(
 
     public async Task ChangeAsync(Guid projectId, ReferenceChange change, CancellationToken cancellationToken)
     {
+        using var held = await LockAsync(projectId, cancellationToken);
         RequireIdle(projectId);
         var project = await projects.GetAsync(projectId, cancellationToken);
         var sheet = await SheetAsync(projectId, cancellationToken);
@@ -79,11 +97,9 @@ internal sealed class ReferenceEdits(
                     References = [.. sheet.References, reference],
                     Others = [.. sheet.Others.Where(o => !ReferenceList.Same(o.Name, name))],
                 };
-                if (sheet.Phase == ReferencePhase.Images)
-                {
-                    sheet = await SearchAsync(project, sheet, reference.Id, cancellationToken);
-                    added = reference.Id;
-                }
+                // Searched at once, in either phase: a reference must not say "no picture found" unsearched.
+                sheet = await SearchAsync(project, sheet, reference.Id, cancellationToken);
+                added = reference.Id;
                 break;
             }
             case ReferenceChangeKind.Remove:
@@ -164,6 +180,7 @@ internal sealed class ReferenceEdits(
     /// <summary>Your own picture: copied into the pool and used first for the reference, which is made again from it.</summary>
     public async Task AddOwnPictureAsync(Guid projectId, string referenceId, string path, CancellationToken cancellationToken)
     {
+        using var held = await LockAsync(projectId, cancellationToken);
         RequireIdle(projectId);
         if (!File.Exists(path))
         {
@@ -191,6 +208,7 @@ internal sealed class ReferenceEdits(
     /// <summary>Searches the sources for the reference again; it is made from what is found, and your own pictures.</summary>
     public async Task SearchAgainAsync(Guid projectId, string referenceId, CancellationToken cancellationToken)
     {
+        using var held = await LockAsync(projectId, cancellationToken);
         RequireIdle(projectId);
         var project = await projects.GetAsync(projectId, cancellationToken);
         var sheet = await SheetAsync(projectId, cancellationToken);
@@ -203,6 +221,7 @@ internal sealed class ReferenceEdits(
     /// <summary>From its look alone: the one case where text alone is allowed.</summary>
     public async Task FromDescriptionAsync(Guid projectId, string referenceId, CancellationToken cancellationToken)
     {
+        using var held = await LockAsync(projectId, cancellationToken);
         RequireIdle(projectId);
         var sheet = await SheetAsync(projectId, cancellationToken);
         var reference = Find(sheet, referenceId);
@@ -217,6 +236,7 @@ internal sealed class ReferenceEdits(
     /// <summary>"+ image": the reference's next image, made from its pictures.</summary>
     public async Task AddImageAsync(Guid projectId, string referenceId, CancellationToken cancellationToken)
     {
+        using var held = await LockAsync(projectId, cancellationToken);
         RequireIdle(projectId);
         var sheet = await SheetAsync(projectId, cancellationToken);
         Find(sheet, referenceId);

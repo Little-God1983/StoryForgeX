@@ -252,7 +252,7 @@ public sealed class ReferencesScreenTests
     [Fact]
     public async Task References_never_proposed_can_be_proposed_from_the_screen()
     {
-        var (_, screen, project) = await OpenAsync(id => new ReferencesView(id, StageState.NotStarted, null, [], ReferencePhase.List, [], [], [], false, Labels));
+        var (_, screen, project) = await OpenAsync(id => new ReferencesView(id, StageState.NotStarted, null, [], ReferencePhase.List, [], [], [], false, Labels, 0, StoryboardApproved: true));
 
         Assert.True(screen.CanPropose);
         await screen.ProposeCommand.ExecuteAsync(null);
@@ -266,5 +266,57 @@ public sealed class ReferencesScreenTests
         var picture = new PoolImageView(new PoolImage("P01", "https://bg3.wiki/w/images/b/b1/Karlach%27s_portrait.png", "https://bg3.wiki/wiki/Karlach", "", 997, 1148, "pool/P01.png", PoolOrigin.Found), null, []);
 
         Assert.Equal("Karlach's portrait.png", new PoolPictureViewModel(picture, _ => { }).Caption);
+    }
+
+    [Fact]
+    public async Task Nothing_is_proposed_before_the_storyboard_is_approved()
+    {
+        var (_, screen, _) = await OpenAsync(id => new ReferencesView(id, StageState.NotStarted, null, [], ReferencePhase.List, [], [], [], false, Labels));
+
+        Assert.False(screen.CanPropose);
+        Assert.False(screen.ProposeCommand.CanExecute(null));
+    }
+
+    [Fact]
+    public async Task While_one_action_runs_the_others_wait()
+    {
+        var (_, screen, _) = await OpenAsync(id => Images(id));
+        screen.Places[0].SelectCommand.Execute(null);
+        var gate = new TaskCompletionSource();
+        _client.ReferenceActionGate = gate.Task;
+
+        var searching = screen.SearchAgainCommand.ExecuteAsync(null);
+
+        Assert.False(screen.RemoveCommand.CanExecute(null));
+        Assert.False(screen.StartEditLookCommand.CanExecute(null));
+        Assert.False(screen.AddReferenceCommand.CanExecute(null));
+        gate.SetResult();
+        await searching;
+        Assert.True(screen.RemoveCommand.CanExecute(null));
+    }
+
+    [Fact]
+    public async Task References_without_an_image_can_have_their_images_made()
+    {
+        // The run was cancelled before the soul coin's image: the list is past checking, but one has nothing yet.
+        var (_, screen, _) = await OpenAsync(id => Images(id) with
+        {
+            References = [.. Images(id).References.Select(r => r.Reference.Id == "R02" ? r with { Images = [] } : r)],
+        });
+
+        Assert.True(screen.MakeImagesCommand.CanExecute(null));
+        Assert.True(screen.ShowsListBar);
+    }
+
+    [Fact]
+    public async Task Your_own_picture_can_be_added_to_any_reference()
+    {
+        var (_, screen, _) = await OpenAsync(id => Images(id));
+        screen.Characters[0].SelectCommand.Execute(null);
+        _picked = @"C:rt\karlach.png";
+
+        await screen.AddOwnPictureCommand.ExecuteAsync(null);
+
+        Assert.Equal(("own", "R01"), _client.ReferenceActions.Single());
     }
 }

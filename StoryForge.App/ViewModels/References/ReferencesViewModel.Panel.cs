@@ -137,7 +137,7 @@ public sealed partial class ReferencesViewModel
         foreach (var command in new IRelayCommand[]
         {
             ApproveCommand, RegenerateCommand, ShowVersionCommand, AddImageCommand, SearchAgainCommand, AddOwnPictureCommand,
-            FromDescriptionCommand, StartEditLookCommand, MergeCommand, RemoveCommand, UsePictureCommand, OpenPageCommand, DiscardPictureCommand,
+            FromDescriptionCommand, StartEditLookCommand, SaveLookCommand, MergeCommand, RemoveCommand, UsePictureCommand, OpenPageCommand, DiscardPictureCommand,
         })
         {
             command.NotifyCanExecuteChanged();
@@ -146,8 +146,8 @@ public sealed partial class ReferencesViewModel
 
     // ── The selected reference ──
 
-    /// <summary>Changes to a reference wait while anything of the stage is made.</summary>
-    private bool CardIdle() => SelectedCard is not null && !IsRunning && Cards.SelectMany(c => c.View.Images).All(i => i.State != StageState.Running);
+    /// <summary>Changes to a reference wait while anything of the stage is made, or another change is on its way.</summary>
+    private bool CardIdle() => SelectedCard is not null && !IsRunning && !_acting && Cards.SelectMany(c => c.View.Images).All(i => i.State != StageState.Running);
 
     private bool CanApprove() => CardIdle() && SelectedImage is { Version: > 0, State: not StageState.Approved } image && image.Image.Made != ImageMaking.NoPicture;
 
@@ -216,7 +216,9 @@ public sealed partial class ReferencesViewModel
         IsEditingLook = true;
     }
 
-    [RelayCommand(CanExecute = nameof(IsEditingLook))]
+    private bool CanSaveLook() => IsEditingLook && !_acting;
+
+    [RelayCommand(CanExecute = nameof(CanSaveLook))]
     private async Task SaveLookAsync()
     {
         var id = SelectedCard!.Id;
@@ -248,7 +250,7 @@ public sealed partial class ReferencesViewModel
 
     // ── The selected pool picture ──
 
-    private bool PictureIdle() => SelectedPicture is not null && !IsRunning;
+    private bool PictureIdle() => SelectedPicture is not null && !IsRunning && !_acting;
 
     private bool CanUsePicture() => PictureIdle() && UseFor is not null;
 

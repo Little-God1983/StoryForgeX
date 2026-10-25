@@ -136,6 +136,7 @@ internal sealed class SiteWeb(HttpMessageInvoker http, SourceList sources)
         return encoding.GetString(buffer.GetBuffer(), 0, (int)buffer.Length);
     }
 
-    private static readonly string Version =
+    /// <summary>The app's version as its requests name it.</summary>
+    public static readonly string Version =
         typeof(SiteWeb).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion.Split('+')[0] ?? "0";
 }

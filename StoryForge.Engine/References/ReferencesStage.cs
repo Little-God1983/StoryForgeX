@@ -133,6 +133,10 @@ internal sealed class ReferencesStage(
     private async Task<ReferenceSheet> ProposeAsync(StageContext context, CancellationToken cancellationToken)
     {
         var project = context.Project;
+        if (await cells.StateAsync(project.Id, PipelineStage.Storyboard, cancellationToken) != StageState.Approved)
+        {
+            throw new StageFailedException("Approve the storyboard first: the references are proposed from it.");
+        }
         var board = await cells.CurrentStoryboardAsync(project.Id, cancellationToken)
             ?? throw new StageFailedException("The storyboard has not been planned yet. Approve it, and the references are proposed.");
         var shots = await cells.CurrentShotsAsync(project.Id, cancellationToken);

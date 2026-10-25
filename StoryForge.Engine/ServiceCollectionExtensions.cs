@@ -80,7 +80,8 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IStageWorker, StoryboardStage>();
         services.AddSingleton<StoryboardShots>();
         services.AddSingleton<StoryboardEdits>();
-        services.AddSingleton<IPictureSource>(provider => new WikiPictures(provider.GetRequiredService<HttpMessageHandler>()));
+        // Its own sender, which follows no redirect by itself: every hop is checked (SiteWeb for the wikis, WikiPictures for pictures).
+        services.AddSingleton<IPictureSource>(_ => new WikiPictures(StoryForge.Sources.SiteWeb.CreateHttp()));
         services.AddSingleton<PoolBuilder>();
         services.AddSingleton<IPictureCheck, ClaudeCliPictureCheck>();
         services.AddSingleton<IStageWorker, ReferencesStage>();

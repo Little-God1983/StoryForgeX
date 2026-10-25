@@ -583,6 +583,11 @@ internal sealed class PipelineRunner(
         // Tracked cells first: changes made in this context are not in the database yet.
         var segments = await db.Cells.Where(c => c.ProjectId == projectId && c.Stage == stage && c.Key != Whole).ToListAsync(cancellationToken);
         var state = segments.Count > 0 && segments.All(s => s.State == StageState.Approved) ? StageState.Approved : StageState.NeedsReview;
+        if (stage == PipelineStage.References && state == StageState.Approved
+            && await WithoutImagesAsync(db, projectId, [.. segments.Where(s => s.State == StageState.Approved)], cancellationToken) is { Count: > 0 })
+        {
+            state = StageState.NeedsReview;   // every reference on the list needs an approved image, not just the ones that have one
+        }
         if (state == cell.State || (cell.State == StageState.Failed && (state != StageState.Approved || cell.CurrentVersion is null)))
         {
             return null;
@@ -592,6 +597,21 @@ internal sealed class PipelineRunner(
         cell.ApprovedVersion = state == StageState.Approved ? cell.CurrentVersion : cell.ApprovedVersion;
         cell.UpdatedAt = clock.GetUtcNow();
         return state;
+    }
+
+    /// <summary>The names of the references on the current list that have none of <paramref name="images"/>.</summary>
+    internal static async Task<List<string>> WithoutImagesAsync(StoryForgeDbContext db, Guid projectId, IReadOnlyList<CellEntry> images, CancellationToken cancellationToken)
+    {
+        var whole = await db.Cells.AsNoTracking().FirstOrDefaultAsync(c => c.ProjectId == projectId && c.Stage == PipelineStage.References && c.Key == Whole, cancellationToken);
+        var entry = whole?.CurrentVersion is { } version
+            ? await db.CellVersions.AsNoTracking().FirstOrDefaultAsync(v => v.ProjectId == projectId && v.Stage == PipelineStage.References && v.Key == Whole && v.Version == version, cancellationToken)
+            : null;
+        if (entry is null)
+        {
+            return [];
+        }
+        var sheet = StoredJson.Read<ReferenceSheet>(entry.OutputJson);
+        return [.. sheet.References.Where(r => images.All(i => !i.Key.StartsWith(r.Id + "/", StringComparison.Ordinal) || i.CurrentVersion is null)).Select(r => r.Name)];
     }
 
     private void AddVersion(StoryForgeDbContext db, CellEntry cell, int version, string outputJson, int schemaVersion, string inputHash)

@@ -17,9 +17,13 @@ public sealed class WikiPicturesTests
         .On("https://bg3.wiki/w/images/Karlach.png", _ => new HttpResponseMessage(HttpStatusCode.OK) { Content = Picture("image/png") })
         .On("https://bg3.wiki/w/images/Page.html", _ => new HttpResponseMessage(HttpStatusCode.OK) { Content = Picture("text/html") });
 
-    private static ByteArrayContent Picture(string type)
+    /// <summary>Every host is a public one, except those the test names; no test asks real DNS.</summary>
+    private static Task<System.Net.IPAddress[]> Public(string host, CancellationToken cancellationToken) =>
+        Task.FromResult<System.Net.IPAddress[]>([host == "evil.example" ? System.Net.IPAddress.Parse("10.0.0.7") : System.Net.IPAddress.Parse("93.184.216.34")]);
+
+    private static ByteArrayContent Picture(string type, byte[]? bytes = null)
     {
-        var content = new ByteArrayContent([137, 80, 78, 71]);
+        var content = new ByteArrayContent(bytes ?? ReferencesRunTests.Png(800, 600));
         content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(type);
         return content;
     }
@@ -27,7 +31,7 @@ public sealed class WikiPicturesTests
     [Fact]
     public async Task A_name_finds_the_page_called_so_and_its_pictures()
     {
-        var pictures = new WikiPictures(Wiki());
+        var pictures = new WikiPictures(Wiki().Invoker, Public);
 
         var found = await pictures.SearchAsync(["bg3.wiki"], "karlach", default);
 
@@ -38,25 +42,25 @@ public sealed class WikiPicturesTests
     [Fact]
     public async Task A_picture_downloads_with_the_ending_its_type_calls_for()
     {
-        var pictures = new WikiPictures(Wiki());
+        var pictures = new WikiPictures(Wiki().Invoker, Public);
 
         var download = await pictures.DownloadAsync("https://bg3.wiki/w/images/Karlach.png", default);
 
         Assert.Equal(".png", download!.Extension);
-        Assert.Equal([137, 80, 78, 71], download.Content);
+        Assert.Equal(ReferencesRunTests.Png(800, 600), download.Content);
     }
 
     [Theory]
     [InlineData("https://bg3.wiki/w/images/Page.html")]   // not a picture
     [InlineData("https://bg3.wiki/w/images/Missing.png")]  // does not answer
     public async Task What_is_no_picture_downloads_as_nothing(string url) =>
-        Assert.Null(await new WikiPictures(Wiki()).DownloadAsync(url, default));
+        Assert.Null(await new WikiPictures(Wiki().Invoker, Public).DownloadAsync(url, default));
 
     [Fact]
     public async Task A_source_that_is_no_wiki_finds_nothing()
     {
         var pictures = new WikiPictures(new Web()
-            .On("https://example.com/", _ => new HttpResponseMessage(HttpStatusCode.NotFound)));
+            .On("https://example.com/", _ => new HttpResponseMessage(HttpStatusCode.NotFound)).Invoker, Public);
 
         Assert.Empty(await pictures.SearchAsync(["example.com"], "Karlach", default));
     }
@@ -64,8 +68,53 @@ public sealed class WikiPicturesTests
     [Fact]
     public async Task A_fact_page_gives_its_pictures()
     {
-        var found = await new WikiPictures(Wiki()).PageAsync(["bg3.wiki"], "https://bg3.wiki/wiki/Karlach", default);
+        var found = await new WikiPictures(Wiki().Invoker, Public).PageAsync(["bg3.wiki"], "https://bg3.wiki/wiki/Karlach", default);
 
         Assert.Equal("https://bg3.wiki/w/images/Karlach.png", Assert.Single(found).Url);
+    }
+
+    [Theory]
+    [InlineData("http://bg3.wiki/w/images/Karlach.png")]          // not https
+    [InlineData("https://127.0.0.1:8188/view?filename=x.png")]   // this machine
+    [InlineData("https://192.168.1.5/x.png")]                    // the local network
+    [InlineData("https://[::1]/x.png")]
+    [InlineData("https://evil.example/x.png")]                   // a name that leads to a private address
+    public async Task Only_https_addresses_out_on_the_internet_are_downloaded(string url)
+    {
+        var web = Wiki().On(url, _ => new HttpResponseMessage(HttpStatusCode.OK) { Content = Picture("image/png") });
+
+        Assert.Null(await new WikiPictures(web.Invoker, Public).DownloadAsync(url, default));
+        Assert.DoesNotContain(web.Requests, r => r.AbsoluteUri == url);
+    }
+
+    [Fact]
+    public async Task A_redirect_is_followed_only_where_a_download_may_go()
+    {
+        var web = Wiki()
+            .On("https://bg3.wiki/w/images/Moved.png", _ => Redirect("https://static.wikia.nocookie.net/Moved.png"))
+            .On("https://static.wikia.nocookie.net/Moved.png", _ => new HttpResponseMessage(HttpStatusCode.OK) { Content = Picture("image/png") })
+            .On("https://bg3.wiki/w/images/Sneaky.png", _ => Redirect("https://127.0.0.1:8188/view"))
+            .On("https://127.0.0.1:8188/view", _ => new HttpResponseMessage(HttpStatusCode.OK) { Content = Picture("image/png") });
+        var pictures = new WikiPictures(web.Invoker, Public);
+
+        Assert.NotNull(await pictures.DownloadAsync("https://bg3.wiki/w/images/Moved.png", default));
+        Assert.Null(await pictures.DownloadAsync("https://bg3.wiki/w/images/Sneaky.png", default));
+        Assert.DoesNotContain(web.Requests, r => r.Host == "127.0.0.1");
+    }
+
+    [Fact]
+    public async Task What_says_it_is_a_picture_but_is_not_is_not_kept()
+    {
+        var web = Wiki().On("https://bg3.wiki/w/images/Fake.png", _ => new HttpResponseMessage(HttpStatusCode.OK) { Content = Picture("image/png", "<html>"u8.ToArray()) });
+
+        Assert.Null(await new WikiPictures(web.Invoker, Public).DownloadAsync("https://bg3.wiki/w/images/Fake.png", default));
+    }
+
+    [Fact]
+    public async Task A_wiki_answer_of_another_shape_finds_nothing_rather_than_failing()
+    {
+        var web = BgWiki().On("https://bg3.wiki/w/api.php?action=query&list=search", _ => Json("""{"query":{"search":"none"}}"""));
+
+        Assert.Empty(await new WikiPictures(web.Invoker, Public).SearchAsync(["bg3.wiki"], "Karlach", default));
     }
 }

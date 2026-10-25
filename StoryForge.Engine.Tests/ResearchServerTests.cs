@@ -315,7 +315,7 @@ public sealed class ResearchServerTests
 
     private static string Text(CallToolResult result) => string.Concat(result.Content.OfType<TextContentBlock>().Select(b => b.Text));
 
-    private static HttpResponseMessage Redirect(string location) =>
+    internal static HttpResponseMessage Redirect(string location) =>
         new(HttpStatusCode.Found) { Headers = { Location = new Uri(location, UriKind.RelativeOrAbsolute) } };
 
     private static HttpResponseMessage Html(string body) =>

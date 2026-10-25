@@ -648,11 +648,17 @@ internal sealed class FakeStoryForgeClient : IStoryForgeClient
 
     public Task MakeFromDescriptionAsync(Guid projectId, string referenceId, CancellationToken cancellationToken = default) => Record("from description", referenceId);
 
-    private Task Record(string action, string subject)
+    /// <summary>While set, a References action waits for it: the screen sees an action in progress.</summary>
+    public Task? ReferenceActionGate { get; set; }
+
+    private async Task Record(string action, string subject)
     {
+        if (ReferenceActionGate is { } gate)
+        {
+            await gate;
+        }
         ThrowIfFailing();
         ReferenceActions.Add((action, subject));
-        return Task.CompletedTask;
     }
 
     private void ThrowIfFailing()

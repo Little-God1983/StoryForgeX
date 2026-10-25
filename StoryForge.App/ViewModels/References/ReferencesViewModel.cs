@@ -16,6 +16,7 @@ public sealed partial class ReferencesViewModel(IStoryForgeClient client, Guid p
     // Counts loads and live updates; a load that finds the count moved on drops its view.
     private int _loads;
     private ReferencesView? _view;
+    private bool _acting;
 
     public Guid ProjectId { get; } = projectId;
 
@@ -36,7 +37,7 @@ public sealed partial class ReferencesViewModel(IStoryForgeClient client, Guid p
     /// The references were never proposed: a project whose storyboard was approved before this
     /// stage existed starts it from here.
     /// </summary>
-    public bool CanPropose => State == StageState.NotStarted;
+    public bool CanPropose => State == StageState.NotStarted && _view?.StoryboardApproved == true && !_acting;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsListPhase), nameof(ShowsListBar), nameof(ShowsGateBar))]
@@ -44,10 +45,21 @@ public sealed partial class ReferencesViewModel(IStoryForgeClient client, Guid p
 
     public bool IsListPhase => Phase == ReferencePhase.List;
 
-    /// <summary>The list waits for you: check it, then make the images.</summary>
-    public bool ShowsListBar => IsListPhase && IsReview && !TextOnly;
+    /// <summary>
+    /// References past the list with no image yet: the run was cancelled before it got to them.
+    /// </summary>
+    private bool HasMissingImages => !IsListPhase && Cards.Any(c => c.View.Images.Count == 0);
 
-    public bool ShowsGateBar => !IsListPhase && IsReview && !TextOnly;
+    /// <summary>The list waits for you: check it, then make the images. Or some images were never made.</summary>
+    public bool ShowsListBar => (IsListPhase || HasMissingImages) && IsReview && !TextOnly;
+
+    public bool ShowsGateBar => !IsListPhase && !HasMissingImages && IsReview && !TextOnly;
+
+    public string ListBarTitle => IsListPhase ? "Check the list" : "Images missing";
+
+    public string ListBarText => IsListPhase
+        ? "Who and what is shown in 2 or more shots, or once when it carries the story. Remove, merge or add before any image is made."
+        : "Some references have no image yet: the run stopped before it got to them. Make the images to finish them.";
 
     /// <summary>Stills from text only: the stage waits to be approved as it is.</summary>
     public bool ShowsTextOnlyBar => TextOnly && IsReview;
@@ -200,8 +212,20 @@ public sealed partial class ReferencesViewModel(IStoryForgeClient client, Guid p
         var pages = view.Pool.Select(p => p.Image.Page).Where(p => p.Length > 0).Distinct().Count();
         PoolSummary = $"{view.Pool.Count} from {pages} {(pages == 1 ? "page" : "pages")}";
         RefreshPanel();
-        ApproveRemainingCommand.NotifyCanExecuteChanged();
-        MakeImagesCommand.NotifyCanExecuteChanged();
+        NotifyActions();
+    }
+
+    /// <summary>What the bars offer depends on the list and on whether an action is on its way.</summary>
+    private void NotifyActions()
+    {
+        foreach (var name in new[] { nameof(CanPropose), nameof(ShowsListBar), nameof(ShowsGateBar), nameof(ListBarTitle), nameof(ListBarText) })
+        {
+            OnPropertyChanged(name);
+        }
+        foreach (var command in new IRelayCommand[] { ProposeCommand, MakeImagesCommand, AddReferenceCommand, MakeReferenceCommand, ApproveRemainingCommand, RetryCommand, ApproveTextOnlyCommand })
+        {
+            command.NotifyCanExecuteChanged();
+        }
     }
 
     /// <summary>Cards that are still there keep their place and selection; the rest come and go.</summary>
@@ -216,12 +240,12 @@ public sealed partial class ReferencesViewModel(IStoryForgeClient client, Guid p
 
     // ── The bars ──
 
-    private bool CanMakeImages() => IsListPhase && !IsRunning && Cards.Any();
+    private bool CanMakeImages() => (IsListPhase || HasMissingImages) && !IsRunning && !_acting && Cards.Any();
 
     [RelayCommand(CanExecute = nameof(CanMakeImages))]
     private Task MakeImagesAsync() => ActAsync("make the images", () => client.MakeReferenceImagesAsync(ProjectId));
 
-    private bool CanAddReference() => !IsRunning && NewName.Trim().Length > 0;
+    private bool CanAddReference() => !IsRunning && !_acting && NewName.Trim().Length > 0;
 
     [RelayCommand(CanExecute = nameof(CanAddReference))]
     private async Task AddReferenceAsync()
@@ -233,11 +257,13 @@ public sealed partial class ReferencesViewModel(IStoryForgeClient client, Guid p
         }
     }
 
-    [RelayCommand]
+    private bool CanMakeReference(string name) => !IsRunning && !_acting;
+
+    [RelayCommand(CanExecute = nameof(CanMakeReference))]
     private Task MakeReferenceAsync(string name) =>
         ActAsync("make it a reference", () => client.ChangeReferencesAsync(ProjectId, new ReferenceChange(ReferenceChangeKind.MakeReference, Name: name)));
 
-    private bool CanApproveRemaining() => ShowsGateBar && Cards.SelectMany(c => c.View.Images).All(i => i.State != StageState.Running);
+    private bool CanApproveRemaining() => ShowsGateBar && !_acting && Cards.SelectMany(c => c.View.Images).All(i => i.State != StageState.Running);
 
     [RelayCommand(CanExecute = nameof(CanApproveRemaining))]
     private Task ApproveRemainingAsync() => ActAsync("approve the references", () => client.ApproveSegmentsAsync(ProjectId, PipelineStage.References));
@@ -248,18 +274,26 @@ public sealed partial class ReferencesViewModel(IStoryForgeClient client, Guid p
     [RelayCommand(CanExecute = nameof(CanPropose))]
     private Task ProposeAsync() => ActAsync("propose the references", () => client.RegenerateAsync(ProjectId, PipelineStage.References));
 
-    [RelayCommand(CanExecute = nameof(IsFailed))]
+    private bool CanRetry() => IsFailed && !_acting;
+
+    [RelayCommand(CanExecute = nameof(CanRetry))]
     private Task RetryAsync() => ActAsync("make the references", () => client.RegenerateAsync(ProjectId, PipelineStage.References));
 
-    private bool CanApproveTextOnly() => TextOnly && IsReview;
+    private bool CanApproveTextOnly() => TextOnly && IsReview && !_acting;
 
     /// <summary>Stills from text only: the stage is approved as it is.</summary>
     [RelayCommand(CanExecute = nameof(CanApproveTextOnly))]
     private Task ApproveTextOnlyAsync() => ActAsync("approve the references", () => client.ApproveAsync(ProjectId, PipelineStage.References, _view?.Version ?? 0));
 
-    /// <summary>Runs one action; the engine's update then reloads the screen. The reason shows when it did not go through.</summary>
+    /// <summary>
+    /// Runs one action; the engine's update then reloads the screen. The reason shows when it did
+    /// not go through. While it is on its way, the others wait.
+    /// </summary>
     private async Task ActAsync(string what, Func<Task> action)
     {
+        _acting = true;
+        RefreshPanel();
+        NotifyActions();
         try
         {
             await action();
@@ -270,6 +304,12 @@ public sealed partial class ReferencesViewModel(IStoryForgeClient client, Guid p
         {
             Debug.WriteLine($"Could not {what}: {ex}");
             ActionError = $"Could not {what}: {ex.Message}";
+        }
+        finally
+        {
+            _acting = false;
+            RefreshPanel();
+            NotifyActions();
         }
     }
 }

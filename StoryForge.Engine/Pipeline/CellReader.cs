@@ -114,6 +114,16 @@ internal sealed class CellReader(IDbContextFactory<StoryForgeDbContext> contextF
         return entry is null ? null : StoredJson.Read<StoryboardSheet>(entry.OutputJson);
     }
 
+    /// <summary>Where a stage stands as a whole; not started before it ever ran.</summary>
+    public async Task<StageState> StateAsync(Guid projectId, PipelineStage stage, CancellationToken cancellationToken)
+    {
+        await using var db = await contextFactory.CreateDbContextAsync(cancellationToken);
+        return await db.Cells.AsNoTracking()
+            .Where(c => c.ProjectId == projectId && c.Stage == stage && c.Key == "")
+            .Select(c => (StageState?)c.State)
+            .FirstOrDefaultAsync(cancellationToken) ?? StageState.NotStarted;
+    }
+
     /// <summary>The References stage's sheet as it stands: the list, the pool, the phase; null before it was proposed.</summary>
     public async Task<ReferenceSheet?> CurrentReferencesAsync(Guid projectId, CancellationToken cancellationToken)
     {

@@ -17,13 +17,17 @@ internal sealed class FakePictures : IPictureSource
 
     public List<string> Searched { get; } = [];
 
-    public Task<IReadOnlyList<FoundPicture>> SearchAsync(IReadOnlyList<string> sources, string name, CancellationToken cancellationToken)
+    /// <summary>How long a search takes, so two can run at once.</summary>
+    public TimeSpan Delay { get; set; }
+
+    public async Task<IReadOnlyList<FoundPicture>> SearchAsync(IReadOnlyList<string> sources, string name, CancellationToken cancellationToken)
     {
         lock (Searched)
         {
             Searched.Add(name);
         }
-        return Task.FromResult(ByName.GetValueOrDefault(name) ?? []);
+        await Task.Delay(Delay, cancellationToken);
+        return ByName.GetValueOrDefault(name) ?? [];
     }
 
     public Task<IReadOnlyList<FoundPicture>> PageAsync(IReadOnlyList<string> sources, string pageUrl, CancellationToken cancellationToken) =>
@@ -65,6 +69,9 @@ internal sealed class FakeImageComfy : IComfyUi
 
     public string? Failure { get; set; }
 
+    /// <summary>Only runs whose prompt names this fail with <see cref="Failure"/>; null fails them all.</summary>
+    public string? FailFor { get; set; }
+
     /// <summary>While set, every run waits for it: the stage stays running.</summary>
     public TaskCompletionSource? Hold { get; set; }
 
@@ -83,7 +90,7 @@ internal sealed class FakeImageComfy : IComfyUi
         {
             await hold.Task.WaitAsync(cancellationToken);
         }
-        if (Failure is { } reason)
+        if (Failure is { } reason && (FailFor is null || workflow.ToJsonString().Contains(FailFor, StringComparison.Ordinal)))
         {
             throw new StageFailedException(reason);
         }

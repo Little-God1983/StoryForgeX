@@ -28,6 +28,7 @@ internal sealed class ReferenceViews(
         var root = await folders.RootAsync(cancellationToken);
         var shots = await cells.CurrentShotsAsync(projectId, cancellationToken);
         var labels = shots.ToDictionary(s => s.Key, s => ShotTiming.Label(shots, s.Key));
+        var storyboardApproved = await cells.StateAsync(projectId, PipelineStage.Storyboard, cancellationToken) == StageState.Approved;
         await using var db = await contextFactory.CreateDbContextAsync(cancellationToken);
         // The cells first, then their versions: a version is stored with (or before) the cell that
         // points to it, so a run storing meanwhile is seen whole or not at all.
@@ -39,7 +40,7 @@ internal sealed class ReferenceViews(
             : null;
         if (whole is null)
         {
-            return new ReferencesView(projectId, StageState.NotStarted, null, [], ReferencePhase.List, [], [], [], textOnly, labels);
+            return new ReferencesView(projectId, StageState.NotStarted, null, [], ReferencePhase.List, [], [], [], textOnly, labels, 0, storyboardApproved);
         }
 
         var images = stageCells.Where(c => c.Key != "").Select(cell =>
@@ -81,7 +82,8 @@ internal sealed class ReferenceViews(
             sheet?.Others ?? [],
             textOnly,
             labels,
-            whole.CurrentVersion ?? 0);
+            whole.CurrentVersion ?? 0,
+            storyboardApproved);
     }
 
     private static string? Existing(string root, string? file) =>

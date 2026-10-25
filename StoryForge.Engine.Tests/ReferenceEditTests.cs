@@ -216,4 +216,77 @@ public sealed partial class ReferencesRunTests
 
         _comfy.Hold.SetResult();
     }
+
+    [Fact]
+    public async Task The_references_are_not_approved_while_one_of_them_has_no_image()
+    {
+        // The list confirmed, the run fails at the soul coin, after Karlach's image is stored.
+        var (client, projectId) = await ListedAsync();
+        _comfy.Failure = "ComfyUI is not reachable.";
+        _comfy.FailFor = "Soul coin";
+        await client.MakeReferenceImagesAsync(projectId);
+        var failed = await ReferencesAsync(client, projectId, v => v.State == StageState.Failed);
+        var karlach = failed.References[0].Images.Single();
+
+        await client.ApproveSegmentAsync(projectId, PipelineStage.References, karlach.Key, karlach.Version);
+        await Assert.ThrowsAsync<InvalidOperationException>(() => client.ApproveSegmentsAsync(projectId, PipelineStage.References));
+
+        Assert.NotEqual(StageState.Approved, (await client.GetReferencesAsync(projectId)).State);
+    }
+
+    [Fact]
+    public async Task An_image_whose_first_make_failed_is_not_approved()
+    {
+        var (client, projectId) = await ImagedAsync();
+        _comfy.Failure = "ComfyUI is not reachable.";
+        await client.AddReferenceImageAsync(projectId, "R01");
+        await ReferencesAsync(client, projectId, v => v.References[0].Images.Count == 2 && v.References[0].Images[1].State == StageState.Failed);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => client.ApproveSegmentsAsync(projectId, PipelineStage.References));
+    }
+
+    [Fact]
+    public async Task A_name_added_while_the_list_is_checked_is_searched_at_once()
+    {
+        var (client, projectId) = await ListedAsync();
+        _pictures.ByName["Raphael"] = [FakePictures.Picture("Raphael.png", page: "https://bg3.wiki/wiki/Raphael")];
+
+        await client.ChangeReferencesAsync(projectId, new ReferenceChange(ReferenceChangeKind.Add, Name: "Raphael", Kind: CastKind.Character));
+
+        var view = await client.GetReferencesAsync(projectId);
+        Assert.Single(view.References[2].Reference.Sources);
+        Assert.Empty(view.References[2].Images);   // the list is still being checked: nothing is made yet
+    }
+
+    [Fact]
+    public async Task References_are_not_proposed_from_a_storyboard_still_in_review()
+    {
+        var client = await StartAsync();
+        _board.Answer(StoryboardRunTests.Good());
+        _script.Answer(ScriptRunTests.Good());
+        var project = await ScriptRunTests.ApprovedFactsAsync(client, s => s with { Gates = [.. s.Gates.Where(g => g is not (PipelineStage.Script or PipelineStage.Voice))] });
+        await ScriptRunTests.WaitForAsync(() => client.GetStoryboardAsync(project.Id), v => v.State == StageState.NeedsReview);
+        Assert.False((await client.GetReferencesAsync(project.Id)).StoryboardApproved);
+
+        await client.RegenerateAsync(project.Id, PipelineStage.References);
+
+        var view = await ReferencesAsync(client, project.Id, _ => false);
+        Assert.Equal("Approve the storyboard first: the references are proposed from it.", view.Error);
+    }
+
+    [Fact]
+    public async Task Two_searches_at_once_keep_both_and_give_their_pictures_ids_of_their_own()
+    {
+        var (client, projectId) = await ListedAsync();
+        _pictures.ByName["Karlach"] = [FakePictures.Picture("Karlach2.png")];
+        _pictures.ByName["Soul coin"] = [FakePictures.Picture("Coin2.png", page: "https://bg3.wiki/wiki/Soul_Coin")];
+        _pictures.Delay = TimeSpan.FromMilliseconds(200);
+
+        await Task.WhenAll(client.SearchSourcesAgainAsync(projectId, "R01"), client.SearchSourcesAgainAsync(projectId, "R02"));
+
+        var view = await client.GetReferencesAsync(projectId);
+        Assert.Equal(view.Pool.Count, view.Pool.Select(p => p.Image.Id).Distinct().Count());
+        Assert.Contains(view.Pool, p => p.Image.Caption == "Karlach2.png" && view.References[0].Reference.Sources.Contains(p.Image.Id));
+        Assert.Contains(view.Pool, p => p.Image.Caption == "Coin2.png" && view.References[1].Reference.Sources.Contains(p.Image.Id));
+    }
 }

@@ -64,6 +64,10 @@ internal sealed class SegmentCells(
                     throw new InvalidOperationException(
                         $"Nothing was made for {nothing} of the references yet: search the sources again, add your own picture, or make it from the description.");
                 }
+                if (await PipelineRunner.WithoutImagesAsync(db, projectId, segments, cancellationToken) is { Count: > 0 } bare)
+                {
+                    throw new InvalidOperationException($"{string.Join(", ", bare)} {(bare.Count == 1 ? "has" : "have")} no image yet: make the images first.");
+                }
             }
             approved = [.. segments.Where(s => s.State != StageState.Approved).Select(s => s.Key)];
             foreach (var segment in segments)
@@ -186,7 +190,8 @@ internal sealed class SegmentCells(
         }
         var entry = await db.CellVersions.AsNoTracking()
             .FirstOrDefaultAsync(v => v.ProjectId == cell.ProjectId && v.Stage == cell.Stage && v.Key == cell.Key && v.Version == version, cancellationToken);
-        return entry is null || StoredJson.Read<ReferenceImage>(entry.OutputJson).Made != ImageMaking.NoPicture;
+        // No version yet (its first make failed or was cancelled): nothing was made either.
+        return entry is not null && StoredJson.Read<ReferenceImage>(entry.OutputJson).Made != ImageMaking.NoPicture;
     }
 
     private static void RequireSegments(PipelineStage stage)
