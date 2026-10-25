@@ -26,7 +26,9 @@ internal static class ShotTiming
     public static string? LengthProblem(string label, double seconds, SegmentWords segment, int maxClipSeconds, bool proposed = false)
     {
         var lasts = proposed ? "would last" : "lasts";
-        if (seconds < Pacing.ShortestShot && segment.Seconds >= Pacing.ShortestShot)
+        // A segment shorter than that is one shot: the exception is for the whole of it, never a part.
+        var wholeSegment = seconds >= segment.Seconds - 0.001;
+        if (seconds < Pacing.ShortestShot && !wholeSegment)
         {
             return $"{label} {lasts} {Seconds(seconds)} s; a shot is at least {Pacing.ShortestShot} s.";
         }

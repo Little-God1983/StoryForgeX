@@ -13,8 +13,9 @@ public sealed record UsedFact(string Id, int Weight, string Statement)
     public bool IsMust => Weight >= Fact.MustWeight;
 }
 
-/// <summary>One version chip of the selected segment.</summary>
-public sealed record SegmentVersionChoice(int Version, bool IsShown, bool IsApproved)
+/// <summary>One version chip of the selected cell.</summary>
+/// <param name="CanPick">False for a shot's version that cuts elsewhere than the shot does now.</param>
+public sealed record SegmentVersionChoice(int Version, bool IsShown, bool IsApproved, bool CanPick = true)
 {
     public string Label => $"v{Version}";
 }
@@ -295,7 +296,7 @@ public sealed partial class ScriptMatrixViewModel(IStoryForgeClient client, Guid
 
     public IReadOnlyList<SegmentVersionChoice> SelectedVersions => IsBoardPanel
         ? SelectedShot?.Shot is { } shot
-            ? [.. shot.Versions.Select(v => new SegmentVersionChoice(v.Version, v.Version == shot.Version, v.Version == shot.ApprovedVersion))]
+            ? [.. shot.Versions.Select(v => new SegmentVersionChoice(v.Version, v.Version == shot.Version, v.Version == shot.ApprovedVersion, !shot.MovedVersions.Contains(v.Version)))]
             : []
         : IsVoicePanel
         ? SelectedVoice is { } voice
@@ -579,6 +580,7 @@ public sealed partial class ScriptMatrixViewModel(IStoryForgeClient client, Guid
         RegenerateSegmentCommand.NotifyCanExecuteChanged();
         StartEditCommand.NotifyCanExecuteChanged();
         CancelSegmentCommand.NotifyCanExecuteChanged();
+        ShowVersionCommand.NotifyCanExecuteChanged();
         RefreshBoardPanel();
         ShowClip();
     }
@@ -654,7 +656,9 @@ public sealed partial class ScriptMatrixViewModel(IStoryForgeClient client, Guid
     [RelayCommand(CanExecute = nameof(SelectedIsRunning))]
     private Task CancelSegmentAsync() => ActAsync(IsBoardPanel ? "cancel the shot" : "cancel the segment", () => client.CancelSegmentAsync(ProjectId, SelectedStage, SelectedKey));
 
-    [RelayCommand]
+    private bool CanShowVersion(int version) => SelectedVersions.FirstOrDefault(v => v.Version == version)?.CanPick ?? true;
+
+    [RelayCommand(CanExecute = nameof(CanShowVersion))]
     private Task ShowVersionAsync(int version) =>
         ActAsync("switch the version", () => client.SelectSegmentVersionAsync(ProjectId, SelectedStage, SelectedKey, version));
 

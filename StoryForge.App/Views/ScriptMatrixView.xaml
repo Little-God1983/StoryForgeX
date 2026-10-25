@@ -626,7 +626,7 @@
                     </ItemsControl.ItemTemplate>
                   </ItemsControl>
 
-                  <CheckBox IsChecked="{Binding BoardContinues}" Margin="0,10,0,0" Foreground="{StaticResource TextBrush}" FontSize="13"
+                  <CheckBox IsChecked="{Binding BoardContinues}" IsEnabled="{Binding CanEditBoard}" Margin="0,10,0,0" Foreground="{StaticResource TextBrush}" FontSize="13"
                             Content="Continues the shot before (same scene, the camera moves on)" />
                 </StackPanel>
 

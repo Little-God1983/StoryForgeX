@@ -211,13 +211,26 @@ public sealed partial class ScriptMatrixViewModel
         get => SelectedShot?.Shot.Shot.ContinuesPrevious ?? false;
         set
         {
-            if (SelectedShot is null || value == BoardContinues || !SegmentIdle())
+            if (SelectedShot is null || value == BoardContinues)
             {
                 return;
             }
-            var key = SelectedShot.Key;
-            Saving = ActAsync("save the shot", () => client.EditShotAsync(ProjectId, key, new ShotChange(ContinuesPrevious: value)));
+            Saving = SaveContinuesAsync(SelectedShot.Key, value);
         }
+    }
+
+    /// <summary>Saves the tick; whatever came of it, the box then shows what the shot has.</summary>
+    private async Task SaveContinuesAsync(string key, bool value)
+    {
+        if (CanEditShot())
+        {
+            await ActAsync("save the shot", () => client.EditShotAsync(ProjectId, key, new ShotChange(ContinuesPrevious: value)));
+        }
+        else
+        {
+            await Task.Yield();   // after the box's own update, or it would not listen
+        }
+        OnPropertyChanged(nameof(BoardContinues));
     }
 
     [ObservableProperty]
@@ -231,7 +244,11 @@ public sealed partial class ScriptMatrixViewModel
     [NotifyCanExecuteChangedFor(nameof(SaveShotDescriptionCommand))]
     private string _editShotDescription = "";
 
-    private bool CanEditShot() => IsBoardPanel && SegmentIdle();
+    // The engine refuses every change while any shot is planned again: a cut touches two shots.
+    private bool CanEditShot() => IsBoardPanel && SegmentIdle() && Rows.SelectMany(r => r.Shots).All(s => s.State != StageState.Running);
+
+    /// <summary>The selected shot can be changed now; the panel's controls follow it.</summary>
+    public bool CanEditBoard => CanEditShot();
 
     [RelayCommand(CanExecute = nameof(CanEditShot))]
     private void StartEditShot()
@@ -325,7 +342,7 @@ public sealed partial class ScriptMatrixViewModel
     /// <summary>The selected shot changed, or another one is selected: the panel reads it again.</summary>
     private void RefreshBoardPanel()
     {
-        foreach (var name in new[] { nameof(BoardShows), nameof(BoardWords), nameof(BoardStartWord), nameof(BoardEndWord), nameof(BoardCast), nameof(BoardCastChoices), nameof(BoardContinues) })
+        foreach (var name in new[] { nameof(BoardShows), nameof(BoardWords), nameof(BoardStartWord), nameof(BoardEndWord), nameof(BoardCast), nameof(BoardCastChoices), nameof(BoardContinues), nameof(CanEditBoard) })
         {
             OnPropertyChanged(name);
         }

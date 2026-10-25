@@ -238,4 +238,22 @@ public sealed class StoryboardCheckTests
         Assert.Equal("integer", firstWord.GetProperty("type").GetString());
         Assert.False(firstWord.TryGetProperty("pattern", out _));
     }
+
+    [Fact]
+    public void A_segment_shorter_than_two_seconds_is_one_shot_not_two() =>
+        // 3 words: 1.5 s of audio, cut in two.
+        Assert.Contains("S01·1 lasts 0.95 s; a shot is at least 2 s.", Problems(new(Cast, [new("S01", [Shot(0), Shot(2)])]), Segment("S01", 3)));
+
+    [Fact]
+    public void The_cast_list_names_everyone_once_whatever_their_case_and_spaces()
+    {
+        var output = new StoryboardOutput(
+            [new("Karlach", "character", ""), new("karlach ", "character", "She carries the story."), new("House of  Hope", "place", ""), new("house of hope", "place", "")],
+            [new("S01", [Shot(0, "House of Hope", "KARLACH")])]);
+
+        Assert.Empty(Problems(output, Segment("S01", 10)));
+        Assert.Equal(["Karlach", "House of  Hope"], StoryboardCheck.ToCast(output).Select(c => c.Name));
+        Assert.Equal("She carries the story.", StoryboardCheck.ToCast(output)[0].KeyReason);
+        Assert.Equal(["House of  Hope", "Karlach"], StoryboardCheck.ToShots(output, [Segment("S01", 10)]).Single().Cast);
+    }
 }

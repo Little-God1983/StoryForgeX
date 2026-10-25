@@ -180,4 +180,47 @@ public sealed class BoardPanelTests
 
         Assert.Equal("Could not move the cut: S01·2 would last 1.5 s; a shot is at least 2 s.", script.ActionError);
     }
+
+    [Fact]
+    public async Task A_version_chip_that_cuts_elsewhere_cannot_be_picked()
+    {
+        var moved = Shot("S01", 1, 0, 5, 0, 5, version: 2) with { MovedVersions = [1] };
+        var script = await OpenAsync(moved, Shot("S01", 2, 5, 10.3, 5, 5), Shot("S02", 1, 0, 5, 0, 10));
+
+        Pick(script, 0, 0);
+
+        Assert.Equal([false, true], script.SelectedVersions.Select(v => v.CanPick));
+        Assert.False(script.ShowVersionCommand.CanExecute(1));
+        Assert.True(script.ShowVersionCommand.CanExecute(2));
+    }
+
+    [Fact]
+    public async Task While_one_shot_is_planned_again_no_other_shot_can_be_changed()
+    {
+        var script = await OpenAsync(Shot("S01", 1, 0, 4.2, 0, 4, StageState.Running), Shot("S01", 2, 4.2, 10.3, 4, 6), Shot("S02", 1, 0, 5, 0, 10));
+
+        Pick(script, 1, 0);
+
+        Assert.False(script.CanEditBoard);
+        Assert.False(script.StartEditShotCommand.CanExecute(null));
+        Assert.False(script.SplitAtCommand.CanExecute(5));
+        Assert.False(script.AddCastCommand.CanExecute("Karlach"));
+    }
+
+    [Fact]
+    public async Task A_refused_tick_goes_back_to_what_the_shot_has()
+    {
+        var script = await OpenAsync();
+        Pick(script, 0, 1);
+        var changes = 0;
+        script.PropertyChanged += (_, e) => changes += e.PropertyName == nameof(script.BoardContinues) ? 1 : 0;
+        _client.StageFailure = new InvalidOperationException("The storyboard is being planned.");
+
+        script.BoardContinues = true;
+        await script.Saving;
+
+        Assert.False(script.BoardContinues);
+        Assert.True(changes > 0);   // the box is told to show the stored value again
+        Assert.NotNull(script.ActionError);
+    }
 }

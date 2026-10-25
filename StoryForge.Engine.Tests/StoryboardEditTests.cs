@@ -282,4 +282,46 @@ public sealed class StoryboardEditTests : IDisposable
         Assert.Equal((StageState.NotStarted, new Pacing(2, 4, 6), 20), (view.State, view.Pacing, view.MaxClipSeconds));
         Assert.Empty(view.Shots);
     }
+
+    [Fact]
+    public async Task An_older_version_that_cuts_elsewhere_cannot_be_picked_or_approved()
+    {
+        var (client, projectId, view) = await PlannedAsync();
+        var key = S01(view, 1).Key;
+        await client.MoveCutAsync(projectId, key, ShotEdge.End, 1);
+
+        var select = await Assert.ThrowsAsync<InvalidOperationException>(() => client.SelectSegmentVersionAsync(projectId, PipelineStage.Storyboard, key, 1));
+        var approve = await Assert.ThrowsAsync<InvalidOperationException>(() => client.ApproveSegmentAsync(projectId, PipelineStage.Storyboard, key, 1));
+
+        Assert.Equal("v1 of S01·1 cuts elsewhere: move the cut back instead, so the shots still add up to the audio.", select.Message);
+        Assert.Equal(select.Message, approve.Message);
+        Assert.Equal(2, S01(await client.GetStoryboardAsync(projectId), 1).Version);
+    }
+
+    [Fact]
+    public async Task An_older_version_with_the_same_cuts_can_be_picked()
+    {
+        var (client, projectId, view) = await PlannedAsync();
+        var key = S01(view, 1).Key;
+        await client.EditShotAsync(projectId, key, new ShotChange("A new description."));
+
+        await client.SelectSegmentVersionAsync(projectId, PipelineStage.Storyboard, key, 1);
+
+        var shot = S01(await client.GetStoryboardAsync(projectId), 1);
+        Assert.Equal((1, "S01 shot 1"), (shot.Version, shot.Shot.Description));
+    }
+
+    [Fact]
+    public async Task The_view_names_the_versions_that_cut_elsewhere()
+    {
+        var (client, projectId, view) = await PlannedAsync();
+        var key = S01(view, 1).Key;
+        await client.EditShotAsync(projectId, key, new ShotChange("A new description."));
+        await client.MoveCutAsync(projectId, key, ShotEdge.End, 1);
+
+        var shot = S01(await client.GetStoryboardAsync(projectId), 1);
+
+        Assert.Equal(3, shot.Version);
+        Assert.Equal([1, 2], shot.MovedVersions);
+    }
 }

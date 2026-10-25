@@ -83,6 +83,12 @@ public sealed record ShotView(
 {
     /// <summary>"S01·2".</summary>
     public string Label => $"{SegmentId}·{Number}";
+
+    /// <summary>
+    /// The versions that start or end elsewhere than the shot does now. They cannot come back: they
+    /// would overlap the shot next to it, or leave words no shot covers.
+    /// </summary>
+    public IReadOnlyList<int> MovedVersions { get; init; } = [];
 }
 
 /// <summary>Everything the matrix shows of the Storyboard stage.</summary>

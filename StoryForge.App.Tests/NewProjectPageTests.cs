@@ -613,4 +613,18 @@ public sealed class NewProjectPageTests
         page.Pacing.CustomTypical = "4";
         Assert.Equal("about 15 shots → 15 stills, 15 clips", page.ShotEstimate);
     }
+
+    [Fact]
+    public async Task A_profile_pacing_longer_than_the_max_clip_keeps_start_off()
+    {
+        AddOneOfEach();
+        var page = await ShownPage();
+        FillBrief(page);
+
+        page.MaxClip.SelectedIndex = GenerationSizeViewModel.CustomIndex;
+        page.MaxClip.CustomSeconds = "6";
+
+        Assert.Equal("Shots of up to 8 s are longer than the video model makes (6 s).", page.PacingProblem);
+        Assert.Contains("a valid pacing", page.MissingText);
+    }
 }

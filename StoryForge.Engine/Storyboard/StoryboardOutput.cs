@@ -98,8 +98,14 @@ internal static class StoryboardCheck
         return shots;
     }
 
+    /// <summary>The cast list, everyone once: names that differ only in case or spaces are one, as first written.</summary>
     public static IReadOnlyList<CastMember> ToCast(StoryboardOutput output) =>
-        [.. (output.Cast ?? []).Select(c => new CastMember(c.Name.Trim(), ToKind(c.Kind) ?? CastKind.Object, (c.KeyReason ?? "").Trim()))];
+        [
+            .. (output.Cast ?? []).Where(c => !string.IsNullOrWhiteSpace(c?.Name)).GroupBy(c => Normal(c.Name)).Select(same => new CastMember(
+                same.First().Name.Trim(),
+                ToKind(same.First().Kind) ?? CastKind.Object,
+                same.Select(c => (c.KeyReason ?? "").Trim()).FirstOrDefault(r => r.Length > 0) ?? "")),
+        ];
 
     /// <summary>Who and what a shot names, as the cast list spells them.</summary>
     public static IReadOnlyList<string> CastOf(IEnumerable<string>? named, IReadOnlyDictionary<string, string> names) =>
@@ -193,7 +199,8 @@ internal static class StoryboardCheck
         return names;
     }
 
-    private static string Normal(string? name) => (name ?? "").Trim().ToLowerInvariant();
+    /// <summary>"house of hope" for " House of  Hope": what tells two names apart.</summary>
+    private static string Normal(string? name) => string.Join(' ', (name ?? "").Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries)).ToLowerInvariant();
 
     private static CastKind? ToKind(string? kind) =>
         Enum.TryParse<CastKind>((kind ?? "").Trim(), ignoreCase: true, out var parsed) && Enum.IsDefined(parsed) ? parsed : null;

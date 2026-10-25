@@ -62,7 +62,12 @@ internal sealed class StoryboardShots(
             [.. s.Own.Select(v => new ResultVersion(v.Version, v.Origin, v.CreatedAt, v.BasedOn))],
             s.Shot,
             s.Cell.State == StageState.Failed ? s.Cell.Error : null,
-            runner.LiveActivity(projectId, Stage, s.Cell.Key) ?? StoredJson.Read<List<ActivityLine>>(s.Cell.ActivityJson))).ToList();
+            runner.LiveActivity(projectId, Stage, s.Cell.Key) ?? StoredJson.Read<List<ActivityLine>>(s.Cell.ActivityJson))
+        {
+            MovedVersions = [.. s.Own.Select(v => (v.Version, Shot: StoredJson.Read<Shot>(v.OutputJson)))
+                .Where(v => v.Shot.FirstWord != s.Shot.FirstWord || v.Shot.WordCount != s.Shot.WordCount)
+                .Select(v => v.Version)],
+        }).ToList();
         return new StoryboardView(
             projectId,
             whole.State,
