@@ -394,4 +394,45 @@ public sealed partial class ReferencesRunTests
         Assert.Equal(2, (await client.GetReferencesAsync(projectId)).References.Count);   // not saved beside the run
         _comfy.Hold.SetResult();
     }
+
+    [Fact]
+    public async Task An_image_whose_first_make_failed_is_made_with_the_missing_ones()
+    {
+        var (client, projectId) = await ImagedAsync();
+        _comfy.Failure = "ComfyUI is not reachable.";
+        await client.AddReferenceImageAsync(projectId, "R01");
+        await ReferencesAsync(client, projectId, v => v.References[0].Images.Count == 2 && v.References[0].Images[1].State == StageState.Failed);
+        _comfy.Failure = null;
+
+        await client.MakeReferenceImagesAsync(projectId);
+        var view = await ScriptRunTests.WaitForAsync(() => client.GetReferencesAsync(projectId), v => v.References[0].Images[1] is { Version: > 0, State: not StageState.Running });
+
+        Assert.Equal(StageState.NeedsReview, view.References[0].Images[1].State);
+    }
+
+    [Fact]
+    public async Task An_empty_list_needs_nothing_to_make_images_with()
+    {
+        var client = await StartAsync();
+        var project = await StoryboardApprovedAsync(client, s => s with { Stills = s.Stills with { Provider = "Elsewhere" } });
+        await ReferencesAsync(client, project.Id, v => v.State == StageState.NeedsReview);
+        await client.ChangeReferencesAsync(project.Id, new ReferenceChange(ReferenceChangeKind.Remove, ReferenceId: "R01"));
+        await client.ChangeReferencesAsync(project.Id, new ReferenceChange(ReferenceChangeKind.Remove, ReferenceId: "R02"));
+
+        await client.MakeReferenceImagesAsync(project.Id);
+        var view = await ReferencesAsync(client, project.Id, v => v.Phase == ReferencePhase.Images && v.State == StageState.NeedsReview);
+
+        Assert.Null(view.Error);
+    }
+
+    [Fact]
+    public async Task One_more_image_needs_a_picture_to_make_it_from()
+    {
+        _pictures.ByName["Soul coin"] = [];
+        var (client, projectId) = await ImagedAsync();
+
+        var refused = await Assert.ThrowsAsync<InvalidOperationException>(() => client.AddReferenceImageAsync(projectId, "R02"));
+
+        Assert.Equal("There is no picture to make another image of Soul coin from. Search the sources again, add your own picture, or make it from the description.", refused.Message);
+    }
 }

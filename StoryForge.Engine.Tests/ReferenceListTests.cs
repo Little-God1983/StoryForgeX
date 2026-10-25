@@ -143,4 +143,12 @@ public sealed class ReferenceListTests : IDisposable
         Assert.Equal(["Engine.png"], pool.Select(p => p.Caption));
         Assert.All(references, r => Assert.Empty(r.Sources));   // there for you to pick, used by no one yet
     }
+
+    [Fact]
+    public void One_name_written_two_ways_is_one_reference()
+    {
+        var (references, _) = ReferenceList.Propose(Sheet, [.. Board, Shot("S04/a", "The Tavern"), Shot("S04/b", "the tavern ")]);
+
+        Assert.Single(references, r => ReferenceList.Same(r.Name, "The Tavern"));
+    }
 }

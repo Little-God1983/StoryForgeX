@@ -46,9 +46,10 @@ public sealed partial class ReferencesViewModel(IStoryForgeClient client, Guid p
     public bool IsListPhase => Phase == ReferencePhase.List;
 
     /// <summary>
-    /// References past the list with no image yet: the run was cancelled before it got to them.
+    /// Past the list, a reference with no image yet or an image never made: the run was cancelled
+    /// or failed before it got to them.
     /// </summary>
-    private bool HasMissingImages => !IsListPhase && Cards.Any(c => c.View.Images.Count == 0);
+    private bool HasMissingImages => !IsListPhase && Cards.Any(c => c.View.Images.Count == 0 || c.View.Images.Any(i => i is { Version: 0, State: not StageState.Running }));
 
     /// <summary>The list waits for you: check it, then make the images. Or some images were never made.</summary>
     public bool ShowsListBar => (IsListPhase || HasMissingImages) && IsReview && !TextOnly;

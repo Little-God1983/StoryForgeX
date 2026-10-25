@@ -362,4 +362,30 @@ public sealed class ReferencesScreenTests
         Assert.False(screen.IsEditingLook);
         Assert.False(screen.SaveLookCommand.CanExecute(null));
     }
+
+    [Fact]
+    public async Task An_image_whose_first_make_failed_can_be_made_from_the_bar()
+    {
+        var (_, screen, _) = await OpenAsync(id => Images(id) with
+        {
+            References = [.. Images(id).References.Select(r => r.Reference.Id == "R02" ? r with { Images = [Image("R02", ImageMaking.FromPicture, StageState.Failed, version: 0)] } : r)],
+        });
+
+        Assert.True(screen.ShowsListBar);
+        Assert.True(screen.MakeImagesCommand.CanExecute(null));
+    }
+
+    [Fact]
+    public async Task A_card_shows_its_approved_image_when_the_first_has_none()
+    {
+        var approved = Image("R03", ImageMaking.FromPicture, StageState.Approved) with { Key = "R03/2", Number = 2 };
+        var (_, screen, _) = await OpenAsync(id => Images(id) with
+        {
+            References = [.. Images(id).References.Select(r => r.Reference.Id == "R03" ? r with { Images = [.. r.Images, approved] } : r)],
+        });
+
+        var card = screen.Places.Single();
+        Assert.Equal("approved", card.StateText);
+        Assert.False(card.IsMissing);
+    }
 }

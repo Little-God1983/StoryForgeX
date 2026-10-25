@@ -124,6 +124,17 @@ internal sealed class CellReader(IDbContextFactory<StoryForgeDbContext> contextF
             .FirstOrDefaultAsync(cancellationToken) ?? StageState.NotStarted;
     }
 
+    /// <summary>The segments of a stage that were never made: their first run failed or was cancelled.</summary>
+    public async Task<IReadOnlyList<string>> UnmadeKeysAsync(Guid projectId, PipelineStage stage, CancellationToken cancellationToken)
+    {
+        await using var db = await contextFactory.CreateDbContextAsync(cancellationToken);
+        return await db.Cells.AsNoTracking()
+            .Where(c => c.ProjectId == projectId && c.Stage == stage && c.Key != "" && c.CurrentVersion == null && c.State != StageState.Running)
+            .OrderBy(c => c.Key)
+            .Select(c => c.Key)
+            .ToListAsync(cancellationToken);
+    }
+
     /// <summary>The References stage's sheet as it stands: the list, the pool, the phase; null before it was proposed.</summary>
     public async Task<ReferenceSheet?> CurrentReferencesAsync(Guid projectId, CancellationToken cancellationToken)
     {

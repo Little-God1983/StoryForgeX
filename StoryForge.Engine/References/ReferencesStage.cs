@@ -68,7 +68,7 @@ internal sealed class ReferencesStage(
 
         // Every image each reference has (one to start with), made again.
         var existing = await cells.ReferenceImagesAsync(project.Id, cancellationToken);
-        var maker = await MakerAsync(context, cancellationToken);
+        Maker? maker = null;   // an empty list makes nothing, so needs no workflow
         var results = new List<CellResult>();
         var references = new List<Reference>();
         foreach (var reference in sheet.References)
@@ -77,6 +77,7 @@ internal sealed class ReferencesStage(
             var numbers = existing.Where(i => i.ReferenceId == reference.Id).Select(i => i.Number).DefaultIfEmpty(1).Distinct().Order();
             foreach (var number in numbers)
             {
+                maker ??= await MakerAsync(context, cancellationToken);
                 (var image, updated) = await MakeAsync(context, maker, sheet, updated, number, cancellationToken);
                 var result = new CellResult(ReferenceImage.KeyOf(reference.Id, number), StoredJson.Write(image), ReferenceSheet.SchemaVersion, Hash(project.Setup, updated));
                 if (context.StoreSegment is { } store)

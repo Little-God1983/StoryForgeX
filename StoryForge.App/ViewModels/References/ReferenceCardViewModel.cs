@@ -32,8 +32,8 @@ public sealed partial class ReferenceCardViewModel(ReferenceView view, IReadOnly
 
     public CastKind Kind => View.Reference.Kind;
 
-    /// <summary>The image shown on the card and in the panel: the first, unless you picked another.</summary>
-    private ReferenceImageView? Shown => View.Images.FirstOrDefault();
+    /// <summary>The image the card stands for: the first approved one, else the first.</summary>
+    private ReferenceImageView? Shown => View.Images.FirstOrDefault(i => i.State == StageState.Approved) ?? View.Images.FirstOrDefault();
 
     /// <summary>"approved", "review", "partly made up", "no usable picture", "running", "failed", "not made yet".</summary>
     public string StateText => Shown is { } image ? Word(image) : "not made yet";

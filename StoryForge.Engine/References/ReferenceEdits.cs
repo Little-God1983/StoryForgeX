@@ -50,17 +50,24 @@ internal sealed class ReferenceEdits(
             await runner.RegenerateAsync(projectId, Stage, cancellationToken);
             return;
         }
-        // Past the list: only the references a run stopped before get images. The rest keep
-        // theirs, approved or not; one is made again from its card. A run that failed is over.
+        // Past the list: only what a run stopped before is made, references with no image and
+        // images never made. The rest keep theirs, approved or not; one is made again from its
+        // card. A run that failed is over.
         if (await sheets.ReviewAgainAsync(projectId, cancellationToken))
         {
             runner.Publish(new StageUpdate(projectId, Stage, StageState.NeedsReview));
             await runner.SettleAsync(projectId, Stage, cancellationToken);   // every image may be approved already
         }
         var images = await cells.ReferenceImagesAsync(projectId, cancellationToken);
-        foreach (var reference in sheet.References.Where(r => images.All(i => i.ReferenceId != r.Id)))
+        var unmade = await cells.UnmadeKeysAsync(projectId, Stage, cancellationToken);
+        var keys = sheet.References
+            .Where(r => images.All(i => i.ReferenceId != r.Id))
+            .Select(r => ReferenceImage.KeyOf(r.Id, 1))
+            .Concat(unmade)
+            .Distinct();
+        foreach (var key in keys)
         {
-            await runner.MakeSegmentAsync(projectId, Stage, ReferenceImage.KeyOf(reference.Id, 1), cancellationToken);
+            await runner.MakeSegmentAsync(projectId, Stage, key, cancellationToken);
         }
     }
 
@@ -248,10 +255,16 @@ internal sealed class ReferenceEdits(
         using var held = await LockAsync(projectId, cancellationToken);
         RequireIdle(projectId);
         var sheet = await SheetAsync(projectId, cancellationToken);
-        Find(sheet, referenceId);
+        var reference = Find(sheet, referenceId);
         if (sheet.Phase != ReferencePhase.Images)
         {
             throw new InvalidOperationException("Make the images first: the list is still waiting for you.");
+        }
+        // Another image with nothing to make it from could never be approved, and there is no taking it back.
+        if (!reference.DescriptionOnly && !reference.Sources.Any(id => sheet.Pool.Any(p => p.Id == id && !p.TooSmall)))
+        {
+            throw new InvalidOperationException(
+                $"There is no picture to make another image of {reference.Name} from. Search the sources again, add your own picture, or make it from the description.");
         }
         var images = await cells.ReferenceImagesAsync(projectId, cancellationToken);
         var next = 1 + images.Where(i => i.ReferenceId == referenceId).Select(i => i.Number).DefaultIfEmpty(0).Max();
