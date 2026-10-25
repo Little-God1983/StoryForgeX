@@ -80,7 +80,8 @@ internal sealed class ReferenceViews(
             pool,
             sheet?.Others ?? [],
             textOnly,
-            labels);
+            labels,
+            whole.CurrentVersion ?? 0);
     }
 
     private static string? Existing(string root, string? file) =>

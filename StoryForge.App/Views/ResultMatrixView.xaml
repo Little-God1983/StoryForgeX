@@ -106,7 +106,7 @@
             </ItemsControl.ItemTemplate>
           </ItemsControl>
           <StackPanel VerticalAlignment="Center">
-            <TextBlock FontSize="13" Margin="0,0,0,2" Visibility="{Binding ShowsFactSheet, Converter={StaticResource Visible}}">
+            <TextBlock FontSize="13" Margin="0,0,0,2" Visibility="{Binding ShowsStageScreen, Converter={StaticResource Visible}}">
               <Hyperlink Command="{Binding ShowMatrixCommand}" Foreground="{StaticResource AccentBrush}" TextDecorations="{x:Null}">← Result matrix</Hyperlink>
             </TextBlock>
             <TextBlock Text="{Binding Name}" FontSize="22" FontWeight="Bold" TextTrimming="CharacterEllipsis" />
@@ -125,6 +125,10 @@
       <Grid>
       <views:FactSheetView DataContext="{Binding FactSheet}" Margin="28,20"
                            Visibility="{Binding DataContext.ShowsFactSheet, RelativeSource={RelativeSource AncestorType=UserControl}, Converter={StaticResource Visible}}" />
+
+      <!-- The References screen (board 9). -->
+      <views:ReferencesView DataContext="{Binding References}" Margin="28,20"
+                            Visibility="{Binding DataContext.ShowsReferences, RelativeSource={RelativeSource AncestorType=UserControl}, Converter={StaticResource Visible}}" />
 
       <!-- The matrix: one row per segment of the script, its cells by stage. -->
       <views:ScriptMatrixView DataContext="{Binding Script}" Margin="28,20"

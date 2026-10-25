@@ -100,6 +100,35 @@ internal sealed class EngineTestHost : IDisposable
         public Task ToWavAsync(string source, string target, CancellationToken cancellationToken) => throw new StageFailedException(Reason);
     }
 
+    /// <summary>
+    /// Closes the pooled connections to the databases under one test's folder, so the folder can go.
+    /// Only those: clearing every pool disposed connections other test classes were using at that
+    /// moment. Both forms of the connection string are cleared: the engine's, and the plain
+    /// "Data Source=…" tests open themselves.
+    /// </summary>
+    public static void ClearPool(string dataDirectory)
+    {
+        if (!Directory.Exists(dataDirectory))
+        {
+            return;
+        }
+        foreach (var database in Directory.GetFiles(dataDirectory, "storyforge.db", SearchOption.AllDirectories))
+        {
+            foreach (var connectionString in new[] { new SqliteConnectionStringBuilder { DataSource = database }.ToString(), $"Data Source={database}" })
+            {
+                try
+                {
+                    using var connection = new SqliteConnection(connectionString);
+                    SqliteConnection.ClearPool(connection);
+                }
+                catch (ArgumentException)
+                {
+                    // A folder like "a;b=c" is no plain connection string: only the engine's form was used.
+                }
+            }
+        }
+    }
+
     public void Dispose()
     {
         foreach (var host in _hosts)
@@ -115,7 +144,7 @@ internal sealed class EngineTestHost : IDisposable
             host.StopAsync(TimeSpan.FromSeconds(10)).GetAwaiter().GetResult();
             host.Dispose();
         }
-        SqliteConnection.ClearAllPools();
+        ClearPool(DataDirectory);
         if (Directory.Exists(DataDirectory))
         {
             Directory.Delete(DataDirectory, recursive: true);

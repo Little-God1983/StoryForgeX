@@ -654,4 +654,18 @@ public sealed class NewProjectPageTests
 
         Assert.Equal("about 60 shots → 60 stills, 60 clips", page.ShotEstimate);
     }
+
+    [Fact]
+    public async Task The_reference_list_is_reviewed_first_unless_you_untick_it()
+    {
+        AddOneOfEach();
+        var page = await ShownPage();
+        FillBrief(page);
+        Assert.True(page.ReviewReferenceList);
+
+        page.ReviewReferenceList = false;
+        await page.StartCommand.ExecuteAsync(null);
+
+        Assert.False(Assert.Single(_client.Projects).Setup.ReviewReferenceList);
+    }
 }

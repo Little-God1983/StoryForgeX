@@ -337,7 +337,8 @@ public sealed class FactSheetTests
         Assert.True(matrix.Stages[1].CanOpen);   // Script: the matrix
         Assert.True(matrix.Stages[2].CanOpen);   // Voice: the matrix too
         Assert.True(matrix.Stages[3].CanOpen);   // Storyboard: its shots are in the matrix
-        Assert.All(matrix.Stages.Skip(4), chip => Assert.False(chip.CanOpen));   // their screens come with their stages
+        Assert.True(matrix.Stages[4].CanOpen);   // References: their own screen
+        Assert.All(matrix.Stages.Skip(5), chip => Assert.False(chip.CanOpen));   // their screens come with their stages
     }
 
     [Fact]

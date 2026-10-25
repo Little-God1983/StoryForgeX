@@ -436,7 +436,7 @@ internal sealed class FakeStoryForgeClient : IStoryForgeClient
             VoiceActions.Add(("cancel", segmentId, 0));
             return Task.CompletedTask;
         }
-        if (stage == PipelineStage.Storyboard)
+        if (stage is PipelineStage.Storyboard or PipelineStage.References)
         {
             ShotActions.Add(("cancel", segmentId));
             return Task.CompletedTask;
@@ -471,7 +471,7 @@ internal sealed class FakeStoryForgeClient : IStoryForgeClient
             ChangeVoice(projectId, segmentId, s => s with { State = StageState.Approved, ApprovedVersion = version });
             return Task.CompletedTask;
         }
-        if (stage == PipelineStage.Storyboard)
+        if (stage is PipelineStage.Storyboard or PipelineStage.References)
         {
             ShotActions.Add(($"approve v{version}", segmentId));
             ChangeShot(projectId, segmentId, s => s with { State = StageState.Approved, ApprovedVersion = version });
@@ -490,7 +490,7 @@ internal sealed class FakeStoryForgeClient : IStoryForgeClient
             VoiceActions.Add(("approve all", "", 0));
             return Task.CompletedTask;
         }
-        if (stage == PipelineStage.Storyboard)
+        if (stage is PipelineStage.Storyboard or PipelineStage.References)
         {
             ShotActions.Add(("approve all", ""));
             return Task.CompletedTask;
@@ -511,7 +511,7 @@ internal sealed class FakeStoryForgeClient : IStoryForgeClient
             VoiceActions.Add(("regenerate", segmentId, 0));
             return Task.CompletedTask;
         }
-        if (stage == PipelineStage.Storyboard)
+        if (stage is PipelineStage.Storyboard or PipelineStage.References)
         {
             ShotActions.Add(("regenerate", segmentId));
             return Task.CompletedTask;
@@ -544,7 +544,7 @@ internal sealed class FakeStoryForgeClient : IStoryForgeClient
             ChangeVoice(projectId, segmentId, s => s with { Version = version });
             return Task.CompletedTask;
         }
-        if (stage == PipelineStage.Storyboard)
+        if (stage is PipelineStage.Storyboard or PipelineStage.References)
         {
             ShotActions.Add(($"select v{version}", segmentId));
             ChangeShot(projectId, segmentId, s => s with { Version = version });

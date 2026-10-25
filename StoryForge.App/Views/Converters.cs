@@ -64,7 +64,8 @@ public sealed class ThumbnailConverter : MarkupExtension, IValueConverter
             image.BeginInit();
             image.UriSource = new Uri(path);
             image.CacheOption = BitmapCacheOption.OnLoad;
-            image.DecodePixelWidth = 200;
+            // A bigger preview asks for it: ConverterParameter=600.
+            image.DecodePixelWidth = parameter is string wide && int.TryParse(wide, out var width) ? width : 200;
             image.EndInit();
             image.Freeze();
             return image;

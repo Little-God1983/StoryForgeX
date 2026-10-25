@@ -106,6 +106,7 @@ public sealed record PoolImageView(PoolImage Image, string? Path, IReadOnlyList<
 /// <summary>Everything the References screen shows.</summary>
 /// <param name="TextOnly">The project makes its stills from text only: no references are needed.</param>
 /// <param name="ShotLabels">Each shot key's label ("S01·2"), for "in 5 shots: S01·2, …".</param>
+/// <param name="Version">The sheet's version: what approving the stage as a whole approves (a project with stills from text only).</param>
 public sealed record ReferencesView(
     Guid ProjectId,
     StageState State,
@@ -116,7 +117,8 @@ public sealed record ReferencesView(
     IReadOnlyList<PoolImageView> Pool,
     IReadOnlyList<OtherCast> Others,
     bool TextOnly,
-    IReadOnlyDictionary<string, string> ShotLabels);
+    IReadOnlyDictionary<string, string> ShotLabels,
+    int Version = 0);
 
 /// <summary>What a change to the reference list does.</summary>
 public enum ReferenceChangeKind

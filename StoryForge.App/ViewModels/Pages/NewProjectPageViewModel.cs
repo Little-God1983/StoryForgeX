@@ -135,6 +135,10 @@ public sealed partial class NewProjectPageViewModel : PageViewModel
     [ObservableProperty]
     private Consistency _consistency = Consistency.ReferenceImages;
 
+    /// <summary>The run stops on the proposed reference list before any image is made.</summary>
+    [ObservableProperty]
+    private bool _reviewReferenceList = true;
+
     public GenerationSizeViewModel StillSize { get; } = new();
 
     public GenerationSizeViewModel ClipSize { get; } = new();
@@ -320,7 +324,8 @@ public sealed partial class NewProjectPageViewModel : PageViewModel
         new OutputSetup(Aspect, SelectedDelivery.Value.Width, SelectedDelivery.Value.Height, TargetLength()!.Value, Language, Assembly),
         [.. RunPlan.Where(s => s.IsGated).Select(s => s.Stage)],
         StopAtGates ? RunMode.StopAtGates : RunMode.RunThrough,
-        Pacing.Override);
+        Pacing.Override,
+        ReviewReferenceList);
 
     private int? TargetLength()
     {
