@@ -114,6 +114,44 @@ internal sealed class CellReader(IDbContextFactory<StoryForgeDbContext> contextF
         return entry is null ? null : StoredJson.Read<StoryboardSheet>(entry.OutputJson);
     }
 
+    /// <summary>Where a stage stands as a whole; not started before it ever ran.</summary>
+    public async Task<StageState> StateAsync(Guid projectId, PipelineStage stage, CancellationToken cancellationToken)
+    {
+        await using var db = await contextFactory.CreateDbContextAsync(cancellationToken);
+        return await db.Cells.AsNoTracking()
+            .Where(c => c.ProjectId == projectId && c.Stage == stage && c.Key == "")
+            .Select(c => (StageState?)c.State)
+            .FirstOrDefaultAsync(cancellationToken) ?? StageState.NotStarted;
+    }
+
+    /// <summary>The segments of a stage that were never made: their first run failed or was cancelled.</summary>
+    public async Task<IReadOnlyList<string>> UnmadeKeysAsync(Guid projectId, PipelineStage stage, CancellationToken cancellationToken)
+    {
+        await using var db = await contextFactory.CreateDbContextAsync(cancellationToken);
+        return await db.Cells.AsNoTracking()
+            .Where(c => c.ProjectId == projectId && c.Stage == stage && c.Key != "" && c.CurrentVersion == null && c.State != StageState.Running)
+            .OrderBy(c => c.Key)
+            .Select(c => c.Key)
+            .ToListAsync(cancellationToken);
+    }
+
+    /// <summary>The References stage's sheet as it stands: the list, the pool, the phase; null before it was proposed.</summary>
+    public async Task<ReferenceSheet?> CurrentReferencesAsync(Guid projectId, CancellationToken cancellationToken)
+    {
+        await using var db = await contextFactory.CreateDbContextAsync(cancellationToken);
+        var version = await db.Cells.AsNoTracking()
+            .Where(c => c.ProjectId == projectId && c.Stage == PipelineStage.References && c.Key == "")
+            .Select(c => c.CurrentVersion)
+            .FirstOrDefaultAsync(cancellationToken);
+        var entry = version is null ? null : await db.CellVersions.AsNoTracking().FirstOrDefaultAsync(
+            v => v.ProjectId == projectId && v.Stage == PipelineStage.References && v.Key == "" && v.Version == version, cancellationToken);
+        return entry is null ? null : StoredJson.Read<ReferenceSheet>(entry.OutputJson);
+    }
+
+    /// <summary>Every reference image as it stands, each in its current version.</summary>
+    public async Task<IReadOnlyList<ReferenceImage>> ReferenceImagesAsync(Guid projectId, CancellationToken cancellationToken) =>
+        [.. (await ReadSegmentsAsync(projectId, PipelineStage.References, c => c.CurrentVersion, cancellationToken)).Select(v => StoredJson.Read<ReferenceImage>(v.OutputJson))];
+
     /// <summary>The shots as they stand, each in its current version: by segment, then where they start.</summary>
     public async Task<IReadOnlyList<Shot>> CurrentShotsAsync(Guid projectId, CancellationToken cancellationToken) =>
         [.. (await ReadSegmentsAsync(projectId, PipelineStage.Storyboard, c => c.CurrentVersion, cancellationToken))

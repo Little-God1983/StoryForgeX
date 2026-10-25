@@ -1,6 +1,7 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using StoryForge.ResearchServer;
+using StoryForge.Sources;
 
 // StoryForge.ResearchServer --source bg3.wiki --source forgottenrealms.fandom.com
 // Started by Claude CLI over stdio for one Research run; stdout carries the MCP protocol only.

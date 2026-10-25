@@ -141,6 +141,40 @@ internal sealed class PipelineRunner(
         await EnqueueAsync(projectId, stage, key, cancellationToken);
     }
 
+    /// <summary>
+    /// Makes a segment the stage has no cell for yet, e.g. one more reference image: its cell is
+    /// made, then it runs like a segment made again.
+    /// </summary>
+    public async Task MakeSegmentAsync(Guid projectId, PipelineStage stage, string key, CancellationToken cancellationToken)
+    {
+        await projects.GetAsync(projectId, cancellationToken);
+        if (!_workers.TryGetValue(stage, out var worker) || worker is not ISegmentWorker)
+        {
+            throw new InvalidOperationException($"The {stage} stage has no segments to make one by one.");
+        }
+        var created = false;
+        await using (var db = await contextFactory.CreateDbContextAsync(cancellationToken))
+        {
+            if (!await db.Cells.AnyAsync(c => c.ProjectId == projectId && c.Stage == stage && c.Key == key, cancellationToken))
+            {
+                db.Cells.Add(new CellEntry { ProjectId = projectId, Stage = stage, Key = key, State = StageState.NotStarted, UpdatedAt = clock.GetUtcNow() });
+                await db.SaveChangesAsync(cancellationToken);
+                created = true;
+            }
+        }
+        try
+        {
+            await EnqueueAsync(projectId, stage, key, cancellationToken);
+        }
+        catch (InvalidOperationException) when (created)
+        {
+            // Refused (the whole stage is being written): no empty cell is left to wait for an image.
+            await using var db = await contextFactory.CreateDbContextAsync(CancellationToken.None);
+            await db.Cells.Where(c => c.ProjectId == projectId && c.Stage == stage && c.Key == key && c.CurrentVersion == null).ExecuteDeleteAsync(CancellationToken.None);
+            throw;
+        }
+    }
+
     public async Task CancelAsync(Guid projectId, PipelineStage stage, string key = Whole)
     {
         Job? job;
@@ -189,6 +223,15 @@ internal sealed class PipelineRunner(
             if (!await db.CellVersions.AnyAsync(v => v.ProjectId == projectId && v.Stage == stage && v.Key == Whole && v.Version == version, cancellationToken))
             {
                 throw new KeyNotFoundException($"The {stage} stage has no version {version}.");
+            }
+            if (stage == PipelineStage.References)
+            {
+                // As a whole only when nothing is left to approve: stills, text only, or an empty list.
+                var images = await db.Cells.Where(c => c.ProjectId == projectId && c.Stage == stage && c.Key != Whole).ToListAsync(cancellationToken);
+                if (IsAnyBusy(projectId, stage) || images.Any(i => i.State != StageState.Approved) || (await WithoutImagesAsync(db, projectId, images, cancellationToken)).Count > 0)
+                {
+                    throw new InvalidOperationException("Approve every reference image first: the stills are made from them.");
+                }
             }
             cell.CurrentVersion = version;
             cell.ApprovedVersion = version;
@@ -297,6 +340,7 @@ internal sealed class PipelineRunner(
             await ChangeCellAsync(projectId, stage, key, cell =>
             {
                 job.PreviousState = cell.State;
+                job.PreviousVersion = cell.CurrentVersion;
                 job.PreviousError = cell.Error;
                 job.PreviousActivity = cell.ActivityJson;
                 cell.State = StageState.Running;
@@ -394,10 +438,10 @@ internal sealed class PipelineRunner(
             {
                 await FailAsync(job, ClosedWhileRunning, Snapshot(activity));
             }
-            else if (StoredCount(job) is > 0 and var stored)
+            else if (StoredCount(job) is var stored && (stored > 0 || await KeptAsync(job)))
             {
-                // Segments of this run are stored already: going back to before would hide them.
-                await FailAsync(job, $"Cancelled after {stored} {(stored == 1 ? "segment" : "segments")}. Those are kept; Retry makes them all again.", Snapshot(activity));
+                // Segments of this run are stored already, or what it saved before them: going back to before would hide them.
+                await FailAsync(job, _workers[job.Stage].CancelledAfter(stored), Snapshot(activity));
             }
             else
             {
@@ -508,6 +552,21 @@ internal sealed class PipelineRunner(
         Publish(new StageUpdate(job.ProjectId, job.Stage, state, Key: result.Key));
     }
 
+    /// <summary>Whether a whole run saved its result partway, as References keeps its list before its images.</summary>
+    private async Task<bool> KeptAsync(Job job)
+    {
+        if (job.Key != Whole)
+        {
+            return false;
+        }
+        await using var db = await contextFactory.CreateDbContextAsync(CancellationToken.None);
+        var version = await db.Cells.AsNoTracking()
+            .Where(c => c.ProjectId == job.ProjectId && c.Stage == job.Stage && c.Key == Whole)
+            .Select(c => c.CurrentVersion)
+            .FirstOrDefaultAsync(CancellationToken.None);
+        return version != job.PreviousVersion;
+    }
+
     /// <summary>How many segments the run stored as it went; with <paramref name="key"/>, whether it stored that one.</summary>
     private static int StoredCount(Job job, string? key = null)
     {
@@ -561,6 +620,11 @@ internal sealed class PipelineRunner(
         // Tracked cells first: changes made in this context are not in the database yet.
         var segments = await db.Cells.Where(c => c.ProjectId == projectId && c.Stage == stage && c.Key != Whole).ToListAsync(cancellationToken);
         var state = segments.Count > 0 && segments.All(s => s.State == StageState.Approved) ? StageState.Approved : StageState.NeedsReview;
+        if (stage == PipelineStage.References && state == StageState.Approved
+            && await WithoutImagesAsync(db, projectId, [.. segments.Where(s => s.State == StageState.Approved)], cancellationToken) is { Count: > 0 })
+        {
+            state = StageState.NeedsReview;   // every reference on the list needs an approved image, not just the ones that have one
+        }
         if (state == cell.State || (cell.State == StageState.Failed && (state != StageState.Approved || cell.CurrentVersion is null)))
         {
             return null;
@@ -570,6 +634,29 @@ internal sealed class PipelineRunner(
         cell.ApprovedVersion = state == StageState.Approved ? cell.CurrentVersion : cell.ApprovedVersion;
         cell.UpdatedAt = clock.GetUtcNow();
         return state;
+    }
+
+    /// <summary>The names of the references <paramref name="ids"/> on the current list, in its order.</summary>
+    internal static async Task<List<string>> NamesAsync(StoryForgeDbContext db, Guid projectId, IReadOnlySet<string> ids, CancellationToken cancellationToken) =>
+        await SheetAsync(db, projectId, cancellationToken) is { } sheet ? [.. sheet.References.Where(r => ids.Contains(r.Id)).Select(r => r.Name)] : [.. ids];
+
+    private static async Task<ReferenceSheet?> SheetAsync(StoryForgeDbContext db, Guid projectId, CancellationToken cancellationToken)
+    {
+        var whole = await db.Cells.AsNoTracking().FirstOrDefaultAsync(c => c.ProjectId == projectId && c.Stage == PipelineStage.References && c.Key == Whole, cancellationToken);
+        var entry = whole?.CurrentVersion is { } version
+            ? await db.CellVersions.AsNoTracking().FirstOrDefaultAsync(v => v.ProjectId == projectId && v.Stage == PipelineStage.References && v.Key == Whole && v.Version == version, cancellationToken)
+            : null;
+        return entry is null ? null : StoredJson.Read<ReferenceSheet>(entry.OutputJson);
+    }
+
+    /// <summary>The names of the references on the current list that have none of <paramref name="images"/>.</summary>
+    internal static async Task<List<string>> WithoutImagesAsync(StoryForgeDbContext db, Guid projectId, IReadOnlyList<CellEntry> images, CancellationToken cancellationToken)
+    {
+        if (await SheetAsync(db, projectId, cancellationToken) is not { } sheet)
+        {
+            return [];
+        }
+        return [.. sheet.References.Where(r => images.All(i => !i.Key.StartsWith(r.Id + "/", StringComparison.Ordinal) || i.CurrentVersion is null)).Select(r => r.Name)];
     }
 
     private void AddVersion(StoryForgeDbContext db, CellEntry cell, int version, string outputJson, int schemaVersion, string inputHash)
@@ -616,6 +703,18 @@ internal sealed class PipelineRunner(
     /// </summary>
     private async Task RestoreAsync(Job job)
     {
+        if (job.Key != Whole && job.PreviousState == StageState.NotStarted && job.PreviousVersion is null)
+        {
+            // A cell made for this run (MakeSegmentAsync): it goes again, not left waiting for an image.
+            await using (var db = await contextFactory.CreateDbContextAsync(CancellationToken.None))
+            {
+                await db.Cells.Where(c => c.ProjectId == job.ProjectId && c.Stage == job.Stage && c.Key == job.Key && c.CurrentVersion == null)
+                    .ExecuteDeleteAsync(CancellationToken.None);
+            }
+            Forget(job);
+            Publish(Update(job, StageState.NotStarted));
+            return;
+        }
         await ChangeCellAsync(job.ProjectId, job.Stage, job.Key, cell =>
         {
             cell.State = job.PreviousState;
@@ -714,6 +813,8 @@ internal sealed class PipelineRunner(
         public CancellationTokenSource Cancel { get; } = cancel;
 
         public StageState PreviousState { get; set; }
+
+        public int? PreviousVersion { get; set; }
 
         public string? PreviousError { get; set; }
 

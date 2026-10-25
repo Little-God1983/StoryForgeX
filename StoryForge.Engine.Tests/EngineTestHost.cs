@@ -7,6 +7,7 @@ using StoryForge.Client;
 using StoryForge.Engine.Data;
 using StoryForge.Engine.Pipeline;
 using StoryForge.Engine.Research;
+using StoryForge.Engine.References;
 using StoryForge.Engine.Script;
 using StoryForge.Engine.Storyboard;
 using StoryForge.Engine.Voice;
@@ -35,10 +36,13 @@ internal sealed class EngineTestHost : IDisposable
             options.DataDirectory = DataDirectory;
             options.CredentialTargetPrefix = CredentialPrefix;
         });
-        // No test ever reaches the real Claude CLI, ComfyUI or ffmpeg: they refuse unless a test puts its own in.
+        // No test ever reaches the real Claude CLI, ComfyUI, ffmpeg or the sources online: they refuse (or find
+        // nothing) unless a test puts its own in.
         builder.Services.Replace(ServiceDescriptor.Singleton<IResearchAgent>(new NoModel()));
         builder.Services.Replace(ServiceDescriptor.Singleton<IScriptAgent>(new NoModel()));
         builder.Services.Replace(ServiceDescriptor.Singleton<IStoryboardAgent>(new NoModel()));
+        builder.Services.Replace(ServiceDescriptor.Singleton<IPictureCheck>(new NoModel()));
+        builder.Services.Replace(ServiceDescriptor.Singleton<IPictureSource>(new NoModel()));
         builder.Services.Replace(ServiceDescriptor.Singleton<IComfyUi>(new NoModel()));
         builder.Services.Replace(ServiceDescriptor.Singleton<IAudioConverter>(new NoModel()));
         replace?.Invoke(builder.Services);
@@ -56,7 +60,7 @@ internal sealed class EngineTestHost : IDisposable
         (await StartAsync(replace)).Services.GetRequiredService<IStoryForgeClient>();
 
     /// <summary>A model (or ComfyUI, or ffmpeg) that is not there: every stage that asks it fails with a plain reason.</summary>
-    private sealed class NoModel : IResearchAgent, IScriptAgent, IStoryboardAgent, IComfyUi, IAudioConverter
+    private sealed class NoModel : IResearchAgent, IScriptAgent, IStoryboardAgent, IPictureCheck, IPictureSource, IComfyUi, IAudioConverter
     {
         private const string Reason = "No model in this test.";
 
@@ -76,12 +80,53 @@ internal sealed class EngineTestHost : IDisposable
             string shotKey, string? session, IReadOnlyList<string> problems, IProgress<ActivityLine> activity, CancellationToken cancellationToken) =>
             throw new StageFailedException(Reason);
 
+        public Task<PictureVerdict> CheckAsync(PictureCheckRequest request, IProgress<ActivityLine> activity, CancellationToken cancellationToken) =>
+            throw new StageFailedException(Reason);
+
+        // No sources on the internet in tests: nothing is found, nothing downloads.
+        public Task<IReadOnlyList<FoundPicture>> SearchAsync(IReadOnlyList<string> sources, string name, CancellationToken cancellationToken) =>
+            Task.FromResult<IReadOnlyList<FoundPicture>>([]);
+
+        public Task<IReadOnlyList<FoundPicture>> PageAsync(IReadOnlyList<string> sources, string pageUrl, CancellationToken cancellationToken) =>
+            Task.FromResult<IReadOnlyList<FoundPicture>>([]);
+
+        public Task<DownloadedPicture?> DownloadAsync(string url, CancellationToken cancellationToken) => Task.FromResult<DownloadedPicture?>(null);
+
         public Task<string> UploadAsync(string path, CancellationToken cancellationToken) => throw new StageFailedException(Reason);
 
         public Task<IReadOnlyList<ComfyFile>> RunAsync(System.Text.Json.Nodes.JsonObject workflow, string name, IProgress<string> progress, CancellationToken cancellationToken) =>
             throw new StageFailedException(Reason);
 
         public Task ToWavAsync(string source, string target, CancellationToken cancellationToken) => throw new StageFailedException(Reason);
+    }
+
+    /// <summary>
+    /// Closes the pooled connections to the databases under one test's folder, so the folder can go.
+    /// Only those: clearing every pool disposed connections other test classes were using at that
+    /// moment. Both forms of the connection string are cleared: the engine's, and the plain
+    /// "Data Source=…" tests open themselves.
+    /// </summary>
+    public static void ClearPool(string dataDirectory)
+    {
+        if (!Directory.Exists(dataDirectory))
+        {
+            return;
+        }
+        foreach (var database in Directory.GetFiles(dataDirectory, "storyforge.db", SearchOption.AllDirectories))
+        {
+            foreach (var connectionString in new[] { new SqliteConnectionStringBuilder { DataSource = database }.ToString(), $"Data Source={database}" })
+            {
+                try
+                {
+                    using var connection = new SqliteConnection(connectionString);
+                    SqliteConnection.ClearPool(connection);
+                }
+                catch (ArgumentException)
+                {
+                    // A folder like "a;b=c" is no plain connection string: only the engine's form was used.
+                }
+            }
+        }
     }
 
     public void Dispose()
@@ -99,7 +144,7 @@ internal sealed class EngineTestHost : IDisposable
             host.StopAsync(TimeSpan.FromSeconds(10)).GetAwaiter().GetResult();
             host.Dispose();
         }
-        SqliteConnection.ClearAllPools();
+        ClearPool(DataDirectory);
         if (Directory.Exists(DataDirectory))
         {
             Directory.Delete(DataDirectory, recursive: true);

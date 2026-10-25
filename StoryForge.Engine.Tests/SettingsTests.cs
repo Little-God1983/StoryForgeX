@@ -166,7 +166,7 @@ public sealed class SettingsTests : IDisposable
         await client.SetSecretAsync(SecretKey.LmStudioApiToken, token);
         await client.SaveSettingsAsync(Changed());
 
-        Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
+        EngineTestHost.ClearPool(_engine.DataDirectory);
         foreach (var file in Directory.GetFiles(_engine.DataDirectory, "*", SearchOption.AllDirectories))
         {
             Assert.DoesNotContain(token, Encoding.UTF8.GetString(await File.ReadAllBytesAsync(file)));

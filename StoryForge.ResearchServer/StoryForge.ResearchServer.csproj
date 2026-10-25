@@ -13,6 +13,10 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\StoryForge.Sources\StoryForge.Sources.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
     <InternalsVisibleTo Include="StoryForge.Engine.Tests" />
   </ItemGroup>
 

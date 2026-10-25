@@ -252,6 +252,10 @@
                   <TextBlock Text="Consistency" Style="{StaticResource FieldLabelStyle}" />
                   <ComboBox ItemsSource="{x:Static pages:NewProjectPageViewModel.ConsistencyChoices}" SelectedValuePath="Value" DisplayMemberPath="Label"
                             SelectedValue="{Binding Consistency}" AutomationProperties.Name="Consistency" />
+                  <CheckBox IsChecked="{Binding ReviewReferenceList}" Margin="0,8,0,0" Foreground="{StaticResource TextBrush}" FontSize="12"
+                            AutomationProperties.Name="Review the reference list first">
+                    <TextBlock Text="Review the reference list first: no image is made before you confirm it" TextWrapping="Wrap" />
+                  </CheckBox>
                 </StackPanel>
                 <StackPanel Style="{StaticResource CardFieldStyle}">
                   <TextBlock Text="Generation size" Style="{StaticResource FieldLabelStyle}" />

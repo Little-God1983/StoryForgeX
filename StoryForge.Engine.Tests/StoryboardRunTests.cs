@@ -38,6 +38,7 @@ public sealed class StoryboardRunTests : IDisposable
         services.AddSingleton<IStageWorker, ScriptStage>();
         services.AddSingleton<IStageWorker, T>();
         services.AddSingleton<IStageWorker, StoryboardStage>();
+        services.AddSingleton<IStageWorker, References.ReferencesStage>();
     }
 
     /// <summary>A project whose voice is approved (no Script or Voice gate), so the storyboard starts by itself.</summary>
@@ -202,7 +203,7 @@ public sealed class StoryboardRunTests : IDisposable
     }
 
     [Fact]
-    public async Task Approving_every_shot_approves_the_storyboard_and_the_run_stops_there_for_now()
+    public async Task Approving_every_shot_approves_the_storyboard_and_the_references_are_proposed()
     {
         _board.Answer(Good());
         var client = await StartAsync();
@@ -213,7 +214,8 @@ public sealed class StoryboardRunTests : IDisposable
 
         Assert.Equal(StageState.Approved, await StageAsync(client, project.Id, PipelineStage.Storyboard, StageState.Approved));
         Assert.All(await ShotsAsync(), s => Assert.Equal(StageState.Approved, s.State));
-        Assert.Equal(StageState.NotStarted, (await client.GetProjectAsync(project.Id)).Stages.Single(s => s.Stage == PipelineStage.References).State);
+        // The test host's sources have no pictures: the list is proposed all the same, and waits for review.
+        Assert.Equal(StageState.NeedsReview, await StageAsync(client, project.Id, PipelineStage.References, StageState.NeedsReview, StageState.Failed));
     }
 
     /// <summary>

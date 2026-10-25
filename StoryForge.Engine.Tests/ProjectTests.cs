@@ -299,4 +299,34 @@ public sealed class ProjectTests : IDisposable
 
         await Assert.ThrowsAsync<ArgumentException>(() => client.CreateProjectAsync(setup));
     }
+
+    [Fact]
+    public async Task A_project_reviews_its_reference_list_first_unless_it_says_otherwise()
+    {
+        var client = await _engine.StartClientAsync();
+        var setup = await ValidSetup(client);
+
+        var reviewing = await client.CreateProjectAsync(setup);
+        var auto = await client.CreateProjectAsync(setup with { Name = "Auto", ReviewReferenceList = false });
+
+        Assert.True((await client.GetProjectAsync(reviewing.Id)).Setup.ReviewReferenceList);
+        Assert.False((await client.GetProjectAsync(auto.Id)).Setup.ReviewReferenceList);
+    }
+
+    [Fact]
+    public async Task A_project_saved_before_the_reference_list_reviews_it()
+    {
+        var client = await _engine.StartClientAsync();
+        var created = await client.CreateProjectAsync(await ValidSetup(client));
+        await using (var db = await _engine.DbAsync())
+        {
+            var entry = db.Projects.Single();
+            var json = System.Text.Json.Nodes.JsonNode.Parse(entry.SetupJson)!.AsObject();
+            json.Remove("ReviewReferenceList");
+            entry.SetupJson = json.ToJsonString();
+            await db.SaveChangesAsync();
+        }
+
+        Assert.True((await client.GetProjectAsync(created.Id)).Setup.ReviewReferenceList);
+    }
 }

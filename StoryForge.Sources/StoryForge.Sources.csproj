@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Reading the project's sources and nothing else: the source list, the web under it, wikis
+       through their API. The research server uses it for Claude's tools, the engine for pictures. -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="StoryForge.ResearchServer" />
+    <InternalsVisibleTo Include="StoryForge.Engine" />
+    <InternalsVisibleTo Include="StoryForge.Engine.Tests" />
+  </ItemGroup>
+
+</Project>

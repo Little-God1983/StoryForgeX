@@ -222,7 +222,7 @@
           <Button DockPanel.Dock="Right" Content="Regenerate storyboard" Style="{StaticResource SecondaryButtonStyle}" Command="{Binding RegenerateBoardCommand}" />
           <TextBlock Text="Storyboard approved" FontSize="14" FontWeight="SemiBold" Foreground="{StaticResource PillOkTextBrush}" VerticalAlignment="Center" Margin="0,0,14,0" />
           <TextBlock VerticalAlignment="Center" FontSize="13" Foreground="{StaticResource TextSoftBrush}" TextWrapping="Wrap"
-                     Text="Every shot is approved. References arrive with #9." />
+                     Text="Every shot is approved. The references are proposed next: open them with the References chip above." />
         </DockPanel>
       </Border>
 

@@ -52,6 +52,31 @@ public sealed class ThumbnailConverter : MarkupExtension, IValueConverter
     private static readonly HashSet<string> ImageExtensions =
         new([".png", ".jpg", ".jpeg", ".webp", ".bmp", ".gif", ".tif", ".tiff"], StringComparer.OrdinalIgnoreCase);
 
+    /// <summary>
+    /// A screen that reloads shows the same pictures again: each is decoded once while its file stays
+    /// the same, and kept while the decoded pictures fit in this much memory, the least recently
+    /// shown going first.
+    /// </summary>
+    public const long MaxCachedBytes = 96L * 1024 * 1024;
+
+    private static readonly Dictionary<(string Path, int Width, DateTime Written, long Length), BitmapImage> Cache = [];
+
+    // Least recently shown first.
+    private static readonly List<(string Path, int Width, DateTime Written, long Length)> Shown = [];
+
+    /// <summary>What stays when the oldest go until the rest fit in <paramref name="budget"/>, in the same order.</summary>
+    public static IReadOnlyList<T> Keep<T>(IReadOnlyDictionary<T, long> sizes, IReadOnlyList<T> oldestFirst, long budget)
+        where T : notnull
+    {
+        var total = oldestFirst.Sum(k => sizes[k]);
+        var first = 0;
+        while (first < oldestFirst.Count && total > budget)
+        {
+            total -= sizes[oldestFirst[first++]];
+        }
+        return [.. oldestFirst.Skip(first)];
+    }
+
     public object? Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
     {
         if (value is not string path || !ImageExtensions.Contains(Path.GetExtension(path)) || !File.Exists(path))
@@ -60,13 +85,38 @@ public sealed class ThumbnailConverter : MarkupExtension, IValueConverter
         }
         try
         {
+            // A bigger preview asks for it: ConverterParameter=600.
+            var width = parameter is string wide && int.TryParse(wide, out var asked) ? asked : 200;
+            var file = new FileInfo(path);
+            var key = (path, width, file.LastWriteTimeUtc, file.Length);
+            lock (Cache)
+            {
+                if (Cache.TryGetValue(key, out var known))
+                {
+                    Shown.Remove(key);
+                    Shown.Add(key);
+                    return known;
+                }
+            }
             var image = new BitmapImage();
             image.BeginInit();
             image.UriSource = new Uri(path);
             image.CacheOption = BitmapCacheOption.OnLoad;
-            image.DecodePixelWidth = 200;
+            image.DecodePixelWidth = width;
             image.EndInit();
             image.Freeze();
+            lock (Cache)
+            {
+                Cache[key] = image;
+                Shown.Remove(key);
+                Shown.Add(key);
+                var kept = Keep(Cache.ToDictionary(c => c.Key, c => (long)c.Value.PixelWidth * c.Value.PixelHeight * 4), Shown, MaxCachedBytes);
+                foreach (var gone in Shown.Except(kept).ToList())
+                {
+                    Cache.Remove(gone);
+                    Shown.Remove(gone);
+                }
+            }
             return image;
         }
         catch (Exception)

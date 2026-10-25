@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Globalization;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using StoryForge.App.ViewModels.References;
 using StoryForge.App.ViewModels.Research;
 using StoryForge.App.ViewModels.Script;
 using StoryForge.Client;
@@ -21,8 +22,8 @@ public sealed record StageChip(PipelineStage Stage, string Name, StageState Stat
     /// <summary>"Research", "Research – review": the chip's text, as on the canvas.</summary>
     public string Label => State is StageState.NotStarted or StageState.Approved ? Name : $"{Name} – {StateText}";
 
-    /// <summary>Research opens the fact sheet; Script, Voice and Board the matrix; the others arrive with their issues.</summary>
-    public bool CanOpen => Stage is PipelineStage.Research or PipelineStage.Script or PipelineStage.Voice or PipelineStage.Storyboard;
+    /// <summary>Research opens the fact sheet; Script, Voice and Board the matrix; References its own screen; the others arrive with their issues.</summary>
+    public bool CanOpen => Stage is PipelineStage.Research or PipelineStage.Script or PipelineStage.Voice or PipelineStage.Storyboard or PipelineStage.References;
 
     // What screen readers announce.
     public override string ToString() => $"{Name}: {StateText}";
@@ -38,15 +39,18 @@ public sealed partial class ResultMatrixPageViewModel : PageViewModel
     private readonly IStoryForgeClient _client;
     private readonly Action<string> _openUrl;
     private readonly Func<IAudioPlayer>? _newPlayer;
+    private readonly Func<string?> _pickPicture;
 
     /// <param name="openUrl">Opens a source page in the browser; tests pass their own.</param>
     /// <param name="newPlayer">Makes the player a project's voice is played with; tests pass their own or none.</param>
-    public ResultMatrixPageViewModel(IStoryForgeClient client, Action<string>? openUrl = null, Func<IAudioPlayer>? newPlayer = null)
+    /// <param name="pickPicture">Asks for a picture file ("Add my own picture…"); null when none was picked. Tests pass their own.</param>
+    public ResultMatrixPageViewModel(IStoryForgeClient client, Action<string>? openUrl = null, Func<IAudioPlayer>? newPlayer = null, Func<string?>? pickPicture = null)
         : base("Result matrix", "Projects / Result matrix", "No project open. Start one from New project.")
     {
         _client = client;
         _openUrl = openUrl ?? (url => Process.Start(new ProcessStartInfo(url) { UseShellExecute = true }));
         _newPlayer = newPlayer;
+        _pickPicture = pickPicture ?? PickPicture;
         client.StageUpdated += (_, update) => UiThread.Run(() => Updating = ReceiveAsync(update));
     }
 
@@ -71,12 +75,22 @@ public sealed partial class ResultMatrixPageViewModel : PageViewModel
 
     /// <summary>The fact sheet, while it is on screen in place of the matrix.</summary>
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(ShowsFactSheet), nameof(ShowsMatrix))]
+    [NotifyPropertyChangedFor(nameof(ShowsFactSheet), nameof(ShowsMatrix), nameof(ShowsStageScreen))]
     private FactSheetViewModel? _factSheet;
 
     public bool ShowsFactSheet => FactSheet is not null;
 
-    public bool ShowsMatrix => HasProject && FactSheet is null;
+    /// <summary>The References screen, while it is on screen in place of the matrix.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowsReferences), nameof(ShowsMatrix), nameof(ShowsStageScreen))]
+    private ReferencesViewModel? _references;
+
+    public bool ShowsReferences => References is not null;
+
+    /// <summary>A stage's own screen is on, with "← Result matrix" to go back.</summary>
+    public bool ShowsStageScreen => ShowsFactSheet || ShowsReferences;
+
+    public bool ShowsMatrix => HasProject && FactSheet is null && References is null;
 
     /// <summary>The script of the open project: the matrix's rows and the panel of the selected segment.</summary>
     [ObservableProperty]
@@ -93,6 +107,7 @@ public sealed partial class ResultMatrixPageViewModel : PageViewModel
         LoadError = null;
         Project = project;
         FactSheet = null;
+        References = null;
         Breadcrumb = $"Projects / {project.Setup.Name}";
         Script?.Playback.Stop();   // the project before keeps no file open
         Script = new ScriptMatrixViewModel(_client, project.Id, _newPlayer?.Invoke());
@@ -144,12 +159,17 @@ public sealed partial class ResultMatrixPageViewModel : PageViewModel
         {
             ShowMatrix();
         }
+        else if (chip.Stage == PipelineStage.References)
+        {
+            await ShowReferencesAsync();
+        }
     }
 
     [RelayCommand]
     private void ShowMatrix()
     {
         FactSheet = null;
+        References = null;
         if (Project is not null)
         {
             Breadcrumb = $"Projects / {Project.Setup.Name}";
@@ -166,12 +186,36 @@ public sealed partial class ResultMatrixPageViewModel : PageViewModel
             return;
         }
         StopPlayback();
+        References = null;
         var sheet = new FactSheetViewModel(_client, Project.Id, Project.Setup.ResearchSources, _openUrl);
         // "Approve and continue": back to the matrix, where the script is being written.
         sheet.Approved += (_, _) => ShowMatrix();
         FactSheet = sheet;
         Breadcrumb = $"Projects / {Project.Setup.Name} / Research";
         await sheet.LoadAsync();
+    }
+
+    /// <summary>The References screen in place of the matrix (board 9).</summary>
+    [RelayCommand]
+    private async Task ShowReferencesAsync()
+    {
+        if (Project is null)
+        {
+            return;
+        }
+        StopPlayback();
+        FactSheet = null;
+        var screen = new ReferencesViewModel(_client, Project.Id, _openUrl, _pickPicture);
+        References = screen;
+        Breadcrumb = $"Projects / {Project.Setup.Name} / References";
+        await screen.LoadAsync();
+    }
+
+    /// <summary>The file picker "Add my own picture…" opens.</summary>
+    private static string? PickPicture()
+    {
+        var dialog = new Microsoft.Win32.OpenFileDialog { Title = "Add your own picture", Filter = "Pictures (*.png, *.jpg, *.webp)|*.png;*.jpg;*.jpeg;*.webp" };
+        return dialog.ShowDialog() == true ? dialog.FileName : null;
     }
 
     private async Task ReceiveAsync(StageUpdate update)
@@ -191,6 +235,10 @@ public sealed partial class ResultMatrixPageViewModel : PageViewModel
         if (Script is not null)
         {
             await Script.ReceiveAsync(update);
+        }
+        if (References is not null)
+        {
+            await References.ReceiveAsync(update);
         }
     }
 

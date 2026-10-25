@@ -15,7 +15,7 @@ public sealed class EngineHostTests : IDisposable
     public void Dispose()
     {
         // SQLite keeps pooled connections open; release them so the folder can go.
-        Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
+        EngineTestHost.ClearPool(_dataDirectory);
         if (Directory.Exists(_dataDirectory))
         {
             Directory.Delete(_dataDirectory, recursive: true);

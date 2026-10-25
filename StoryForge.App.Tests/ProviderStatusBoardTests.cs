@@ -103,5 +103,12 @@ public sealed class ProviderStatusBoardTests
         public Task MoveCutAsync(Guid projectId, string shotKey, ShotEdge edge, int words, CancellationToken cancellationToken = default) => _inner.MoveCutAsync(projectId, shotKey, edge, words, cancellationToken);
         public Task SplitShotAsync(Guid projectId, string shotKey, int atWord, CancellationToken cancellationToken = default) => _inner.SplitShotAsync(projectId, shotKey, atWord, cancellationToken);
         public Task MergeShotAsync(Guid projectId, string shotKey, CancellationToken cancellationToken = default) => _inner.MergeShotAsync(projectId, shotKey, cancellationToken);
+        public Task<ReferencesView> GetReferencesAsync(Guid projectId, CancellationToken cancellationToken = default) => _inner.GetReferencesAsync(projectId, cancellationToken);
+        public Task ChangeReferencesAsync(Guid projectId, ReferenceChange change, CancellationToken cancellationToken = default) => _inner.ChangeReferencesAsync(projectId, change, cancellationToken);
+        public Task AddOwnPictureAsync(Guid projectId, string referenceId, string path, CancellationToken cancellationToken = default) => _inner.AddOwnPictureAsync(projectId, referenceId, path, cancellationToken);
+        public Task MakeReferenceImagesAsync(Guid projectId, CancellationToken cancellationToken = default) => _inner.MakeReferenceImagesAsync(projectId, cancellationToken);
+        public Task AddReferenceImageAsync(Guid projectId, string referenceId, CancellationToken cancellationToken = default) => _inner.AddReferenceImageAsync(projectId, referenceId, cancellationToken);
+        public Task SearchSourcesAgainAsync(Guid projectId, string referenceId, CancellationToken cancellationToken = default) => _inner.SearchSourcesAgainAsync(projectId, referenceId, cancellationToken);
+        public Task MakeFromDescriptionAsync(Guid projectId, string referenceId, CancellationToken cancellationToken = default) => _inner.MakeFromDescriptionAsync(projectId, referenceId, cancellationToken);
     }
 }

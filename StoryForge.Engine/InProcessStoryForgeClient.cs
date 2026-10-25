@@ -7,6 +7,7 @@ using StoryForge.Engine.Research;
 using StoryForge.Engine.Script;
 using StoryForge.Engine.Secrets;
 using StoryForge.Engine.Settings;
+using StoryForge.Engine.References;
 using StoryForge.Engine.Storyboard;
 using StoryForge.Engine.Voice;
 
@@ -26,6 +27,8 @@ internal sealed class InProcessStoryForgeClient(
     VoiceSegments voice,
     StoryboardShots storyboard,
     StoryboardEdits shotEdits,
+    ReferenceViews referenceViews,
+    ReferenceEdits referenceEdits,
     ProjectFolders folders) : IStoryForgeClient
 {
     public event EventHandler<StageUpdate>? StageUpdated
@@ -138,6 +141,20 @@ internal sealed class InProcessStoryForgeClient(
 
     public Task MergeShotAsync(Guid projectId, string shotKey, CancellationToken cancellationToken = default) =>
         shotEdits.MergeAsync(projectId, shotKey, cancellationToken);
+
+    public Task<ReferencesView> GetReferencesAsync(Guid projectId, CancellationToken cancellationToken = default) => referenceViews.GetAsync(projectId, cancellationToken);
+
+    public Task ChangeReferencesAsync(Guid projectId, ReferenceChange change, CancellationToken cancellationToken = default) => referenceEdits.ChangeAsync(projectId, change, cancellationToken);
+
+    public Task AddOwnPictureAsync(Guid projectId, string referenceId, string path, CancellationToken cancellationToken = default) => referenceEdits.AddOwnPictureAsync(projectId, referenceId, path, cancellationToken);
+
+    public Task MakeReferenceImagesAsync(Guid projectId, CancellationToken cancellationToken = default) => referenceEdits.MakeImagesAsync(projectId, cancellationToken);
+
+    public Task AddReferenceImageAsync(Guid projectId, string referenceId, CancellationToken cancellationToken = default) => referenceEdits.AddImageAsync(projectId, referenceId, cancellationToken);
+
+    public Task SearchSourcesAgainAsync(Guid projectId, string referenceId, CancellationToken cancellationToken = default) => referenceEdits.SearchAgainAsync(projectId, referenceId, cancellationToken);
+
+    public Task MakeFromDescriptionAsync(Guid projectId, string referenceId, CancellationToken cancellationToken = default) => referenceEdits.FromDescriptionAsync(projectId, referenceId, cancellationToken);
 
     internal static string SecretName(SecretKey key) => key switch
     {

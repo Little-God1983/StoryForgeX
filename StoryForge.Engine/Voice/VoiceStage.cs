@@ -236,7 +236,8 @@ internal sealed class VoiceStage(
         }
     }
 
-    private static void DeleteQuietly(string path)
+    /// <summary>Deletes the file unless it is still open somewhere: a stray file harms nothing.</summary>
+    internal static void DeleteQuietly(string path)
     {
         try
         {

@@ -436,7 +436,7 @@ internal sealed class FakeStoryForgeClient : IStoryForgeClient
             VoiceActions.Add(("cancel", segmentId, 0));
             return Task.CompletedTask;
         }
-        if (stage == PipelineStage.Storyboard)
+        if (stage is PipelineStage.Storyboard or PipelineStage.References)
         {
             ShotActions.Add(("cancel", segmentId));
             return Task.CompletedTask;
@@ -471,7 +471,7 @@ internal sealed class FakeStoryForgeClient : IStoryForgeClient
             ChangeVoice(projectId, segmentId, s => s with { State = StageState.Approved, ApprovedVersion = version });
             return Task.CompletedTask;
         }
-        if (stage == PipelineStage.Storyboard)
+        if (stage is PipelineStage.Storyboard or PipelineStage.References)
         {
             ShotActions.Add(($"approve v{version}", segmentId));
             ChangeShot(projectId, segmentId, s => s with { State = StageState.Approved, ApprovedVersion = version });
@@ -490,7 +490,7 @@ internal sealed class FakeStoryForgeClient : IStoryForgeClient
             VoiceActions.Add(("approve all", "", 0));
             return Task.CompletedTask;
         }
-        if (stage == PipelineStage.Storyboard)
+        if (stage is PipelineStage.Storyboard or PipelineStage.References)
         {
             ShotActions.Add(("approve all", ""));
             return Task.CompletedTask;
@@ -511,7 +511,7 @@ internal sealed class FakeStoryForgeClient : IStoryForgeClient
             VoiceActions.Add(("regenerate", segmentId, 0));
             return Task.CompletedTask;
         }
-        if (stage == PipelineStage.Storyboard)
+        if (stage is PipelineStage.Storyboard or PipelineStage.References)
         {
             ShotActions.Add(("regenerate", segmentId));
             return Task.CompletedTask;
@@ -544,7 +544,7 @@ internal sealed class FakeStoryForgeClient : IStoryForgeClient
             ChangeVoice(projectId, segmentId, s => s with { Version = version });
             return Task.CompletedTask;
         }
-        if (stage == PipelineStage.Storyboard)
+        if (stage is PipelineStage.Storyboard or PipelineStage.References)
         {
             ShotActions.Add(($"select v{version}", segmentId));
             ChangeShot(projectId, segmentId, s => s with { Version = version });
@@ -617,6 +617,53 @@ internal sealed class FakeStoryForgeClient : IStoryForgeClient
         ThrowIfFailing();
         ShotActions.Add(("merge", shotKey));
         return Task.CompletedTask;
+    }
+
+    /// <summary>The references per project; a project without them has a stage not started.</summary>
+    public Dictionary<Guid, ReferencesView> References { get; } = [];
+
+    /// <summary>What was asked of the References screen: the action and what it names, e.g. ("own", "R01").</summary>
+    public List<(string Action, string Subject)> ReferenceActions { get; } = [];
+
+    public List<ReferenceChange> ReferenceChanges { get; } = [];
+
+    /// <summary>While set, loading the references fails with it.</summary>
+    public string? ReferencesLoadFailure { get; set; }
+
+    public Task<ReferencesView> GetReferencesAsync(Guid projectId, CancellationToken cancellationToken = default) =>
+        ReferencesLoadFailure is { } failure
+            ? Task.FromException<ReferencesView>(new InvalidOperationException(failure))
+            : Task.FromResult(References.GetValueOrDefault(projectId)
+                ?? new ReferencesView(projectId, StageState.NotStarted, null, [], ReferencePhase.List, [], [], [], false, new Dictionary<string, string>()));
+
+    public Task ChangeReferencesAsync(Guid projectId, ReferenceChange change, CancellationToken cancellationToken = default)
+    {
+        ThrowIfFailing();
+        ReferenceChanges.Add(change);
+        return Task.CompletedTask;
+    }
+
+    public Task AddOwnPictureAsync(Guid projectId, string referenceId, string path, CancellationToken cancellationToken = default) => Record("own", referenceId);
+
+    public Task MakeReferenceImagesAsync(Guid projectId, CancellationToken cancellationToken = default) => Record("make images", "");
+
+    public Task AddReferenceImageAsync(Guid projectId, string referenceId, CancellationToken cancellationToken = default) => Record("add image", referenceId);
+
+    public Task SearchSourcesAgainAsync(Guid projectId, string referenceId, CancellationToken cancellationToken = default) => Record("search again", referenceId);
+
+    public Task MakeFromDescriptionAsync(Guid projectId, string referenceId, CancellationToken cancellationToken = default) => Record("from description", referenceId);
+
+    /// <summary>While set, a References action waits for it: the screen sees an action in progress.</summary>
+    public Task? ReferenceActionGate { get; set; }
+
+    private async Task Record(string action, string subject)
+    {
+        if (ReferenceActionGate is { } gate)
+        {
+            await gate;
+        }
+        ThrowIfFailing();
+        ReferenceActions.Add((action, subject));
     }
 
     private void ThrowIfFailing()

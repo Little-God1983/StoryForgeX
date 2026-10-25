@@ -1,7 +1,7 @@
 using System.Net;
 using System.Text.RegularExpressions;
 
-namespace StoryForge.ResearchServer;
+namespace StoryForge.Sources;
 
 /// <summary>
 /// Turns a page into the text a reader sees: no markup, scripts, menus or edit links; one line per
