@@ -7,6 +7,7 @@ using StoryForge.Engine.Research;
 using StoryForge.Engine.Script;
 using StoryForge.Engine.Secrets;
 using StoryForge.Engine.Settings;
+using StoryForge.Engine.References;
 using StoryForge.Engine.Storyboard;
 using StoryForge.Engine.Voice;
 
@@ -26,6 +27,8 @@ internal sealed class InProcessStoryForgeClient(
     VoiceSegments voice,
     StoryboardShots storyboard,
     StoryboardEdits shotEdits,
+    ReferenceViews referenceViews,
+    ReferenceEdits referenceEdits,
     ProjectFolders folders) : IStoryForgeClient
 {
     public event EventHandler<StageUpdate>? StageUpdated
@@ -140,13 +143,13 @@ internal sealed class InProcessStoryForgeClient(
         shotEdits.MergeAsync(projectId, shotKey, cancellationToken);
 
     // The References stage arrives with #9; these are filled in as it is built.
-    public Task<ReferencesView> GetReferencesAsync(Guid projectId, CancellationToken cancellationToken = default) => throw new NotImplementedException();
+    public Task<ReferencesView> GetReferencesAsync(Guid projectId, CancellationToken cancellationToken = default) => referenceViews.GetAsync(projectId, cancellationToken);
 
     public Task ChangeReferencesAsync(Guid projectId, ReferenceChange change, CancellationToken cancellationToken = default) => throw new NotImplementedException();
 
     public Task AddOwnPictureAsync(Guid projectId, string referenceId, string path, CancellationToken cancellationToken = default) => throw new NotImplementedException();
 
-    public Task MakeReferenceImagesAsync(Guid projectId, CancellationToken cancellationToken = default) => throw new NotImplementedException();
+    public Task MakeReferenceImagesAsync(Guid projectId, CancellationToken cancellationToken = default) => referenceEdits.MakeImagesAsync(projectId, cancellationToken);
 
     public Task AddReferenceImageAsync(Guid projectId, string referenceId, CancellationToken cancellationToken = default) => throw new NotImplementedException();
 

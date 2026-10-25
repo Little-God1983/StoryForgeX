@@ -24,7 +24,7 @@ internal interface IPictureSource
 /// <summary>
 /// The image pool: the pictures found for each reference's name and on the pages the facts came
 /// from, downloaded into the project folder. A reference is made from its own pictures, the page's
-/// main picture first; a picture too small to work from stays in the pool and makes nothing.
+/// main picture first; a picture too small to work from is kept, but makes nothing.
 /// </summary>
 internal sealed class PoolBuilder(IPictureSource pictures)
 {
@@ -48,9 +48,9 @@ internal sealed class PoolBuilder(IPictureSource pictures)
         {
             progress?.Report($"looking for pictures of {reference.Name}");
             var found = await pictures.SearchAsync(sources, reference.Name, cancellationToken);
+            // Too small ones too: they make nothing, but say why nothing was made.
             var ids = await AddAsync(images, found.OrderByDescending(p => p.IsMain), root, folder, cancellationToken);
-            var usable = ids.Where(id => !images.First(i => i.Id == id).TooSmall);
-            updated.Add(reference with { Sources = [.. reference.Sources.Concat(usable).Distinct()] });
+            updated.Add(reference with { Sources = [.. reference.Sources.Concat(ids).Distinct()] });
         }
         foreach (var page in factPages.Distinct())
         {

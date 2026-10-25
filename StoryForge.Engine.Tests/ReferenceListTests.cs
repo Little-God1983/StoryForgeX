@@ -66,24 +66,6 @@ public sealed class ReferenceListTests : IDisposable
         Assert.Equal(("Nadira", CastKind.Character), (references[^1].Name, references[^1].Kind));
     }
 
-    private sealed class FakePictures : IPictureSource
-    {
-        public Dictionary<string, IReadOnlyList<FoundPicture>> ByName { get; } = [];
-
-        public Dictionary<string, IReadOnlyList<FoundPicture>> ByPage { get; } = [];
-
-        public HashSet<string> Broken { get; } = [];
-
-        public Task<IReadOnlyList<FoundPicture>> SearchAsync(IReadOnlyList<string> sources, string name, CancellationToken cancellationToken) =>
-            Task.FromResult(ByName.GetValueOrDefault(name) ?? []);
-
-        public Task<IReadOnlyList<FoundPicture>> PageAsync(IReadOnlyList<string> sources, string pageUrl, CancellationToken cancellationToken) =>
-            Task.FromResult(ByPage.GetValueOrDefault(pageUrl) ?? []);
-
-        public Task<DownloadedPicture?> DownloadAsync(string url, CancellationToken cancellationToken) =>
-            Task.FromResult(Broken.Contains(url) ? null : new DownloadedPicture([1, 2, 3], url.EndsWith(".jpg", StringComparison.Ordinal) ? ".jpg" : ".png"));
-    }
-
     private static FoundPicture Picture(string name, int width = 800, int height = 1200, bool main = false, string page = "https://bg3.wiki/wiki/Karlach") =>
         new($"https://bg3.wiki/w/images/{name}", page, "Karlach", name, width, height, main);
 
@@ -112,7 +94,7 @@ public sealed class ReferenceListTests : IDisposable
     }
 
     [Fact]
-    public async Task A_picture_too_small_stays_in_the_pool_but_makes_nothing()
+    public async Task A_picture_too_small_is_kept_with_its_reference_to_say_why_nothing_is_made()
     {
         var pictures = new FakePictures();
         pictures.ByName["Karlach"] = [Picture("Thumb.png", 300, 400, main: true)];
@@ -120,7 +102,7 @@ public sealed class ReferenceListTests : IDisposable
         var (references, pool) = await BuildAsync(pictures);
 
         Assert.True(Assert.Single(pool).TooSmall);
-        Assert.Empty(references[0].Sources);
+        Assert.Equal(["P01"], references[0].Sources);
     }
 
     [Fact]

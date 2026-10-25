@@ -19,7 +19,7 @@ internal sealed class SegmentCells(
     TimeProvider clock)
 {
     /// <summary>The stages whose segments are cells of their own.</summary>
-    public static bool HasSegments(PipelineStage stage) => stage is PipelineStage.Script or PipelineStage.Voice or PipelineStage.Storyboard;
+    public static bool HasSegments(PipelineStage stage) => stage is PipelineStage.Script or PipelineStage.Voice or PipelineStage.Storyboard or PipelineStage.References;
 
     public async Task ApproveAsync(Guid projectId, PipelineStage stage, string segmentId, int version, CancellationToken cancellationToken)
     {
@@ -28,6 +28,7 @@ internal sealed class SegmentCells(
         {
             RequireVersion(db, cell, version);
             await RequireSameCutAsync(db, cell, version, cancellationToken);
+            await RequireMadeAsync(db, cell, version, cancellationToken);
             cell.CurrentVersion = version;
             cell.ApprovedVersion = version;
             cell.State = StageState.Approved;
@@ -50,6 +51,19 @@ internal sealed class SegmentCells(
             if (segments.Count == 0)
             {
                 throw new KeyNotFoundException($"Project {projectId} has no {Name(stage)} yet.");
+            }
+            if (stage == PipelineStage.References)
+            {
+                var nothing = 0;
+                foreach (var segment in segments)
+                {
+                    nothing += await MadeAsync(db, segment, segment.CurrentVersion ?? 0, cancellationToken) ? 0 : 1;
+                }
+                if (nothing > 0)
+                {
+                    throw new InvalidOperationException(
+                        $"Nothing was made for {nothing} of the references yet: search the sources again, add your own picture, or make it from the description.");
+                }
             }
             approved = [.. segments.Where(s => s.State != StageState.Approved).Select(s => s.Key)];
             foreach (var segment in segments)
@@ -155,6 +169,26 @@ internal sealed class SegmentCells(
         throw new InvalidOperationException($"v{version} of {label} cuts elsewhere: move the cut back instead, so the shots still add up to the audio.");
     }
 
+    /// <summary>A reference image where nothing was made (no usable picture) cannot be approved.</summary>
+    private static async Task RequireMadeAsync(StoryForgeDbContext db, CellEntry cell, int version, CancellationToken cancellationToken)
+    {
+        if (!await MadeAsync(db, cell, version, cancellationToken))
+        {
+            throw new InvalidOperationException("Nothing was made for this reference yet: search the sources again, add your own picture, or make it from the description.");
+        }
+    }
+
+    private static async Task<bool> MadeAsync(StoryForgeDbContext db, CellEntry cell, int version, CancellationToken cancellationToken)
+    {
+        if (cell.Stage != PipelineStage.References)
+        {
+            return true;
+        }
+        var entry = await db.CellVersions.AsNoTracking()
+            .FirstOrDefaultAsync(v => v.ProjectId == cell.ProjectId && v.Stage == cell.Stage && v.Key == cell.Key && v.Version == version, cancellationToken);
+        return entry is null || StoredJson.Read<ReferenceImage>(entry.OutputJson).Made != ImageMaking.NoPicture;
+    }
+
     private static void RequireSegments(PipelineStage stage)
     {
         if (!HasSegments(stage))
@@ -167,6 +201,7 @@ internal sealed class SegmentCells(
     {
         PipelineStage.Voice => "voice",
         PipelineStage.Storyboard => "storyboard",
+        PipelineStage.References => "references",
         _ => "script",
     };
 
@@ -174,6 +209,7 @@ internal sealed class SegmentCells(
     {
         PipelineStage.Voice => "spoken",
         PipelineStage.Storyboard => "planned",
+        PipelineStage.References => "made",
         _ => "written",
     };
 }

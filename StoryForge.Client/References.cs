@@ -30,7 +30,8 @@ public sealed record PoolImage(string Id, string Url, string Page, string Captio
 /// <param name="KeyReason">Why it carries the story when it is shown only once; empty otherwise.</param>
 /// <param name="Look">What it looks like, in words: goes into every prompt that shows it.</param>
 /// <param name="Shots">The keys of the shots it is in.</param>
-/// <param name="Sources">The pool pictures it is made from, by id, the first one first.</param>
+/// <param name="Sources">The pool pictures it is made from, by id, the first one first; one too small makes nothing.</param>
+/// <param name="DescriptionOnly">You chose to make it from its look alone.</param>
 public sealed record Reference(
     string Id,
     string Name,
@@ -38,7 +39,8 @@ public sealed record Reference(
     string KeyReason,
     string Look,
     IReadOnlyList<string> Shots,
-    IReadOnlyList<string> Sources);
+    IReadOnlyList<string> Sources,
+    bool DescriptionOnly = false);
 
 /// <summary>On the cast but not a reference: shown in one shot and not key to the story.</summary>
 public sealed record OtherCast(string Name, CastKind Kind, int Shots);

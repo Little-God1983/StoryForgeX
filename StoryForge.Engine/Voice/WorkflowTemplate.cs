@@ -12,11 +12,12 @@ namespace StoryForge.Engine.Voice;
 internal static class WorkflowTemplate
 {
     /// <exception cref="StageFailedException">No templates folder or file, not JSON, or not the API format.</exception>
-    public static async Task<JsonObject> LoadAsync(string folder, string file, CancellationToken cancellationToken)
+    /// <param name="kind">The profile's kind as its messages name it: "voice", "image".</param>
+    public static async Task<JsonObject> LoadAsync(string folder, string file, CancellationToken cancellationToken, string kind = "voice")
     {
         if (string.IsNullOrWhiteSpace(file))
         {
-            throw new StageFailedException("The voice profile has no workflow. Pick one in Profiles → Voice.");
+            throw new StageFailedException($"The {kind} profile has no workflow. Pick one in Profiles → {char.ToUpperInvariant(kind[0])}{kind[1..]}.");
         }
         if (string.IsNullOrWhiteSpace(folder))
         {

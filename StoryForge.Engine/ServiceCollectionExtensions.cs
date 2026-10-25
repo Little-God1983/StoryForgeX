@@ -8,6 +8,7 @@ using StoryForge.Engine.Data;
 using StoryForge.Engine.Pipeline;
 using StoryForge.Engine.Profiles;
 using StoryForge.Engine.Projects;
+using StoryForge.Engine.References;
 using StoryForge.Engine.Providers;
 using StoryForge.Engine.Research;
 using StoryForge.Engine.Script;
@@ -79,6 +80,12 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IStageWorker, StoryboardStage>();
         services.AddSingleton<StoryboardShots>();
         services.AddSingleton<StoryboardEdits>();
+        services.AddSingleton<IPictureSource>(provider => new WikiPictures(provider.GetRequiredService<HttpMessageHandler>()));
+        services.AddSingleton<PoolBuilder>();
+        services.AddSingleton<IPictureCheck, ClaudeCliPictureCheck>();
+        services.AddSingleton<IStageWorker, ReferencesStage>();
+        services.AddSingleton<ReferenceViews>();
+        services.AddSingleton<ReferenceEdits>();
         // After DatabaseInitializer: hosted services start in order, and the runner reads the database.
         services.AddSingleton<PipelineRunner>();
         services.AddHostedService(provider => provider.GetRequiredService<PipelineRunner>());
