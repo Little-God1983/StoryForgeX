@@ -103,7 +103,12 @@ public sealed partial class PoolPictureViewModel(PoolImageView view, Action<Pool
 
     public string Id => View.Image.Id;
 
-    public string Caption => View.Image.Caption.Length > 0 ? View.Image.Caption : View.Image.Url;
+    /// <summary>The wiki's caption; without one (most files have none), the file's own name.</summary>
+    public string Caption => View.Image.Caption.Length > 0
+        ? View.Image.Caption
+        : Uri.TryCreate(View.Image.Url, UriKind.Absolute, out var url)
+            ? Uri.UnescapeDataString(url.Segments[^1]).Replace('_', ' ')
+            : View.Image.Url;
 
     public string? Path => View.Path;
 

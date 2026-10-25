@@ -259,4 +259,12 @@ public sealed class ReferencesScreenTests
 
         Assert.Equal((project.Id, PipelineStage.References), _client.Regenerated.Single());
     }
+
+    [Fact]
+    public void A_pool_picture_without_a_caption_shows_its_file_name()
+    {
+        var picture = new PoolImageView(new PoolImage("P01", "https://bg3.wiki/w/images/b/b1/Karlach%27s_portrait.png", "https://bg3.wiki/wiki/Karlach", "", 997, 1148, "pool/P01.png", PoolOrigin.Found), null, []);
+
+        Assert.Equal("Karlach's portrait.png", new PoolPictureViewModel(picture, _ => { }).Caption);
+    }
 }

@@ -70,4 +70,38 @@ public sealed class PageImagesTests
 
         Assert.Empty(await ImagesAsync(web, "Nobody"));
     }
+
+    /// <summary>bg3.wiki as it really answers: item icons of 196 px listed first, and an empty extmetadata written as [].</summary>
+    private static Web RealKarlachPage() => BgWiki()
+        .On("https://bg3.wiki/w/api.php?action=query&titles=Karlach&prop=pageimages", _ => Json(
+            """{"query":{"pages":[{"title":"Karlach","pageimage":"Karlach.png","images":[{"title":"File:Alchemy Pouch Item Icon.png"},{"title":"File:Boots Icon.png"},{"title":"File:Bracers Icon.png"},{"title":"File:Cloak Icon.png"},{"title":"File:Gloves Icon.png"},{"title":"File:Helmet Icon.png"},{"title":"File:Karlach.png"},{"title":"File:Karlach camp.jpg"}]}]}}"""))
+        .On("https://bg3.wiki/w/api.php?action=query&titles=File", request => Json(RealInfo(request.RequestUri!)));
+
+    private static string RealInfo(Uri request)
+    {
+        var titles = (System.Web.HttpUtility.ParseQueryString(request.Query)["titles"] ?? "").Split('|');
+        var pages = titles.Select(title =>
+        {
+            var (width, height) = title.Contains("Icon") ? (196, 196) : title.EndsWith(".jpg", StringComparison.Ordinal) ? (1920, 1080) : (997, 1148);
+            return "{\"title\":\"" + title + "\",\"imageinfo\":[{\"url\":\"https://bg3.wiki/w/images/" + title[5..].Replace(' ', '_') + "\",\"width\":" + width
+                + ",\"height\":" + height + ",\"mime\":\"" + (title.EndsWith(".jpg", StringComparison.Ordinal) ? "image/jpeg" : "image/png") + "\",\"extmetadata\":[]}]}";
+        });
+        return "{\"query\":{\"pages\":[" + string.Join(",", pages) + "]}}";
+    }
+
+    [Fact]
+    public async Task A_file_without_metadata_has_no_caption()
+    {
+        var images = await ImagesAsync(RealKarlachPage());
+
+        Assert.Equal("", images[0].Caption);
+    }
+
+    [Fact]
+    public async Task After_the_main_picture_the_biggest_come_first_so_icons_do_not_fill_the_pool()
+    {
+        var images = await ImagesAsync(RealKarlachPage());
+
+        Assert.Equal(["File:Karlach.png", "File:Karlach camp.jpg"], images.Take(2).Select(i => i.FileTitle));
+    }
 }

@@ -107,8 +107,8 @@ internal sealed class MediaWiki(SiteWeb web)
     private static readonly string[] PictureTypes = ["image/png", "image/jpeg", "image/webp"];
 
     /// <summary>
-    /// The pictures a page shows: its main picture (the page image) first, then the others in page
-    /// order, at most <see cref="MaxPageImages"/>. Icons, drawings (SVG) and anything that is not a
+    /// The pictures a page shows: its main picture (the page image) first, then the biggest of the
+    /// others, at most <see cref="MaxPageImages"/>. Icons, drawings (SVG) and anything that is not a
     /// picture stay out. A page that does not exist has none.
     /// </summary>
     public async Task<IReadOnlyList<PageImage>> PageImagesAsync(WikiSite wiki, string title, CancellationToken cancellationToken)
@@ -155,7 +155,8 @@ internal sealed class MediaWiki(SiteWeb web)
                 }
             }
         }
-        return [.. files.Where(found.ContainsKey).Select(f => found[f]).Take(MaxPageImages)];
+        // The main picture, then the biggest: a page lists its item icons alphabetically, often before its real pictures.
+        return [.. files.Where(found.ContainsKey).Select(f => found[f]).OrderByDescending(p => p.IsMain).ThenByDescending(p => (long)p.Width * p.Height).Take(MaxPageImages)];
     }
 
     /// <summary>One file as a picture for the pool; null when it is an icon, a drawing or no picture at all.</summary>
@@ -168,8 +169,10 @@ internal sealed class MediaWiki(SiteWeb web)
         {
             return null;
         }
-        var caption = info.TryGetProperty("extmetadata", out var meta) && meta.TryGetProperty("ImageDescription", out var description)
-            && description.TryGetProperty("value", out var value)
+        // A file without metadata has "extmetadata": [] (PHP writes an empty object as an array).
+        var caption = info.TryGetProperty("extmetadata", out var meta) && meta.ValueKind == JsonValueKind.Object
+            && meta.TryGetProperty("ImageDescription", out var description) && description.ValueKind == JsonValueKind.Object
+            && description.TryGetProperty("value", out var value) && value.ValueKind == JsonValueKind.String
             ? HtmlText.ToText(value.GetString() ?? "").Trim()
             : "";
         return new PageImage(address, title, width, height, caption, title == main);
