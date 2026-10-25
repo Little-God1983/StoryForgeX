@@ -45,11 +45,11 @@ internal sealed class ReferenceViews(
         var images = stageCells.Where(c => c.Key != "").Select(cell =>
         {
             var own = versions.Where(v => v.Key == cell.Key).OrderBy(v => v.Version).ToList();
-            if (own.FirstOrDefault(v => v.Version == cell.CurrentVersion) is not { } current)
-            {
-                return null;
-            }
-            var image = StoredJson.Read<ReferenceImage>(current.OutputJson);
+            // An image being made for the first time (or failed at it) has no version yet: it shows by its state.
+            var (referenceId, number) = ReferencesStage.Parse(cell.Key);
+            var image = own.FirstOrDefault(v => v.Version == cell.CurrentVersion) is { } current
+                ? StoredJson.Read<ReferenceImage>(current.OutputJson)
+                : new ReferenceImage(referenceId, number, null, [], 0, ImageMaking.FromPicture, "");
             return new ReferenceImageView(
                 cell.Key,
                 image.Number,
@@ -61,7 +61,7 @@ internal sealed class ReferenceViews(
                 Existing(root, image.File),
                 cell.State == StageState.Failed ? cell.Error : null,
                 runner.LiveActivity(projectId, Stage, cell.Key) ?? StoredJson.Read<List<ActivityLine>>(cell.ActivityJson));
-        }).OfType<ReferenceImageView>().ToList();
+        }).ToList();
 
         var references = (sheet?.References ?? []).Select(r => new ReferenceView(
             r,

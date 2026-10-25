@@ -14,7 +14,7 @@ namespace StoryForge.Engine.Tests;
 /// when the storyboard is approved, proposes the list, builds the pool, and makes one image per
 /// reference, saying how each came about; its gate is always on.
 /// </summary>
-public sealed class ReferencesRunTests : IDisposable
+public sealed partial class ReferencesRunTests : IDisposable
 {
     private readonly EngineTestHost _engine = new();
     private readonly ScriptRunTests.FakeScriptAgent _script = new();

@@ -142,20 +142,19 @@ internal sealed class InProcessStoryForgeClient(
     public Task MergeShotAsync(Guid projectId, string shotKey, CancellationToken cancellationToken = default) =>
         shotEdits.MergeAsync(projectId, shotKey, cancellationToken);
 
-    // The References stage arrives with #9; these are filled in as it is built.
     public Task<ReferencesView> GetReferencesAsync(Guid projectId, CancellationToken cancellationToken = default) => referenceViews.GetAsync(projectId, cancellationToken);
 
-    public Task ChangeReferencesAsync(Guid projectId, ReferenceChange change, CancellationToken cancellationToken = default) => throw new NotImplementedException();
+    public Task ChangeReferencesAsync(Guid projectId, ReferenceChange change, CancellationToken cancellationToken = default) => referenceEdits.ChangeAsync(projectId, change, cancellationToken);
 
-    public Task AddOwnPictureAsync(Guid projectId, string referenceId, string path, CancellationToken cancellationToken = default) => throw new NotImplementedException();
+    public Task AddOwnPictureAsync(Guid projectId, string referenceId, string path, CancellationToken cancellationToken = default) => referenceEdits.AddOwnPictureAsync(projectId, referenceId, path, cancellationToken);
 
     public Task MakeReferenceImagesAsync(Guid projectId, CancellationToken cancellationToken = default) => referenceEdits.MakeImagesAsync(projectId, cancellationToken);
 
-    public Task AddReferenceImageAsync(Guid projectId, string referenceId, CancellationToken cancellationToken = default) => throw new NotImplementedException();
+    public Task AddReferenceImageAsync(Guid projectId, string referenceId, CancellationToken cancellationToken = default) => referenceEdits.AddImageAsync(projectId, referenceId, cancellationToken);
 
-    public Task SearchSourcesAgainAsync(Guid projectId, string referenceId, CancellationToken cancellationToken = default) => throw new NotImplementedException();
+    public Task SearchSourcesAgainAsync(Guid projectId, string referenceId, CancellationToken cancellationToken = default) => referenceEdits.SearchAgainAsync(projectId, referenceId, cancellationToken);
 
-    public Task MakeFromDescriptionAsync(Guid projectId, string referenceId, CancellationToken cancellationToken = default) => throw new NotImplementedException();
+    public Task MakeFromDescriptionAsync(Guid projectId, string referenceId, CancellationToken cancellationToken = default) => referenceEdits.FromDescriptionAsync(projectId, referenceId, cancellationToken);
 
     internal static string SecretName(SecretKey key) => key switch
     {

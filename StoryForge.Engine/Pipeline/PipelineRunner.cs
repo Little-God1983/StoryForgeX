@@ -141,6 +141,28 @@ internal sealed class PipelineRunner(
         await EnqueueAsync(projectId, stage, key, cancellationToken);
     }
 
+    /// <summary>
+    /// Makes a segment the stage has no cell for yet, e.g. one more reference image: its cell is
+    /// made, then it runs like a segment made again.
+    /// </summary>
+    public async Task MakeSegmentAsync(Guid projectId, PipelineStage stage, string key, CancellationToken cancellationToken)
+    {
+        await projects.GetAsync(projectId, cancellationToken);
+        if (!_workers.TryGetValue(stage, out var worker) || worker is not ISegmentWorker)
+        {
+            throw new InvalidOperationException($"The {stage} stage has no segments to make one by one.");
+        }
+        await using (var db = await contextFactory.CreateDbContextAsync(cancellationToken))
+        {
+            if (!await db.Cells.AnyAsync(c => c.ProjectId == projectId && c.Stage == stage && c.Key == key, cancellationToken))
+            {
+                db.Cells.Add(new CellEntry { ProjectId = projectId, Stage = stage, Key = key, State = StageState.NotStarted, UpdatedAt = clock.GetUtcNow() });
+                await db.SaveChangesAsync(cancellationToken);
+            }
+        }
+        await EnqueueAsync(projectId, stage, key, cancellationToken);
+    }
+
     public async Task CancelAsync(Guid projectId, PipelineStage stage, string key = Whole)
     {
         Job? job;
