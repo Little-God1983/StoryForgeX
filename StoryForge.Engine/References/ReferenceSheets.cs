@@ -52,4 +52,20 @@ internal sealed class ReferenceSheets(IDbContextFactory<StoryForgeDbContext> con
         await db.SaveChangesAsync(cancellationToken);
         return (keys, cell.State);
     }
+
+    /// <summary>A stage whose run failed goes back to review: what it made stays. True when it was failed.</summary>
+    public async Task<bool> ReviewAgainAsync(Guid projectId, CancellationToken cancellationToken)
+    {
+        await using var db = await contextFactory.CreateDbContextAsync(cancellationToken);
+        var cell = await db.Cells.FirstAsync(c => c.ProjectId == projectId && c.Stage == Stage && c.Key == "", cancellationToken);
+        if (cell.State != StageState.Failed)
+        {
+            return false;
+        }
+        cell.State = StageState.NeedsReview;
+        cell.Error = null;
+        cell.UpdatedAt = clock.GetUtcNow();
+        await db.SaveChangesAsync(cancellationToken);
+        return true;
+    }
 }

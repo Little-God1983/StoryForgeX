@@ -320,6 +320,7 @@ public sealed partial class ReferencesRunTests
 
         Assert.Equal((karlach.Version, StageState.Approved), (view.References[0].Images[0].Version, view.References[0].Images[0].State));
         Assert.Equal(runs + 1, _comfy.Workflows.Count);   // the soul coin's image only
+        Assert.Equal((StageState.NeedsReview, null), (view.State, view.Error));   // the failure is over: back to review
     }
 
     [Fact]
@@ -351,6 +352,29 @@ public sealed partial class ReferencesRunTests
         var found = view.Pool.Single(p => p.Image.Caption == "Coin2.png").Image;
         Assert.NotEqual(coin.Id, found.Id);   // a new id: images made from the old one still name it
         Assert.Equal([found.Id], view.References[1].Reference.Sources);
+    }
+
+    [Fact]
+    public async Task With_every_image_there_making_the_images_only_brings_a_failed_stage_back_to_review()
+    {
+        var (client, projectId) = await ListedAsync();
+        _comfy.Failure = "ComfyUI is not reachable.";
+        _comfy.FailFor = "Soul coin";
+        await client.MakeReferenceImagesAsync(projectId);
+        await ReferencesAsync(client, projectId, v => v.State == StageState.Failed);
+        _comfy.Failure = null;
+        await client.MakeReferenceImagesAsync(projectId);
+        var made = await ScriptRunTests.WaitForAsync(() => client.GetReferencesAsync(projectId), v => v.References[1].Images is [{ Version: > 0, State: not StageState.Running }]);
+        var karlach = made.References[0].Images.Single();
+        await client.ApproveSegmentAsync(projectId, PipelineStage.References, karlach.Key, karlach.Version);
+        var runs = _comfy.Workflows.Count;
+
+        await client.MakeReferenceImagesAsync(projectId);
+
+        var view = await client.GetReferencesAsync(projectId);
+        Assert.NotEqual(StageState.Running, view.State);   // no run of the whole stage
+        Assert.Equal(runs, _comfy.Workflows.Count);
+        Assert.Equal(StageState.Approved, view.References[0].Images[0].State);
     }
 
     [Fact]

@@ -185,18 +185,33 @@ internal sealed class WikiPictures(HttpMessageInvoker http, Func<string, Cancell
         {
             return false;
         }
+        var b = address.GetAddressBytes();
         if (address.AddressFamily == AddressFamily.InterNetworkV6)
         {
+            // An IPv4 address carried inside, which the network may reach: NAT64 (64:ff9b::/96),
+            // 6to4 (2002::/16), IPv4-compatible (::a.b.c.d).
+            if (b.AsSpan(0, 12).SequenceEqual((byte[])[0, 0x64, 0xff, 0x9b, 0, 0, 0, 0, 0, 0, 0, 0]) || b.AsSpan(0, 12).IndexOfAnyExcept((byte)0) < 0)
+            {
+                return PublicV4(b.AsSpan(12, 4));
+            }
+            if (b[0] == 0x20 && b[1] == 0x02)
+            {
+                return PublicV4(b.AsSpan(2, 4));
+            }
             return !address.IsIPv6LinkLocal && !address.IsIPv6SiteLocal && !address.IsIPv6UniqueLocal && !address.IsIPv6Multicast;
         }
-        var b = address.GetAddressBytes();
-        return !(b[0] == 10 || b[0] == 127 || b[0] == 0
+        return PublicV4(b);
+    }
+
+    private static bool PublicV4(ReadOnlySpan<byte> b) =>
+        !(b[0] == 10 || b[0] == 127 || b[0] == 0
             || (b[0] == 172 && b[1] >= 16 && b[1] <= 31)
             || (b[0] == 192 && b[1] == 168)
             || (b[0] == 169 && b[1] == 254)
             || (b[0] == 100 && b[1] >= 64 && b[1] <= 127)
+            || (b[0] == 192 && b[1] == 0 && b[2] == 0)
+            || (b[0] == 198 && b[1] is 18 or 19)
             || b[0] >= 224);
-    }
 
     /// <summary>The body, read up to <see cref="MaxBytes"/>; null when it is bigger.</summary>
     private static async Task<byte[]?> ReadAsync(HttpContent content, CancellationToken cancellationToken)

@@ -349,4 +349,17 @@ public sealed class ReferencesScreenTests
 
         Assert.True(screen.MakeImagesCommand.CanExecute(null));
     }
+
+    [Fact]
+    public async Task A_look_being_edited_is_put_away_when_a_pool_picture_is_picked()
+    {
+        var (_, screen, _) = await OpenAsync(id => Images(id));
+        screen.Characters[0].SelectCommand.Execute(null);
+        screen.StartEditLookCommand.Execute(null);
+
+        screen.Pool[0].SelectCommand.Execute(null);
+
+        Assert.False(screen.IsEditingLook);
+        Assert.False(screen.SaveLookCommand.CanExecute(null));
+    }
 }

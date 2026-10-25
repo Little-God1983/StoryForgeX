@@ -51,15 +51,14 @@ internal sealed class ReferenceEdits(
             return;
         }
         // Past the list: only the references a run stopped before get images. The rest keep
-        // theirs, approved or not.
-        var images = await cells.ReferenceImagesAsync(projectId, cancellationToken);
-        var missing = sheet.References.Where(r => images.All(i => i.ReferenceId != r.Id)).ToList();
-        if (missing.Count == 0)
+        // theirs, approved or not; one is made again from its card. A run that failed is over.
+        if (await sheets.ReviewAgainAsync(projectId, cancellationToken))
         {
-            await runner.RegenerateAsync(projectId, Stage, cancellationToken);
-            return;
+            runner.Publish(new StageUpdate(projectId, Stage, StageState.NeedsReview));
+            await runner.SettleAsync(projectId, Stage, cancellationToken);   // every image may be approved already
         }
-        foreach (var reference in missing)
+        var images = await cells.ReferenceImagesAsync(projectId, cancellationToken);
+        foreach (var reference in sheet.References.Where(r => images.All(i => i.ReferenceId != r.Id)))
         {
             await runner.MakeSegmentAsync(projectId, Stage, ReferenceImage.KeyOf(reference.Id, 1), cancellationToken);
         }
@@ -74,6 +73,7 @@ internal sealed class ReferenceEdits(
         var shots = await cells.CurrentShotsAsync(projectId, cancellationToken);
         List<string> removed = [];
         string? added = null;
+        string? thrownOut = null;
         switch (change.Change)
         {
             case ReferenceChangeKind.Add:
@@ -165,17 +165,17 @@ internal sealed class ReferenceEdits(
                     Discarded = [.. sheet.Discarded ?? [], picture],
                     References = [.. sheet.References.Select(r => r with { Sources = [.. r.Sources.Where(id => id != picture.Id)] })],
                 };
-                var file = Path.Combine(await folders.RootAsync(cancellationToken), picture.File);
-                if (File.Exists(file))
-                {
-                    File.Delete(file);
-                }
+                thrownOut = Path.Combine(await folders.RootAsync(cancellationToken), picture.File);
                 break;
             }
             default:
                 throw new ArgumentException($"There is no change \"{change.Change}\".");
         }
         await SaveAsync(projectId, sheet, removed, cancellationToken);
+        if (thrownOut is not null && File.Exists(thrownOut))
+        {
+            File.Delete(thrownOut);   // once the sheet no longer names it
+        }
         if (added is not null)
         {
             await MakeImagesOfAsync(projectId, added, cancellationToken);

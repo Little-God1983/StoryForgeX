@@ -104,6 +104,7 @@ public sealed partial class ReferencesViewModel
         _selectedPictureId = picture.Id;
         _selectedCardId = null;
         UseFor = null;
+        IsEditingLook = false;
         RefreshPanel();
     }
 
@@ -216,7 +217,7 @@ public sealed partial class ReferencesViewModel
         IsEditingLook = true;
     }
 
-    private bool CanSaveLook() => IsEditingLook && !_acting;
+    private bool CanSaveLook() => IsEditingLook && SelectedCard is not null && !_acting;
 
     [RelayCommand(CanExecute = nameof(CanSaveLook))]
     private async Task SaveLookAsync()

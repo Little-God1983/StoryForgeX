@@ -79,12 +79,17 @@ public sealed class WikiPicturesTests
     [InlineData("https://192.168.1.5/x.png")]                    // the local network
     [InlineData("https://[::1]/x.png")]
     [InlineData("https://evil.example/x.png")]                   // a name that leads to a private address
+    [InlineData("https://[64:ff9b::c0a8:101]/x.png")]            // 192.168.1.1 through NAT64
+    [InlineData("https://[2002:c0a8:101::1]/x.png")]             // 192.168.1.1 through 6to4
+    [InlineData("https://[::c0a8:101]/x.png")]                   // 192.168.1.1, IPv4-compatible
+    [InlineData("https://198.18.0.1/x.png")]                     // a test network
     public async Task Only_https_addresses_out_on_the_internet_are_downloaded(string url)
     {
-        var web = Wiki().On(url, _ => new HttpResponseMessage(HttpStatusCode.OK) { Content = Picture("image/png") });
+        var address = new Uri(url).AbsoluteUri;   // "[::c0a8:101]" reads as "[::192.168.1.1]"
+        var web = Wiki().On(address, _ => new HttpResponseMessage(HttpStatusCode.OK) { Content = Picture("image/png") });
 
         Assert.Null(await new WikiPictures(web.Invoker, Public).DownloadAsync(url, default));
-        Assert.DoesNotContain(web.Requests, r => r.AbsoluteUri == url);
+        Assert.DoesNotContain(web.Requests, r => r.AbsoluteUri == address);
     }
 
     [Fact]

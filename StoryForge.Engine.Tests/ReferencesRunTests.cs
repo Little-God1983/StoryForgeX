@@ -172,7 +172,8 @@ public sealed partial class ReferencesRunTests : IDisposable
 
         var karlach = view.References[0].Images.Single();
         Assert.Equal(ImageMaking.FromPicture, karlach.Image.Made);
-        Assert.Equal(view.Pool.Single(p => p.Image.Caption == "Karlach.png").Image.Id, karlach.Image.Sources[0]);
+        Assert.Equal([view.Pool.Single(p => p.Image.Caption == "Karlach.png").Image.Id], karlach.Image.Sources);   // not Wyll's beside it
+        Assert.DoesNotContain("P01.png", _comfy.Uploaded);   // Wyll's picture is not sent to Qwen
     }
 
     [Fact]
