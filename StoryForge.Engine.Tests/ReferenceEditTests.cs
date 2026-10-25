@@ -42,6 +42,15 @@ public sealed partial class ReferencesRunTests
     }
 
     [Fact]
+    public void The_blank_canvas_is_a_light_square_picture()
+    {
+        var png = BlankCanvas.Png(1024);
+
+        Assert.Equal((1024, 1024), ImageSize.Of(png));
+        Assert.Equal(".png", ImageSize.Ending(png));
+    }
+
+    [Fact]
     public async Task A_name_added_to_the_list_shows_with_the_shots_it_is_in()
     {
         var (client, projectId) = await ListedAsync();
@@ -165,7 +174,8 @@ public sealed partial class ReferencesRunTests
         var view = await ReferencesAsync(client, projectId, v => v.References[1].Images[0].Version == 2);
 
         Assert.Equal(ImageMaking.FromDescription, view.References[1].Images[0].Image.Made);
-        Assert.Equal("", (string)_comfy.Workflows[runs]["1"]!["inputs"]!["image"]!);   // the workflow's own, no upload
+        // A blank canvas, not the picture the workflow was saved with.
+        Assert.Equal("uploaded-blank.png", (string)_comfy.Workflows[runs]["1"]!["inputs"]!["image"]!);
         Assert.Contains("A tarnished iron coin.", (string)_comfy.Workflows[runs]["2"]!["inputs"]!["prompt"]!);
     }
 
@@ -201,6 +211,7 @@ public sealed partial class ReferencesRunTests
 
         Assert.Equal(ImageMaking.FromPicture, view.References[2].Images[0].Image.Made);
         Assert.Single(view.References[2].Reference.Sources);
+        Assert.Equal("Raphael as the picture shows.", view.References[2].Reference.Look);   // kept for its next images
     }
 
     [Fact]
@@ -288,5 +299,75 @@ public sealed partial class ReferencesRunTests
         Assert.Equal(view.Pool.Count, view.Pool.Select(p => p.Image.Id).Distinct().Count());
         Assert.Contains(view.Pool, p => p.Image.Caption == "Karlach2.png" && view.References[0].Reference.Sources.Contains(p.Image.Id));
         Assert.Contains(view.Pool, p => p.Image.Caption == "Coin2.png" && view.References[1].Reference.Sources.Contains(p.Image.Id));
+    }
+
+    [Fact]
+    public async Task Making_the_missing_images_keeps_the_ones_you_approved()
+    {
+        // The run fails at the soul coin after Karlach's image is stored; you approve Karlach's.
+        var (client, projectId) = await ListedAsync();
+        _comfy.Failure = "ComfyUI is not reachable.";
+        _comfy.FailFor = "Soul coin";
+        await client.MakeReferenceImagesAsync(projectId);
+        var failed = await ReferencesAsync(client, projectId, v => v.State == StageState.Failed);
+        var karlach = failed.References[0].Images.Single();
+        await client.ApproveSegmentAsync(projectId, PipelineStage.References, karlach.Key, karlach.Version);
+        _comfy.Failure = null;
+        var runs = _comfy.Workflows.Count;
+
+        await client.MakeReferenceImagesAsync(projectId);
+        var view = await ScriptRunTests.WaitForAsync(() => client.GetReferencesAsync(projectId), v => v.References[1].Images is [{ Version: > 0, State: not StageState.Running }]);
+
+        Assert.Equal((karlach.Version, StageState.Approved), (view.References[0].Images[0].Version, view.References[0].Images[0].State));
+        Assert.Equal(runs + 1, _comfy.Workflows.Count);   // the soul coin's image only
+    }
+
+    [Fact]
+    public async Task A_list_with_nothing_on_it_lets_the_stills_go_ahead()
+    {
+        var (client, projectId) = await ListedAsync();
+        await client.ChangeReferencesAsync(projectId, new ReferenceChange(ReferenceChangeKind.Remove, ReferenceId: "R01"));
+        await client.ChangeReferencesAsync(projectId, new ReferenceChange(ReferenceChangeKind.Remove, ReferenceId: "R02"));
+
+        await client.MakeReferenceImagesAsync(projectId);
+        var view = await ReferencesAsync(client, projectId, v => v.Phase == ReferencePhase.Images && v.State == StageState.NeedsReview);
+        await client.ApproveAsync(projectId, PipelineStage.References, view.Version);
+
+        Assert.Equal(StageState.Approved, (await client.GetReferencesAsync(projectId)).State);
+    }
+
+    [Fact]
+    public async Task A_picture_you_discarded_is_not_found_again()
+    {
+        var (client, projectId) = await ListedAsync();
+        var coin = (await client.GetReferencesAsync(projectId)).Pool.Single(p => p.Image.Caption == "Coin.png").Image;
+        await client.ChangeReferencesAsync(projectId, new ReferenceChange(ReferenceChangeKind.DiscardFromPool, PoolImageId: coin.Id));
+        _pictures.ByName["Soul coin"] = [FakePictures.Picture("Coin.png", page: "https://bg3.wiki/wiki/Soul_Coin"), FakePictures.Picture("Coin2.png", page: "https://bg3.wiki/wiki/Soul_Coin")];
+
+        await client.SearchSourcesAgainAsync(projectId, "R02");
+
+        var view = await client.GetReferencesAsync(projectId);
+        Assert.DoesNotContain(view.Pool, p => p.Image.Url == coin.Url);
+        var found = view.Pool.Single(p => p.Image.Caption == "Coin2.png").Image;
+        Assert.NotEqual(coin.Id, found.Id);   // a new id: images made from the old one still name it
+        Assert.Equal([found.Id], view.References[1].Reference.Sources);
+    }
+
+    [Fact]
+    public async Task A_change_that_finds_the_references_being_made_when_it_is_saved_is_refused()
+    {
+        var (client, projectId) = await ImagedAsync();
+        _pictures.ByName["Raphael"] = [FakePictures.Picture("Raphael.png", page: "https://bg3.wiki/wiki/Raphael")];
+        _pictures.Delay = TimeSpan.FromMilliseconds(500);
+        _comfy.Hold = new TaskCompletionSource();
+
+        var adding = client.ChangeReferencesAsync(projectId, new ReferenceChange(ReferenceChangeKind.Add, Name: "Raphael", Kind: CastKind.Character));
+        await Task.Delay(100);
+        await client.RegenerateAsync(projectId, PipelineStage.References);   // the whole stage, while Raphael is searched
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => adding);
+
+        Assert.Equal(2, (await client.GetReferencesAsync(projectId)).References.Count);   // not saved beside the run
+        _comfy.Hold.SetResult();
     }
 }

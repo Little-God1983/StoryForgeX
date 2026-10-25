@@ -14,7 +14,7 @@ namespace StoryForge.Engine.References;
 /// internet (never this machine or the local network, redirects included), and only when it really
 /// is a picture.
 /// </summary>
-/// <param name="http">Sends without following redirects by itself (<see cref="SiteWeb.CreateHttp"/>): every hop is checked here.</param>
+/// <param name="http">Sends without following redirects by itself (<see cref="CreateHttp"/>): every hop is checked here.</param>
 /// <param name="resolve">Looks up a host's addresses; tests pass their own.</param>
 internal sealed class WikiPictures(HttpMessageInvoker http, Func<string, CancellationToken, Task<IPAddress[]>>? resolve = null) : IPictureSource
 {
@@ -25,7 +25,29 @@ internal sealed class WikiPictures(HttpMessageInvoker http, Func<string, Cancell
 
     private static readonly TimeSpan Timeout = TimeSpan.FromSeconds(30);
 
-    private readonly Func<string, CancellationToken, Task<IPAddress[]>> _resolve = resolve ?? ((host, token) => Dns.GetHostAddressesAsync(host, token));
+    private readonly Func<string, CancellationToken, Task<IPAddress[]>> _resolve = resolve ?? Resolve;
+
+    private readonly Lock _lock = new();
+
+    // The wikis of the last source list asked about: every name and page of a project asks the same
+    // ones, and finding a wiki takes a request or two.
+    private (string Key, SourceList List, MediaWiki Wikis)? _open;
+
+    /// <summary>
+    /// A sender for the wikis and their pictures: no proxy, no redirect followed by itself, and a
+    /// connection only to an address that was checked to be out on the internet. The name is looked
+    /// up once, here, so it cannot answer one address to the check and another to the connection.
+    /// </summary>
+    public static HttpMessageInvoker CreateHttp() => new(new SocketsHttpHandler
+    {
+        AllowAutoRedirect = false,
+        AutomaticDecompression = DecompressionMethods.All,
+        ConnectTimeout = TimeSpan.FromSeconds(10),
+        UseProxy = false,
+        ConnectCallback = (context, cancellationToken) => ConnectAsync(context.DnsEndPoint, Resolve, cancellationToken),
+    });
+
+    private static Task<IPAddress[]> Resolve(string host, CancellationToken cancellationToken) => Dns.GetHostAddressesAsync(host, cancellationToken);
 
     public async Task<IReadOnlyList<FoundPicture>> SearchAsync(IReadOnlyList<string> sources, string name, CancellationToken cancellationToken)
     {
@@ -121,6 +143,27 @@ internal sealed class WikiPictures(HttpMessageInvoker http, Func<string, Cancell
         }
     }
 
+    /// <summary>Connects to the host's addresses when every one of them is public; refuses otherwise.</summary>
+    internal static async ValueTask<Stream> ConnectAsync(DnsEndPoint endPoint, Func<string, CancellationToken, Task<IPAddress[]>> resolve, CancellationToken cancellationToken)
+    {
+        var addresses = IPAddress.TryParse(endPoint.Host.Trim('[', ']'), out var literal) ? [literal] : await resolve(endPoint.Host, cancellationToken);
+        if (addresses.Length == 0 || !addresses.All(Public))
+        {
+            throw new HttpRequestException($"{endPoint.Host} is not out on the internet: nothing is fetched from it.");
+        }
+        var socket = new Socket(SocketType.Stream, ProtocolType.Tcp) { NoDelay = true };
+        try
+        {
+            await socket.ConnectAsync(addresses, endPoint.Port, cancellationToken);
+            return new NetworkStream(socket, ownsSocket: true);
+        }
+        catch
+        {
+            socket.Dispose();
+            throw;
+        }
+    }
+
     /// <summary>https, and every address the host has out on the internet: not this machine, the local network or link-local.</summary>
     private async Task<bool> AllowedAsync(Uri address, CancellationToken cancellationToken)
     {
@@ -181,8 +224,16 @@ internal sealed class WikiPictures(HttpMessageInvoker http, Func<string, Cancell
 
     private (SourceList List, MediaWiki Wikis) Open(IReadOnlyList<string> sources)
     {
-        var list = new SourceList(sources);
-        return (list, new MediaWiki(new SiteWeb(http, list)));
+        var key = string.Join('\n', sources);
+        lock (_lock)
+        {
+            if (_open is not { } open || open.Key != key)
+            {
+                var list = new SourceList(sources);
+                _open = open = (key, list, new MediaWiki(new SiteWeb(http, list)));
+            }
+            return (open.List, open.Wikis);
+        }
     }
 
     private static async Task<IReadOnlyList<FoundPicture>> PicturesAsync(MediaWiki wikis, WikiSite wiki, string title, string pageUrl, CancellationToken cancellationToken) =>

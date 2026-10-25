@@ -81,8 +81,9 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<StoryboardShots>();
         services.AddSingleton<StoryboardEdits>();
         // Its own sender, which follows no redirect by itself: every hop is checked (SiteWeb for the wikis, WikiPictures for pictures).
-        services.AddSingleton<IPictureSource>(_ => new WikiPictures(StoryForge.Sources.SiteWeb.CreateHttp()));
+        services.AddSingleton<IPictureSource>(_ => new WikiPictures(WikiPictures.CreateHttp()));
         services.AddSingleton<PoolBuilder>();
+        services.AddSingleton<ReferenceSheets>();
         services.AddSingleton<IPictureCheck, ClaudeCliPictureCheck>();
         services.AddSingleton<IStageWorker, ReferencesStage>();
         services.AddSingleton<ReferenceViews>();

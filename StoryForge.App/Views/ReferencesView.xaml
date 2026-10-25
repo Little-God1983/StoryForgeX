@@ -141,7 +141,7 @@
           <Button DockPanel.Dock="Right" Content="Approve" Style="{StaticResource PrimaryButtonStyle}" MinHeight="36" FontSize="13" Command="{Binding ApproveTextOnlyCommand}"
                   AutomationProperties.Name="Approve without references" />
           <TextBlock VerticalAlignment="Center" FontSize="13" Foreground="{StaticResource TextSoftBrush}" TextWrapping="Wrap"
-                     Text="This project makes its stills from text only, so it needs no references. Approve, and the run goes on." />
+                     Text="{Binding TextOnlyBarText}" />
         </DockPanel>
       </Border>
 

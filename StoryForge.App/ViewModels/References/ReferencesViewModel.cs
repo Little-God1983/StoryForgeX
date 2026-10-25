@@ -53,7 +53,10 @@ public sealed partial class ReferencesViewModel(IStoryForgeClient client, Guid p
     /// <summary>The list waits for you: check it, then make the images. Or some images were never made.</summary>
     public bool ShowsListBar => (IsListPhase || HasMissingImages) && IsReview && !TextOnly;
 
-    public bool ShowsGateBar => !IsListPhase && !HasMissingImages && IsReview && !TextOnly;
+    public bool ShowsGateBar => !IsListPhase && !HasMissingImages && !NothingToMake && IsReview && !TextOnly;
+
+    /// <summary>The list was confirmed empty: no one is shown often enough to need a reference image.</summary>
+    private bool NothingToMake => !IsListPhase && !Cards.Any();
 
     public string ListBarTitle => IsListPhase ? "Check the list" : "Images missing";
 
@@ -61,8 +64,12 @@ public sealed partial class ReferencesViewModel(IStoryForgeClient client, Guid p
         ? "Who and what is shown in 2 or more shots, or once when it carries the story. Remove, merge or add before any image is made."
         : "Some references have no image yet: the run stopped before it got to them. Make the images to finish them.";
 
-    /// <summary>Stills from text only: the stage waits to be approved as it is.</summary>
-    public bool ShowsTextOnlyBar => TextOnly && IsReview;
+    /// <summary>Stills from text only, or nothing on the list: the stage waits to be approved as it is.</summary>
+    public bool ShowsTextOnlyBar => (TextOnly || NothingToMake) && IsReview;
+
+    public string TextOnlyBarText => TextOnly
+        ? "This project makes its stills from text only, so it needs no references. Approve, and the run goes on."
+        : "Nothing on the list needs a reference image. Approve, and the run goes on.";
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ShowsListBar), nameof(ShowsGateBar), nameof(ShowsTextOnlyBar))]
@@ -218,7 +225,7 @@ public sealed partial class ReferencesViewModel(IStoryForgeClient client, Guid p
     /// <summary>What the bars offer depends on the list and on whether an action is on its way.</summary>
     private void NotifyActions()
     {
-        foreach (var name in new[] { nameof(CanPropose), nameof(ShowsListBar), nameof(ShowsGateBar), nameof(ListBarTitle), nameof(ListBarText) })
+        foreach (var name in new[] { nameof(CanPropose), nameof(ShowsListBar), nameof(ShowsGateBar), nameof(ShowsTextOnlyBar), nameof(ListBarTitle), nameof(ListBarText), nameof(TextOnlyBarText) })
         {
             OnPropertyChanged(name);
         }
@@ -240,7 +247,7 @@ public sealed partial class ReferencesViewModel(IStoryForgeClient client, Guid p
 
     // ── The bars ──
 
-    private bool CanMakeImages() => (IsListPhase || HasMissingImages) && !IsRunning && !_acting && Cards.Any();
+    private bool CanMakeImages() => (IsListPhase || HasMissingImages) && !IsRunning && !_acting;
 
     [RelayCommand(CanExecute = nameof(CanMakeImages))]
     private Task MakeImagesAsync() => ActAsync("make the images", () => client.MakeReferenceImagesAsync(ProjectId));
@@ -277,11 +284,13 @@ public sealed partial class ReferencesViewModel(IStoryForgeClient client, Guid p
     private bool CanRetry() => IsFailed && !_acting;
 
     [RelayCommand(CanExecute = nameof(CanRetry))]
-    private Task RetryAsync() => ActAsync("make the references", () => client.RegenerateAsync(ProjectId, PipelineStage.References));
+    private Task RetryAsync() => IsListPhase
+        ? ActAsync("make the references", () => client.RegenerateAsync(ProjectId, PipelineStage.References))
+        : ActAsync("make the images", () => client.MakeReferenceImagesAsync(ProjectId));   // past the list: the approved ones stay
 
-    private bool CanApproveTextOnly() => TextOnly && IsReview && !_acting;
+    private bool CanApproveTextOnly() => (TextOnly || NothingToMake) && IsReview && !_acting;
 
-    /// <summary>Stills from text only: the stage is approved as it is.</summary>
+    /// <summary>Stills from text only, or nothing on the list: the stage is approved as it is.</summary>
     [RelayCommand(CanExecute = nameof(CanApproveTextOnly))]
     private Task ApproveTextOnlyAsync() => ActAsync("approve the references", () => client.ApproveAsync(ProjectId, PipelineStage.References, _view?.Version ?? 0));
 

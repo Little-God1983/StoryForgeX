@@ -1,6 +1,4 @@
-using Microsoft.EntityFrameworkCore;
 using StoryForge.Client;
-using StoryForge.Engine.Data;
 using StoryForge.Engine.Pipeline;
 using StoryForge.Engine.Projects;
 
@@ -14,13 +12,12 @@ namespace StoryForge.Engine.References;
 /// search again, from the description) makes them at once.
 /// </summary>
 internal sealed class ReferenceEdits(
-    IDbContextFactory<StoryForgeDbContext> contextFactory,
+    ReferenceSheets sheets,
     PipelineRunner runner,
     CellReader cells,
     ProjectStore projects,
     ProjectFolders folders,
-    PoolBuilder pool,
-    TimeProvider clock)
+    PoolBuilder pool)
 {
     private const PipelineStage Stage = PipelineStage.References;
 
@@ -40,21 +37,32 @@ internal sealed class ReferenceEdits(
         public void Dispose() => gate.Release();
     }
 
-    /// <summary>The list is confirmed: the sheet moves on to its images, and they are made.</summary>
+    /// <summary>The list is confirmed: the sheet moves on to its images, and they are made. Past the list, the ones a run never made.</summary>
     public async Task MakeImagesAsync(Guid projectId, CancellationToken cancellationToken)
     {
         using var held = await LockAsync(projectId, cancellationToken);
         RequireIdle(projectId);
         var sheet = await SheetAsync(projectId, cancellationToken);
-        if (sheet.References.Count == 0)
-        {
-            throw new InvalidOperationException("The list is empty: add a character, place or object first.");
-        }
         if (sheet.Phase == ReferencePhase.List)
         {
+            // An empty list too: nothing is made, and the stage waits to be approved as it is.
             await SaveAsync(projectId, sheet with { Phase = ReferencePhase.Images }, [], cancellationToken);
+            await runner.RegenerateAsync(projectId, Stage, cancellationToken);
+            return;
         }
-        await runner.RegenerateAsync(projectId, Stage, cancellationToken);
+        // Past the list: only the references a run stopped before get images. The rest keep
+        // theirs, approved or not.
+        var images = await cells.ReferenceImagesAsync(projectId, cancellationToken);
+        var missing = sheet.References.Where(r => images.All(i => i.ReferenceId != r.Id)).ToList();
+        if (missing.Count == 0)
+        {
+            await runner.RegenerateAsync(projectId, Stage, cancellationToken);
+            return;
+        }
+        foreach (var reference in missing)
+        {
+            await runner.MakeSegmentAsync(projectId, Stage, ReferenceImage.KeyOf(reference.Id, 1), cancellationToken);
+        }
     }
 
     public async Task ChangeAsync(Guid projectId, ReferenceChange change, CancellationToken cancellationToken)
@@ -154,6 +162,7 @@ internal sealed class ReferenceEdits(
                 sheet = sheet with
                 {
                     Pool = [.. sheet.Pool.Where(p => p.Id != picture.Id)],
+                    Discarded = [.. sheet.Discarded ?? [], picture],
                     References = [.. sheet.References.Select(r => r with { Sources = [.. r.Sources.Where(id => id != picture.Id)] })],
                 };
                 var file = Path.Combine(await folders.RootAsync(cancellationToken), picture.File);
@@ -194,7 +203,7 @@ internal sealed class ReferenceEdits(
         {
             throw new ArgumentException($"{Path.GetFileName(path)} is not a PNG, JPEG or WebP picture.");
         }
-        var id = PoolBuilder.NextId(sheet.Pool);
+        var id = PoolBuilder.NextId(sheet.Pool.Concat(sheet.Discarded ?? []));
         var file = Path.Combine(ProjectFolders.Of(project), "references", "pool", id + ending);
         var target = Path.Combine(await folders.RootAsync(cancellationToken), file);
         Directory.CreateDirectory(Path.GetDirectoryName(target)!);
@@ -275,7 +284,7 @@ internal sealed class ReferenceEdits(
         var reference = sheet.References.First(r => r.Id == referenceId);
         var own = reference.Sources.Where(id => sheet.Pool.Any(p => p.Id == id && p.Origin == PoolOrigin.Own)).ToList();
         var (found, images) = await pool.BuildAsync(
-            [reference with { Sources = own }], sheet.Pool, project.Setup.ResearchSources, [],
+            [reference with { Sources = own }], sheet.Pool, sheet.Discarded ?? [], project.Setup.ResearchSources, [],
             await folders.RootAsync(cancellationToken), ProjectFolders.Of(project), cancellationToken);
         return Replace(sheet with { Pool = images }, found[0] with { DescriptionOnly = false });
     }
@@ -302,46 +311,15 @@ internal sealed class ReferenceEdits(
         }
     }
 
-    /// <summary>The changed sheet as the stage's next version (your edits of the one before); a removed reference's images go with it.</summary>
+    /// <summary>
+    /// The changed sheet as the stage's next version. Checked again here: a search takes seconds,
+    /// and a run of the stage started meanwhile would write over it.
+    /// </summary>
     private async Task SaveAsync(Guid projectId, ReferenceSheet sheet, IReadOnlyList<string> removed, CancellationToken cancellationToken)
     {
-        var updates = new List<string>();
-        StageState state;
-        await using (var db = await contextFactory.CreateDbContextAsync(cancellationToken))
-        {
-            var cell = await db.Cells.FirstAsync(c => c.ProjectId == projectId && c.Stage == Stage && c.Key == "", cancellationToken);
-            var current = await db.CellVersions.FirstAsync(v => v.ProjectId == projectId && v.Stage == Stage && v.Key == "" && v.Version == cell.CurrentVersion, cancellationToken);
-            var next = 1 + await db.CellVersions.Where(v => v.ProjectId == projectId && v.Stage == Stage && v.Key == "").MaxAsync(v => v.Version, cancellationToken);
-            var now = clock.GetUtcNow();
-            db.CellVersions.Add(new CellVersionEntry
-            {
-                ProjectId = projectId,
-                Stage = Stage,
-                Key = "",
-                Version = next,
-                Origin = VersionOrigin.Edited,
-                BasedOn = current.Version,
-                InputHash = current.InputHash,
-                SchemaVersion = ReferenceSheet.SchemaVersion,
-                OutputJson = StoredJson.Write(sheet),
-                CreatedAt = now,
-            });
-            cell.CurrentVersion = next;
-            cell.UpdatedAt = now;
-            foreach (var id in removed)
-            {
-                var images = await db.Cells.Where(c => c.ProjectId == projectId && c.Stage == Stage && c.Key.StartsWith(id + "/")).ToListAsync(cancellationToken);
-                db.Cells.RemoveRange(images);
-                updates.AddRange(images.Select(i => i.Key));
-            }
-            if (await db.Projects.FirstOrDefaultAsync(p => p.Id == projectId, cancellationToken) is { } project)
-            {
-                project.UpdatedAt = now;
-            }
-            await db.SaveChangesAsync(cancellationToken);
-            state = cell.State;
-        }
-        foreach (var key in updates)
+        RequireIdle(projectId);
+        var (keys, state) = await sheets.WriteAsync(projectId, sheet, removed, cancellationToken);
+        foreach (var key in keys)
         {
             runner.Publish(new StageUpdate(projectId, Stage, StageState.NotStarted, Key: key));
         }

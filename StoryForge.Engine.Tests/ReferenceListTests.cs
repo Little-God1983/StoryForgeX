@@ -73,7 +73,7 @@ public sealed class ReferenceListTests : IDisposable
     {
         var (references, _) = ReferenceList.Propose(Sheet, Board);
         var builder = new PoolBuilder(pictures);
-        return await builder.BuildAsync(references, [], ["bg3.wiki"], factPages, _root, "Soul Coins (1234)", default);
+        return await builder.BuildAsync(references, [], [], ["bg3.wiki"], factPages, _root, "Soul Coins (1234)", default);
     }
 
     [Fact]

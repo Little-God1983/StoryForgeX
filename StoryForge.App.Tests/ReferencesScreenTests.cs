@@ -319,4 +319,34 @@ public sealed class ReferencesScreenTests
 
         Assert.Equal(("own", "R01"), _client.ReferenceActions.Single());
     }
+
+    [Fact]
+    public async Task A_failed_run_past_the_list_is_retried_by_making_the_missing_images()
+    {
+        var (_, screen, _) = await OpenAsync(id => Images(id, StageState.Failed));
+
+        await screen.RetryCommand.ExecuteAsync(null);
+
+        Assert.Equal(("make images", ""), _client.ReferenceActions.Single());
+        Assert.Empty(_client.Regenerated);   // a whole run would make the approved images again
+    }
+
+    [Fact]
+    public async Task With_nothing_on_the_list_the_stage_is_approved_as_it_is()
+    {
+        var (_, screen, project) = await OpenAsync(id => Images(id) with { References = [] });
+
+        Assert.True(screen.ShowsTextOnlyBar);
+        Assert.False(screen.ShowsGateBar);
+        await screen.ApproveTextOnlyCommand.ExecuteAsync(null);
+        Assert.Equal((project.Id, PipelineStage.References, 3), _client.Approved.Single());
+    }
+
+    [Fact]
+    public async Task An_empty_list_can_still_be_confirmed()
+    {
+        var (_, screen, _) = await OpenAsync(id => Listed(id) with { References = [] });
+
+        Assert.True(screen.MakeImagesCommand.CanExecute(null));
+    }
 }

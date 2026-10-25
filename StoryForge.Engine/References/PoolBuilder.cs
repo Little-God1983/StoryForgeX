@@ -30,11 +30,13 @@ internal sealed class PoolBuilder(IPictureSource pictures)
 {
     /// <param name="references">The references to find pictures for; their sources are added to.</param>
     /// <param name="pool">The pool so far: a picture already in it is not downloaded again.</param>
+    /// <param name="discarded">The pictures you threw out: not added again.</param>
     /// <param name="root">The projects folder.</param>
     /// <param name="folder">The project's folder within it.</param>
     public async Task<(IReadOnlyList<Reference> References, IReadOnlyList<PoolImage> Pool)> BuildAsync(
         IReadOnlyList<Reference> references,
         IReadOnlyList<PoolImage> pool,
+        IReadOnlyList<PoolImage> discarded,
         IReadOnlyList<string> sources,
         IReadOnlyList<string> factPages,
         string root,
@@ -49,23 +51,28 @@ internal sealed class PoolBuilder(IPictureSource pictures)
             progress?.Report($"looking for pictures of {reference.Name}");
             var found = await pictures.SearchAsync(sources, reference.Name, cancellationToken);
             // Too small ones too: they make nothing, but say why nothing was made.
-            var ids = await AddAsync(images, found.OrderByDescending(p => p.IsMain), root, folder, cancellationToken);
+            var ids = await AddAsync(images, discarded, found.OrderByDescending(p => p.IsMain), root, folder, cancellationToken);
             updated.Add(reference with { Sources = [.. reference.Sources.Concat(ids).Distinct()] });
         }
         foreach (var page in factPages.Distinct())
         {
             progress?.Report($"pictures on {page}");
-            await AddAsync(images, await pictures.PageAsync(sources, page, cancellationToken), root, folder, cancellationToken);
+            await AddAsync(images, discarded, await pictures.PageAsync(sources, page, cancellationToken), root, folder, cancellationToken);
         }
         return (updated, images);
     }
 
     /// <summary>Downloads what is not in the pool yet; returns the pool ids of all of them, in order.</summary>
-    private async Task<List<string>> AddAsync(List<PoolImage> pool, IEnumerable<FoundPicture> found, string root, string folder, CancellationToken cancellationToken)
+    private async Task<List<string>> AddAsync(
+        List<PoolImage> pool, IReadOnlyList<PoolImage> discarded, IEnumerable<FoundPicture> found, string root, string folder, CancellationToken cancellationToken)
     {
         var ids = new List<string>();
         foreach (var picture in found)
         {
+            if (discarded.Any(p => p.Url == picture.Url))
+            {
+                continue;
+            }
             if (pool.FirstOrDefault(p => p.Url == picture.Url) is { } known)
             {
                 ids.Add(known.Id);
@@ -75,7 +82,7 @@ internal sealed class PoolBuilder(IPictureSource pictures)
             {
                 continue;   // gone, or not a picture: the rest of the pool stays
             }
-            var id = NextId(pool);
+            var id = NextId(pool.Concat(discarded));
             var file = Path.Combine(folder, "references", "pool", id + download.Extension);
             Directory.CreateDirectory(Path.GetDirectoryName(Path.Combine(root, file))!);
             await File.WriteAllBytesAsync(Path.Combine(root, file), download.Content, cancellationToken);

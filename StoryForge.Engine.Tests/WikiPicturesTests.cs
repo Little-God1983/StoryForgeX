@@ -117,4 +117,26 @@ public sealed class WikiPicturesTests
 
         Assert.Empty(await new WikiPictures(web.Invoker, Public).SearchAsync(["bg3.wiki"], "Karlach", default));
     }
+
+    [Fact]
+    public async Task A_wiki_is_found_once_for_all_the_names_it_is_searched_for()
+    {
+        var web = Wiki();
+        var pictures = new WikiPictures(web.Invoker, Public);
+
+        await pictures.SearchAsync(["bg3.wiki"], "Karlach", default);
+        await pictures.SearchAsync(["bg3.wiki"], "Karlach", default);
+
+        Assert.Single(web.Requests, r => r.Query.Contains("meta=siteinfo", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task The_connection_goes_only_to_the_address_that_was_checked()
+    {
+        // The name answered with a public address when it was checked, and a local one when the connection is made.
+        var refused = await Assert.ThrowsAsync<HttpRequestException>(() =>
+            WikiPictures.ConnectAsync(new DnsEndPoint("evil.example", 443), Public, default).AsTask());
+
+        Assert.Contains("evil.example", refused.Message);
+    }
 }

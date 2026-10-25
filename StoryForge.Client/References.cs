@@ -53,7 +53,8 @@ public enum ReferencePhase
 }
 
 /// <summary>The References stage as a whole: who and what gets references, the pool, the rest of the cast.</summary>
-public sealed record ReferenceSheet(IReadOnlyList<Reference> References, IReadOnlyList<PoolImage> Pool, IReadOnlyList<OtherCast> Others, ReferencePhase Phase)
+/// <param name="Discarded">The pictures you threw out of the pool: not found again, and their ids not given to others.</param>
+public sealed record ReferenceSheet(IReadOnlyList<Reference> References, IReadOnlyList<PoolImage> Pool, IReadOnlyList<OtherCast> Others, ReferencePhase Phase, IReadOnlyList<PoolImage>? Discarded = null)
 {
     /// <summary>Raised whenever the stored shape changes, so older sheets can still be read.</summary>
     public const int SchemaVersion = 1;

@@ -23,6 +23,7 @@ internal sealed class ReferencesStage(
     IPictureCheck check,
     PoolBuilder pool,
     CellReader cells,
+    ReferenceSheets sheets,
     ProfileStore profiles,
     SettingsStore settings,
     ProjectFolders folders,
@@ -99,6 +100,16 @@ internal sealed class ReferencesStage(
         var reference = sheet.References.FirstOrDefault(r => r.Id == referenceId) ?? throw new StageFailedException($"There is no reference {referenceId}.");
         var maker = await MakerAsync(context, cancellationToken);
         var (image, updated) = await MakeAsync(context, maker, sheet, reference, number, cancellationToken);
+        if (updated.Look != reference.Look)
+        {
+            // Claude saw how it looks: the sheet keeps it, so its next images are made the same way.
+            var now = await cells.CurrentReferencesAsync(context.Project.Id, cancellationToken);
+            if (now?.References.FirstOrDefault(r => r.Id == referenceId) is { Look.Length: 0 } still)
+            {
+                await sheets.WriteAsync(
+                    context.Project.Id, now with { References = [.. now.References.Select(r => r == still ? still with { Look = updated.Look } : r)] }, [], cancellationToken);
+            }
+        }
         return new CellResult(key, StoredJson.Write(image), ReferenceSheet.SchemaVersion, Hash(context.Project.Setup, updated));
     }
 
@@ -145,7 +156,7 @@ internal sealed class ReferencesStage(
         var factPages = facts.Where(f => !f.LeftOut).Select(f => f.SourceUrl).Distinct().ToList();
         var root = await folders.RootAsync(cancellationToken);
         var (found, images) = await pool.BuildAsync(
-            references, [], project.Setup.ResearchSources, factPages, root, ProjectFolders.Of(project), cancellationToken,
+            references, [], [], project.Setup.ResearchSources, factPages, root, ProjectFolders.Of(project), cancellationToken,
             new Progress(line => Report(context, ActivityKind.Search, line)));
         return new ReferenceSheet(found, images, others, ReferencePhase.List);
     }
@@ -181,7 +192,8 @@ internal sealed class ReferencesStage(
         var seed = Random.Shared.Next();
         if (reference.DescriptionOnly)
         {
-            var file = await RenderAsync(context, maker, reference, number, [], Prompt(reference, ImageMaking.FromDescription, ""), seed, cancellationToken);
+            var canvas = await CanvasAsync(maker, cancellationToken);
+            var file = await RenderAsync(context, maker, reference, number, [canvas], Prompt(reference, ImageMaking.FromDescription, ""), seed, cancellationToken);
             return (new ReferenceImage(reference.Id, number, file, [], seed, ImageMaking.FromDescription, ""), reference);
         }
 
@@ -215,23 +227,37 @@ internal sealed class ReferencesStage(
             var looked = reference.Look.Length > 0 ? reference : reference with { Look = verdict.Look };
             var made = verdict.Complete ? ImageMaking.FromPicture : ImageMaking.PartlyMadeUp;
             var sources = new[] { picture }.Concat(usable.Where(p => p != picture)).Take(MaxSources).ToList();
-            var file = await RenderAsync(context, maker, looked, number, sources, Prompt(looked, made, verdict.Missing), seed, cancellationToken);
+            var file = await RenderAsync(context, maker, looked, number, [.. sources.Select(s => s.File)], Prompt(looked, made, verdict.Missing), seed, cancellationToken);
             return (new ReferenceImage(reference.Id, number, file, [.. sources.Select(s => s.Id)], seed, made, made == ImageMaking.PartlyMadeUp ? verdict.Missing : ""), looked);
         }
         Report(context, ActivityKind.Check, $"{reference.Name}: none of the pictures shows it. Nothing is made until you choose.");
         return (new ReferenceImage(reference.Id, number, null, [], seed, ImageMaking.NoPicture, $"None of the pictures found shows {reference.Name}."), reference);
     }
 
+    /// <summary>The blank canvas in the project folder (references/blank.png), written the first time it is needed.</summary>
+    private static async Task<string> CanvasAsync(Maker maker, CancellationToken cancellationToken)
+    {
+        var file = Path.Combine(maker.Folder, "references", "blank.png");
+        var path = Path.Combine(maker.Root, file);
+        if (!File.Exists(path))
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+            await File.WriteAllBytesAsync(path, BlankCanvas.Png(Side), cancellationToken);
+        }
+        return file;
+    }
+
     /// <summary>One ComfyUI run; the image is saved as references/R01-1-&lt;take&gt;.png in the project folder.</summary>
+    /// <param name="pictures">The pictures it is made from, as files in the projects folder; the first is the main one.</param>
     private async Task<string> RenderAsync(
-        StageContext context, Maker maker, Reference reference, int number, IReadOnlyList<PoolImage> sources, string prompt, int seed, CancellationToken cancellationToken)
+        StageContext context, Maker maker, Reference reference, int number, IReadOnlyList<string> pictures, string prompt, int seed, CancellationToken cancellationToken)
     {
         try
         {
             var uploaded = new List<string>();
-            foreach (var source in sources)
+            foreach (var source in pictures)
             {
-                uploaded.Add(await comfy.UploadAsync(Path.Combine(maker.Root, source.File), cancellationToken));
+                uploaded.Add(await comfy.UploadAsync(Path.Combine(maker.Root, source), cancellationToken));
             }
             var values = new Dictionary<string, JsonNode>
             {
