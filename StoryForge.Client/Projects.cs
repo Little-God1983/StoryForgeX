@@ -68,6 +68,7 @@ public sealed record OutputSetup(string Aspect, int Width, int Height, int Targe
 /// <summary>Every choice on the New project screen. Stored with the project, so a rerun reproduces it.</summary>
 /// <param name="Gates">The stages after which the run pauses for approval.</param>
 /// <param name="Pacing">How long shots should be; null means the storyboard profile's.</param>
+/// <param name="ReviewReferenceList">The run stops on the proposed reference list before any image is made.</param>
 public sealed record ProjectSetup(
     string Name,
     string Brief,
@@ -79,7 +80,8 @@ public sealed record ProjectSetup(
     OutputSetup Output,
     IReadOnlyList<PipelineStage> Gates,
     RunMode Mode,
-    Pacing? Pacing = null)
+    Pacing? Pacing = null,
+    bool ReviewReferenceList = true)
 {
     /// <summary>Gates that cannot be switched off: the storyboard and the references are always reviewed.</summary>
     public static IReadOnlyList<PipelineStage> RequiredGates { get; } = [PipelineStage.Storyboard, PipelineStage.References];

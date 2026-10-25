@@ -164,4 +164,33 @@ public interface IStoryForgeClient
     /// <exception cref="ArgumentException">It is the segment's last shot, or the merged shot would be longer than a clip.</exception>
     /// <exception cref="InvalidOperationException">A shot or the storyboard is running.</exception>
     Task MergeShotAsync(Guid projectId, string shotKey, CancellationToken cancellationToken = default);
+
+    /// <summary>The References stage: the list, the images with their versions, the pool, the rest of the cast.</summary>
+    /// <exception cref="KeyNotFoundException">No such project.</exception>
+    Task<ReferencesView> GetReferencesAsync(Guid projectId, CancellationToken cancellationToken = default);
+
+    /// <summary>Changes the reference list or the pool: add, remove, merge, the look, which pictures a reference is made from.</summary>
+    /// <exception cref="KeyNotFoundException">No such project, reference or picture.</exception>
+    /// <exception cref="ArgumentException">The change is missing what its kind needs, or names a reference twice.</exception>
+    /// <exception cref="InvalidOperationException">The References stage is running.</exception>
+    Task ChangeReferencesAsync(Guid projectId, ReferenceChange change, CancellationToken cancellationToken = default);
+
+    /// <summary>Your own picture, copied into the pool and used for the reference, like a found one.</summary>
+    /// <exception cref="KeyNotFoundException">No such project, reference or file.</exception>
+    /// <exception cref="InvalidOperationException">The References stage is running.</exception>
+    Task AddOwnPictureAsync(Guid projectId, string referenceId, string path, CancellationToken cancellationToken = default);
+
+    /// <summary>The list is confirmed: its images are made.</summary>
+    /// <exception cref="KeyNotFoundException">No such project, or no list yet.</exception>
+    /// <exception cref="InvalidOperationException">The References stage is running, or the list is empty.</exception>
+    Task MakeReferenceImagesAsync(Guid projectId, CancellationToken cancellationToken = default);
+
+    /// <summary>"+ image": one more image of the reference, made from its pictures.</summary>
+    Task AddReferenceImageAsync(Guid projectId, string referenceId, CancellationToken cancellationToken = default);
+
+    /// <summary>Searches the project's sources for the reference again, then makes its images from what was found.</summary>
+    Task SearchSourcesAgainAsync(Guid projectId, string referenceId, CancellationToken cancellationToken = default);
+
+    /// <summary>Makes the reference's images from its look alone: the one case where text alone is allowed.</summary>
+    Task MakeFromDescriptionAsync(Guid projectId, string referenceId, CancellationToken cancellationToken = default);
 }

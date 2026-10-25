@@ -619,6 +619,42 @@ internal sealed class FakeStoryForgeClient : IStoryForgeClient
         return Task.CompletedTask;
     }
 
+    /// <summary>The references per project; a project without them has a stage not started.</summary>
+    public Dictionary<Guid, ReferencesView> References { get; } = [];
+
+    /// <summary>What was asked of the References screen: the action and what it names, e.g. ("own", "R01").</summary>
+    public List<(string Action, string Subject)> ReferenceActions { get; } = [];
+
+    public List<ReferenceChange> ReferenceChanges { get; } = [];
+
+    public Task<ReferencesView> GetReferencesAsync(Guid projectId, CancellationToken cancellationToken = default) =>
+        Task.FromResult(References.GetValueOrDefault(projectId)
+            ?? new ReferencesView(projectId, StageState.NotStarted, null, [], ReferencePhase.List, [], [], [], false, new Dictionary<string, string>()));
+
+    public Task ChangeReferencesAsync(Guid projectId, ReferenceChange change, CancellationToken cancellationToken = default)
+    {
+        ThrowIfFailing();
+        ReferenceChanges.Add(change);
+        return Task.CompletedTask;
+    }
+
+    public Task AddOwnPictureAsync(Guid projectId, string referenceId, string path, CancellationToken cancellationToken = default) => Record("own", referenceId);
+
+    public Task MakeReferenceImagesAsync(Guid projectId, CancellationToken cancellationToken = default) => Record("make images", "");
+
+    public Task AddReferenceImageAsync(Guid projectId, string referenceId, CancellationToken cancellationToken = default) => Record("add image", referenceId);
+
+    public Task SearchSourcesAgainAsync(Guid projectId, string referenceId, CancellationToken cancellationToken = default) => Record("search again", referenceId);
+
+    public Task MakeFromDescriptionAsync(Guid projectId, string referenceId, CancellationToken cancellationToken = default) => Record("from description", referenceId);
+
+    private Task Record(string action, string subject)
+    {
+        ThrowIfFailing();
+        ReferenceActions.Add((action, subject));
+        return Task.CompletedTask;
+    }
+
     private void ThrowIfFailing()
     {
         if (StageFailure is { } failure)
