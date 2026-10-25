@@ -13,6 +13,7 @@ namespace StoryForge.Engine.Research;
 /// <param name="McpConfig">The MCP servers as JSON, or null for none at all.</param>
 /// <param name="AllowedTools">The only tools Claude may use; empty for none.</param>
 /// <param name="What">What the call is for, in messages: "research", "the script".</param>
+/// <param name="BuiltInTools">Claude CLI's own tools the call may use, e.g. Read to look at a picture; none by default.</param>
 internal sealed record ClaudeCall(
     string Folder,
     string SystemPrompt,
@@ -22,7 +23,8 @@ internal sealed record ClaudeCall(
     string? Session,
     string? McpConfig,
     IReadOnlyList<string> AllowedTools,
-    string What);
+    string What,
+    IReadOnlyList<string>? BuiltInTools = null);
 
 /// <summary>Claude CLI's answer: the JSON in the asked schema, and the session a correction continues.</summary>
 internal sealed record ClaudeReply(string? Session, JsonElement Output, decimal? CostUsd);
@@ -60,7 +62,7 @@ internal sealed class ClaudeCli(SettingsStore settings, IStreamingProcess proces
         {
             result = await process.RunAsync(
                 cli.Executable.Trim(),
-                Arguments(mcpConfig, call.AllowedTools, systemPrompt, call.SchemaJson, call.Model, call.Session),
+                Arguments(mcpConfig, call.AllowedTools, systemPrompt, call.SchemaJson, call.Model, call.Session, call.BuiltInTools),
                 call.Folder,
                 call.Prompt,
                 stream.Read,
@@ -102,15 +104,16 @@ internal sealed class ClaudeCli(SettingsStore settings, IStreamingProcess proces
 
     /// <param name="mcpConfig">The MCP config file, or null for no MCP servers at all.</param>
     internal static IReadOnlyList<string> Arguments(
-        string? mcpConfig, IReadOnlyList<string> allowedTools, string systemPrompt, string schema, string model, string? session)
+        string? mcpConfig, IReadOnlyList<string> allowedTools, string systemPrompt, string schema, string model, string? session,
+        IReadOnlyList<string>? builtInTools = null)
     {
         List<string> arguments =
         [
             "-p",
             "--output-format", "stream-json",
             "--verbose",
-            // No built-in tools at all: no web search, no files, no shell.
-            "--tools", "",
+            // No built-in tools but the ones the call names: no web search, no shell, files only when asked.
+            "--tools", string.Join(',', builtInTools ?? []),
             "--strict-mcp-config",
         ];
         if (mcpConfig is not null)
