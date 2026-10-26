@@ -76,6 +76,8 @@ public sealed partial class ScriptMatrixViewModel
             // The clipboard is held by another program now and then.
             Debug.WriteLine($"Could not copy the script: {ex}");
             ActionError = $"Could not copy the script: {ex.Message}";
+            CopiedText = "";   // an earlier copy's "Copied" would contradict the error
+            _copied = null;
         }
     }
 

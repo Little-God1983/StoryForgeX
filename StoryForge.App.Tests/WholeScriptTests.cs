@@ -293,6 +293,21 @@ public sealed class WholeScriptTests
     }
 
     [Fact]
+    public async Task A_copy_that_fails_does_not_say_Copied()
+    {
+        var (matrix, _) = await OpenAsync();
+        var script = matrix.Script!;
+        script.CopyText = _ => { };
+        script.CopyAllCommand.Execute(null);
+
+        script.CopyText = _ => throw new System.Runtime.InteropServices.ExternalException("OpenClipboard failed.");
+        script.CopyAllCommand.Execute(null);
+
+        Assert.Equal("", script.CopiedText);
+        Assert.Equal("Could not copy the script: OpenClipboard failed.", script.ActionError);
+    }
+
+    [Fact]
     public async Task Copy_all_copies_the_whole_narration()
     {
         var (matrix, _) = await OpenAsync();
