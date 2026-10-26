@@ -196,6 +196,25 @@ public sealed class WholeScriptTests
     }
 
     [Fact]
+    public async Task A_note_you_typed_is_not_dropped_by_opening_another()
+    {
+        var (matrix, _) = await OpenAsync();
+        var script = matrix.Script!;
+        script.AskNoteRowCommand.Execute(script.Rows[1]);
+        Assert.True(script.AskNoteRowCommand.CanExecute(script.Rows[2]));   // an empty note line is no loss
+
+        script.RegenerateNote = "too long";
+
+        Assert.False(script.AskNoteRowCommand.CanExecute(script.Rows[2]));
+        Assert.False(script.StartEditRowCommand.CanExecute(script.Rows[1]));
+        Assert.True(script.ApproveRowCommand.CanExecute(script.Rows[2]));
+
+        script.CancelNoteCommand.Execute(null);
+
+        Assert.True(script.AskNoteRowCommand.CanExecute(script.Rows[2]));
+    }
+
+    [Fact]
     public async Task Copy_all_copies_the_whole_narration()
     {
         var (matrix, _) = await OpenAsync();

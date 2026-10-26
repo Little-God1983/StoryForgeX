@@ -31,8 +31,8 @@ public sealed partial class ScriptMatrixViewModel
 
     private bool CanApproveRow(SegmentRowViewModel? row) => CanActOnRow(row) && row!.State != StageState.Approved;
 
-    // Regenerate and Edit text select their segment, which would close another one's editor and drop your text.
-    private bool CanOpenOnRow(SegmentRowViewModel? row) => CanActOnRow(row) && !IsEditing;
+    // Regenerate and Edit text select their segment, which would close an editor or a note line and drop what you typed.
+    private bool CanOpenOnRow(SegmentRowViewModel? row) => CanActOnRow(row) && !IsEditing && !(IsAskingNote && RegenerateNote.Trim().Length > 0);
 
     [RelayCommand(CanExecute = nameof(CanApproveRow))]
     private Task ApproveRowAsync(SegmentRowViewModel? row) =>
@@ -83,6 +83,8 @@ public sealed partial class ScriptMatrixViewModel
     partial void OnIsAskingNoteChanged(bool value) => RefreshRowModes();
 
     partial void OnIsEditingChanged(bool value) => RefreshRowModes();
+
+    partial void OnRegenerateNoteChanged(string value) => RefreshRowCommands();
 
     /// <summary>The note line and the editor show at the selected segment in the whole script too.</summary>
     private void RefreshRowModes()
