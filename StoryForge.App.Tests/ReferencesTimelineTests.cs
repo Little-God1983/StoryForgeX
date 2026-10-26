@@ -85,6 +85,19 @@ public sealed class ReferencesTimelineTests
     }
 
     [Fact]
+    public async Task One_shot_is_one_shot()
+    {
+        var project = await _client.CreateProjectAsync(Setup());
+        var view = Timed(project.Id);
+        _client.References[project.Id] = view with { Shots = [view.Shots[2]] };
+        var screen = new ReferencesViewModel(_client, project.Id, _ => { }, () => null);
+
+        await screen.LoadAsync();
+
+        Assert.Equal("1 shot · 0:05 · no shot full", screen.TimelineSummary);
+    }
+
+    [Fact]
     public async Task A_click_puts_the_reference_in_the_shot_or_takes_it_out()
     {
         var (screen, _) = await OpenAsync();

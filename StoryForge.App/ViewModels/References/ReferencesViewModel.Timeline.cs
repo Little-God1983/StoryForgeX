@@ -122,7 +122,7 @@ public sealed partial class ReferencesViewModel
             <= 3 => $"{string.Join(" ", full)} full ({Shot.MaxCast}/{Shot.MaxCast})",
             _ => $"{full.Count} shots full ({Shot.MaxCast}/{Shot.MaxCast})",
         };
-        TimelineSummary = $"{view.Shots.Count} shots · {Clock(view.Shots.Sum(s => s.Seconds))} · {fullText}";
+        TimelineSummary = $"{view.Shots.Count} {(view.Shots.Count == 1 ? "shot" : "shots")} · {Clock(view.Shots.Sum(s => s.Seconds))} · {fullText}";
         OnPropertyChanged(nameof(HasTimeline));
     }
 
