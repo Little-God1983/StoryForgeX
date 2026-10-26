@@ -503,7 +503,7 @@ internal sealed class FakeStoryForgeClient : IStoryForgeClient
         return Task.CompletedTask;
     }
 
-    public Task RegenerateSegmentAsync(Guid projectId, PipelineStage stage, string segmentId, CancellationToken cancellationToken = default)
+    public Task RegenerateSegmentAsync(Guid projectId, PipelineStage stage, string segmentId, string? note = null, CancellationToken cancellationToken = default)
     {
         ThrowIfFailing();
         if (stage == PipelineStage.Voice)

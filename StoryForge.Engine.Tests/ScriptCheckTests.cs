@@ -160,10 +160,21 @@ public sealed class ScriptCheckTests
     {
         IReadOnlyList<Segment> script = [new("S01", "Hook", "A coin screams.", ["F01"]), new("S02", "Money", "Hell pays in souls.", ["F02"])];
 
-        var prompt = ClaudeCliScriptAgent.SegmentPrompt(new ScriptRequest(Guid.NewGuid(), "b", Sheet, "", "", "English", 240), script, "S01");
+        var prompt = ClaudeCliScriptAgent.SegmentPrompt(new ScriptRequest(Guid.NewGuid(), "b", Sheet, "", "", "English", 240), script, "S01", null);
 
         Assert.Contains("S02 Money (facts F02):\nHell pays in souls.", prompt.Replace("\r\n", "\n", StringComparison.Ordinal));
         Assert.Contains("Write S01 again", prompt);
         Assert.Contains("It must keep F01", prompt);
+        Assert.DoesNotContain("Why it is written again", prompt);
+    }
+
+    [Fact]
+    public void A_note_on_regenerate_tells_the_model_why()
+    {
+        IReadOnlyList<Segment> script = [new("S01", "Hook", "A coin screams.", ["F01"])];
+
+        var prompt = ClaudeCliScriptAgent.SegmentPrompt(new ScriptRequest(Guid.NewGuid(), "b", Sheet, "", "", "English", 240), script, "S01", "mention Karlach earlier");
+
+        Assert.Contains("Why it is written again: mention Karlach earlier", prompt);
     }
 }

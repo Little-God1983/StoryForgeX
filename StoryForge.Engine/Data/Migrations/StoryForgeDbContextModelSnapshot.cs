@@ -77,6 +77,9 @@ namespace StoryForge.Engine.Data.Migrations
                         .IsRequired()
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("Note")
+                        .HasColumnType("TEXT");
+
                     b.Property<string>("Origin")
                         .IsRequired()
                         .HasColumnType("TEXT");

@@ -72,7 +72,7 @@ internal sealed class ScriptStage(IScriptAgent agent, CellReader cells, ProfileS
         for (var attempt = 1; attempt <= Tries; attempt++)
         {
             tries = attempt;
-            var answer = await agent.RewriteAsync(request, script, key, session, problems, context.Activity, cancellationToken);
+            var answer = await agent.RewriteAsync(request, script, key, context.Note, session, problems, context.Activity, cancellationToken);
             session = answer.Session;
             problems = ScriptCheck.SegmentProblems(answer.Output, key, request.Facts, script);
             if (problems.Count == 0)

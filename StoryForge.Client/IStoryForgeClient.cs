@@ -112,9 +112,14 @@ public interface IStoryForgeClient
     Task ApproveSegmentsAsync(Guid projectId, PipelineStage stage, CancellationToken cancellationToken = default);
 
     /// <summary>Makes one segment of the stage again (writes or speaks it), keeping the rest. The earlier versions stay.</summary>
+    /// <param name="note">
+    /// Script only: why it is written again, e.g. "too long". The model gets it, and it is kept with the
+    /// new version. Null or blank for none.
+    /// </param>
     /// <exception cref="KeyNotFoundException">No such project or segment.</exception>
     /// <exception cref="InvalidOperationException">The whole stage is running.</exception>
-    Task RegenerateSegmentAsync(Guid projectId, PipelineStage stage, string segmentId, CancellationToken cancellationToken = default);
+    /// <exception cref="ArgumentException">A note for a stage other than Script.</exception>
+    Task RegenerateSegmentAsync(Guid projectId, PipelineStage stage, string segmentId, string? note = null, CancellationToken cancellationToken = default);
 
     /// <summary>Stops making one segment again; it goes back to the version it had.</summary>
     Task CancelSegmentAsync(Guid projectId, PipelineStage stage, string segmentId, CancellationToken cancellationToken = default);

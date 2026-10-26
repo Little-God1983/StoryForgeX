@@ -6,12 +6,13 @@ using StoryForge.Client;
 namespace StoryForge.Engine.Pipeline;
 
 /// <summary>What a stage runs with: the project, and where it reports what it is doing.</summary>
+/// <param name="Note">Why one segment is made again, as you said on Regenerate; null without one.</param>
 /// <param name="StoreSegment">
 /// Stores one segment's result at once, while the stage goes on with the next: a slow stage (the
 /// voice) shows each segment as soon as it is done. Its result's own segments then skip the ones
 /// stored this way. Null outside a whole-stage run.
 /// </param>
-internal sealed record StageContext(Project Project, IProgress<ActivityLine> Activity, Func<CellResult, Task>? StoreSegment = null);
+internal sealed record StageContext(Project Project, IProgress<ActivityLine> Activity, Func<CellResult, Task>? StoreSegment = null, string? Note = null);
 
 /// <summary>A stage's finished result, ready to store as a new version.</summary>
 /// <param name="OutputJson">The result in <see cref="StoredJson"/> form.</param>

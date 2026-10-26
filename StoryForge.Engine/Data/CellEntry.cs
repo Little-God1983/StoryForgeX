@@ -47,6 +47,9 @@ public sealed class CellVersionEntry
     /// <summary>For an edited version, the version it was edited from.</summary>
     public int? BasedOn { get; set; }
 
+    /// <summary>Why it was made again, as you said on Regenerate, e.g. "too long"; null without one.</summary>
+    public string? Note { get; set; }
+
     /// <summary>
     /// A hash of everything the result was made from: upstream versions, provider, model, profile
     /// version, parameters. When it no longer matches, the result is out of date (#11).
