@@ -179,6 +179,23 @@ public sealed class WholeScriptTests
     }
 
     [Fact]
+    public async Task While_one_segment_is_edited_the_others_cannot_open_a_note_or_an_editor()
+    {
+        var (matrix, _) = await OpenAsync();
+        var script = matrix.Script!;
+        script.StartEditRowCommand.Execute(script.Rows[1]);
+        script.EditNarration = "In Hell, souls are money.";
+
+        Assert.False(script.AskNoteRowCommand.CanExecute(script.Rows[2]));    // it would close S02's editor, and your text with it
+        Assert.False(script.StartEditRowCommand.CanExecute(script.Rows[2]));
+        Assert.True(script.ApproveRowCommand.CanExecute(script.Rows[2]));     // leaves the editor alone
+
+        script.CancelEditCommand.Execute(null);
+
+        Assert.True(script.AskNoteRowCommand.CanExecute(script.Rows[2]));
+    }
+
+    [Fact]
     public async Task Copy_all_copies_the_whole_narration()
     {
         var (matrix, _) = await OpenAsync();

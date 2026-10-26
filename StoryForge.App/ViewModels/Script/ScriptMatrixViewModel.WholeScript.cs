@@ -31,18 +31,21 @@ public sealed partial class ScriptMatrixViewModel
 
     private bool CanApproveRow(SegmentRowViewModel? row) => CanActOnRow(row) && row!.State != StageState.Approved;
 
+    // Regenerate and Edit text select their segment, which would close another one's editor and drop your text.
+    private bool CanOpenOnRow(SegmentRowViewModel? row) => CanActOnRow(row) && !IsEditing;
+
     [RelayCommand(CanExecute = nameof(CanApproveRow))]
     private Task ApproveRowAsync(SegmentRowViewModel? row) =>
         ActAsync("approve the segment", () => client.ApproveSegmentAsync(ProjectId, PipelineStage.Script, row!.Id, row.Segment.Version));
 
-    [RelayCommand(CanExecute = nameof(CanActOnRow))]
+    [RelayCommand(CanExecute = nameof(CanOpenOnRow))]
     private void AskNoteRow(SegmentRowViewModel? row)
     {
         Select(row, PipelineStage.Script);
         AskNote();
     }
 
-    [RelayCommand(CanExecute = nameof(CanActOnRow))]
+    [RelayCommand(CanExecute = nameof(CanOpenOnRow))]
     private void StartEditRow(SegmentRowViewModel? row)
     {
         Select(row, PipelineStage.Script);
