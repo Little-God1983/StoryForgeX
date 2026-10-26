@@ -87,6 +87,61 @@
     <ItemsPanelTemplate x:Key="WrapItems">
       <WrapPanel />
     </ItemsPanelTemplate>
+
+    <!-- The timeline's columns: each as wide as its shot lasts. -->
+    <ItemsPanelTemplate x:Key="ShotColumns">
+      <views:WeightedPanel />
+    </ItemsPanelTemplate>
+
+    <Style x:Key="ShotColumnStyle" TargetType="ContentPresenter">
+      <Setter Property="views:WeightedPanel.Weight" Value="{Binding Seconds}" />
+    </Style>
+
+    <!-- A plain button: only what it holds shows. -->
+    <ControlTemplate x:Key="BareButton" TargetType="Button">
+      <Border Background="Transparent">
+        <ContentPresenter VerticalAlignment="Center" />
+      </Border>
+    </ControlTemplate>
+
+    <!-- One reference in one shot: a bar in its kind's colour when it is in it. -->
+    <DataTemplate x:Key="TimelineCellTemplate" DataType="{x:Type refs:TimelineCellViewModel}">
+      <Button Command="{Binding DataContext.ToggleCellCommand, RelativeSource={RelativeSource AncestorType=UserControl}}" CommandParameter="{Binding}"
+              Height="26" Cursor="Hand" AutomationProperties.Name="{Binding AccessibleName}" ToolTip="{Binding AccessibleName}"
+              ToolTipService.ShowOnDisabled="True" FocusVisualStyle="{StaticResource RoundedFocusVisual}">
+        <Button.Template>
+          <ControlTemplate TargetType="Button">
+            <Border x:Name="Cell" Background="Transparent" BorderBrush="#23262B" BorderThickness="1,0,0,0" Padding="2,5">
+              <Border x:Name="Bar" CornerRadius="4" Background="#6FB3EE" Visibility="Collapsed" />
+            </Border>
+            <ControlTemplate.Triggers>
+              <DataTrigger Binding="{Binding DataContext.Kind, RelativeSource={RelativeSource AncestorType=ItemsControl}}" Value="Place">
+                <Setter TargetName="Bar" Property="Background" Value="#7FD1C2" />
+              </DataTrigger>
+              <DataTrigger Binding="{Binding DataContext.Kind, RelativeSource={RelativeSource AncestorType=ItemsControl}}" Value="Object">
+                <Setter TargetName="Bar" Property="Background" Value="#B4A8F5" />
+              </DataTrigger>
+              <DataTrigger Binding="{Binding DataContext.IsSelected, RelativeSource={RelativeSource AncestorType=ItemsControl}}" Value="True">
+                <Setter TargetName="Bar" Property="Background" Value="{StaticResource AccentBrush}" />
+              </DataTrigger>
+              <DataTrigger Binding="{Binding DataContext.IsDimmed, RelativeSource={RelativeSource AncestorType=ItemsControl}}" Value="True">
+                <Setter TargetName="Bar" Property="Opacity" Value="0.5" />
+              </DataTrigger>
+              <DataTrigger Binding="{Binding IsOn}" Value="True">
+                <Setter TargetName="Bar" Property="Visibility" Value="Visible" />
+              </DataTrigger>
+              <Trigger Property="IsMouseOver" Value="True">
+                <Setter TargetName="Cell" Property="Background" Value="#2A2D33" />
+              </Trigger>
+              <DataTrigger Binding="{Binding IsBlocked}" Value="True">
+                <Setter TargetName="Cell" Property="Background" Value="#1F1A1A" />
+                <Setter Property="Cursor" Value="No" />
+              </DataTrigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Button.Template>
+      </Button>
+    </DataTemplate>
   </UserControl.Resources>
 
   <DockPanel>
@@ -192,6 +247,134 @@
           <TextBlock Text="OBJECTS" Style="{StaticResource SectionLabelStyle}" Margin="0,8,0,8" />
           <ItemsControl ItemsSource="{Binding Objects}" ItemTemplate="{StaticResource CardTemplate}" ItemsPanel="{StaticResource WrapItems}" Focusable="False"
                         AutomationProperties.Name="Objects" />
+
+          <!-- The timeline: which reference goes into which shot. -->
+          <Border Style="{StaticResource PanelBoxStyle}" Margin="0,8,10,12" Visibility="{Binding HasTimeline, Converter={StaticResource Visible}}">
+            <StackPanel>
+              <Button Command="{Binding ToggleTimelineCommand}" Template="{StaticResource BareButton}" Cursor="Hand" HorizontalContentAlignment="Stretch"
+                      AutomationProperties.Name="Fold or open the timeline" FocusVisualStyle="{StaticResource RoundedFocusVisual}">
+                <DockPanel>
+                  <Path DockPanel.Dock="Left" Data="M 0 0 L 5 5 L 0 10" Stroke="{StaticResource TextSoftBrush}" StrokeThickness="2"
+                        VerticalAlignment="Center" Margin="2,0,10,0" RenderTransformOrigin="0.5,0.5">
+                    <Path.Style>
+                      <Style TargetType="Path">
+                        <Setter Property="RenderTransform">
+                          <Setter.Value>
+                            <RotateTransform Angle="0" />
+                          </Setter.Value>
+                        </Setter>
+                        <Style.Triggers>
+                          <DataTrigger Binding="{Binding IsTimelineOpen}" Value="True">
+                            <Setter Property="RenderTransform">
+                              <Setter.Value>
+                                <RotateTransform Angle="90" />
+                              </Setter.Value>
+                            </Setter>
+                          </DataTrigger>
+                        </Style.Triggers>
+                      </Style>
+                    </Path.Style>
+                  </Path>
+                  <TextBlock DockPanel.Dock="Right" Text="{Binding TimelineSummary}" FontFamily="{StaticResource MonoFont}" FontSize="11"
+                             Foreground="{StaticResource TextMutedBrush}" VerticalAlignment="Center" AutomationProperties.AutomationId="TimelineSummary" />
+                  <TextBlock VerticalAlignment="Center">
+                    <Run Text="Timeline" FontWeight="SemiBold" FontSize="14" Foreground="{StaticResource TextBrush}" />
+                    <Run Text="  Which reference goes into which shot" FontSize="12" Foreground="{StaticResource TextMutedBrush}" />
+                  </TextBlock>
+                </DockPanel>
+              </Button>
+
+              <StackPanel Margin="0,10,0,0" Visibility="{Binding IsTimelineOpen, Converter={StaticResource Visible}}">
+                <Grid>
+                  <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="170" />
+                    <ColumnDefinition Width="*" />
+                  </Grid.ColumnDefinitions>
+                  <TextBlock Text="shot · starts at" FontFamily="{StaticResource MonoFont}" FontSize="10" Foreground="{StaticResource TextMutedBrush}" VerticalAlignment="Bottom" Margin="4,0,0,4" />
+                  <ItemsControl Grid.Column="1" ItemsSource="{Binding TimelineShots}" ItemsPanel="{StaticResource ShotColumns}" ItemContainerStyle="{StaticResource ShotColumnStyle}"
+                                Focusable="False" AutomationProperties.Name="Shots">
+                    <ItemsControl.ItemTemplate>
+                      <DataTemplate DataType="{x:Type refs:TimelineShotViewModel}">
+                        <Border BorderBrush="{StaticResource BorderBrush}" BorderThickness="1,0,0,0" Padding="4,2,0,4" ClipToBounds="True" ToolTip="{Binding ToolTip}" Background="Transparent">
+                          <StackPanel>
+                            <TextBlock x:Name="Label" Text="{Binding Label}" FontFamily="{StaticResource MonoFont}" FontSize="10" Foreground="{StaticResource TextSoftBrush}" />
+                            <TextBlock x:Name="Start" Text="{Binding StartText}" FontFamily="{StaticResource MonoFont}" FontSize="10" Foreground="{StaticResource TextMutedBrush}" />
+                          </StackPanel>
+                        </Border>
+                        <DataTemplate.Triggers>
+                          <DataTrigger Binding="{Binding IsLit}" Value="True">
+                            <Setter TargetName="Label" Property="Foreground" Value="{StaticResource AccentTextBrush}" />
+                            <Setter TargetName="Label" Property="FontWeight" Value="SemiBold" />
+                            <Setter TargetName="Start" Property="Foreground" Value="{StaticResource AccentTextBrush}" />
+                          </DataTrigger>
+                        </DataTemplate.Triggers>
+                      </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                  </ItemsControl>
+                </Grid>
+
+                <ItemsControl ItemsSource="{Binding TimelineRows}" Focusable="False" AutomationProperties.Name="References in the shots">
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate DataType="{x:Type refs:TimelineRowViewModel}">
+                      <Border x:Name="Row" CornerRadius="6" Background="Transparent">
+                        <Grid>
+                          <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="170" />
+                            <ColumnDefinition Width="*" />
+                          </Grid.ColumnDefinitions>
+                          <Button Command="{Binding PickCommand}" Template="{StaticResource BareButton}" Height="26" Cursor="Hand" HorizontalContentAlignment="Stretch"
+                                  AutomationProperties.Name="{Binding Name, StringFormat='Pick {0}'}" FocusVisualStyle="{StaticResource RoundedFocusVisual}">
+                            <DockPanel Margin="4,0,8,0">
+                              <TextBlock DockPanel.Dock="Right" Text="{Binding Count}" FontFamily="{StaticResource MonoFont}" FontSize="11" Foreground="{StaticResource TextMutedBrush}" />
+                              <TextBlock x:Name="RowName" Text="{Binding Name}" FontSize="12" Foreground="{StaticResource TextSoftBrush}" TextTrimming="CharacterEllipsis" />
+                            </DockPanel>
+                          </Button>
+                          <ItemsControl Grid.Column="1" ItemsSource="{Binding Cells}" ItemsPanel="{StaticResource ShotColumns}" ItemContainerStyle="{StaticResource ShotColumnStyle}"
+                                        ItemTemplate="{StaticResource TimelineCellTemplate}" Focusable="False" AutomationProperties.Name="{Binding Name, StringFormat='Shots with {0}'}" />
+                        </Grid>
+                      </Border>
+                      <DataTemplate.Triggers>
+                        <DataTrigger Binding="{Binding IsSelected}" Value="True">
+                          <Setter TargetName="Row" Property="Background" Value="{StaticResource AccentSoftBrush}" />
+                          <Setter TargetName="RowName" Property="Foreground" Value="{StaticResource AccentTextBrush}" />
+                          <Setter TargetName="RowName" Property="FontWeight" Value="SemiBold" />
+                        </DataTrigger>
+                      </DataTemplate.Triggers>
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+
+                <Grid Margin="0,2,0,0">
+                  <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="170" />
+                    <ColumnDefinition Width="*" />
+                  </Grid.ColumnDefinitions>
+                  <TextBlock Text="per shot (max 4)" FontFamily="{StaticResource MonoFont}" FontSize="10" Foreground="{StaticResource TextMutedBrush}" VerticalAlignment="Center" Margin="4,0,0,0" />
+                  <ItemsControl Grid.Column="1" ItemsSource="{Binding TimelineShots}" ItemsPanel="{StaticResource ShotColumns}" ItemContainerStyle="{StaticResource ShotColumnStyle}"
+                                Focusable="False" AutomationProperties.Name="How many are in each shot">
+                    <ItemsControl.ItemTemplate>
+                      <DataTemplate DataType="{x:Type refs:TimelineShotViewModel}">
+                        <Border x:Name="Count" Margin="2,3,2,0" Padding="0,2" CornerRadius="4" Background="Transparent" ToolTip="{Binding ToolTip}">
+                          <TextBlock x:Name="CountText" Text="{Binding CountText}" FontFamily="{StaticResource MonoFont}" FontSize="10" HorizontalAlignment="Center"
+                                     Foreground="{StaticResource TextMutedBrush}" />
+                        </Border>
+                        <DataTemplate.Triggers>
+                          <DataTrigger Binding="{Binding IsFull}" Value="True">
+                            <Setter TargetName="Count" Property="Background" Value="{StaticResource PillErrorBackBrush}" />
+                            <Setter TargetName="CountText" Property="Foreground" Value="{StaticResource PillErrorTextBrush}" />
+                            <Setter TargetName="CountText" Property="FontWeight" Value="Bold" />
+                          </DataTrigger>
+                        </DataTemplate.Triggers>
+                      </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                  </ItemsControl>
+                </Grid>
+
+                <TextBlock FontSize="12" Foreground="{StaticResource TextMutedBrush}" TextWrapping="Wrap" Margin="4,10,0,0"
+                           Text="Click a cell to add or remove a reference for that shot. Minimax takes up to 4 per clip, so a full shot takes no more. Picking a reference lights up the shots it is in." />
+              </StackPanel>
+            </StackPanel>
+          </Border>
 
           <TextBlock Text="Shown once, or in no shot (no reference)" Style="{StaticResource FieldLabelStyle}" Margin="0,12,0,6" />
           <ItemsControl ItemsSource="{Binding Others}" Focusable="False" AutomationProperties.Name="The rest of the cast">

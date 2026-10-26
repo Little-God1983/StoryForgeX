@@ -9,7 +9,7 @@ namespace StoryForge.App.ViewModels.References;
 /// <summary>
 /// The References screen (board 9): the list to confirm, then a card per reference grouped as
 /// characters, places and objects; the image pool; the rest of the cast; the panel of the selected
-/// card or pool picture (in the .Panel file); the stage's bars.
+/// card or pool picture (in the .Panel file); the timeline (in the .Timeline file); the stage's bars.
 /// </summary>
 public sealed partial class ReferencesViewModel(IStoryForgeClient client, Guid projectId, Action<string> openUrl, Func<string?> pickPicture) : ObservableObject
 {
@@ -149,7 +149,20 @@ public sealed partial class ReferencesViewModel(IStoryForgeClient client, Guid p
     /// <summary>A change from the engine for this project, already on the UI thread.</summary>
     public async Task ReceiveAsync(StageUpdate update)
     {
-        if (update.ProjectId != ProjectId || update.Stage != PipelineStage.References)
+        if (update.ProjectId != ProjectId)
+        {
+            return;
+        }
+        if (update.Stage == PipelineStage.Storyboard)
+        {
+            // Who and what is in a shot changed, here or in the Board panel: the timeline shows it.
+            if (update.Activity is null)
+            {
+                await LoadAsync();
+            }
+            return;
+        }
+        if (update.Stage != PipelineStage.References)
         {
             return;
         }
@@ -204,6 +217,7 @@ public sealed partial class ReferencesViewModel(IStoryForgeClient client, Guid p
         Fill(Characters, view.References.Where(r => r.Reference.Kind == CastKind.Character), view.ShotLabels);
         Fill(Places, view.References.Where(r => r.Reference.Kind == CastKind.Place), view.ShotLabels);
         Fill(Objects, view.References.Where(r => r.Reference.Kind == CastKind.Object), view.ShotLabels);
+        FillTimeline(view);
 
         Pool.Clear();
         foreach (var picture in view.Pool)
@@ -233,7 +247,7 @@ public sealed partial class ReferencesViewModel(IStoryForgeClient client, Guid p
         {
             OnPropertyChanged(name);
         }
-        foreach (var command in new IRelayCommand[] { CancelCommand, ProposeCommand, MakeImagesCommand, AddReferenceCommand, MakeReferenceCommand, ApproveRemainingCommand, RetryCommand, ApproveTextOnlyCommand })
+        foreach (var command in new IRelayCommand[] { CancelCommand, ProposeCommand, MakeImagesCommand, AddReferenceCommand, MakeReferenceCommand, ApproveRemainingCommand, RetryCommand, ApproveTextOnlyCommand, ToggleCellCommand })
         {
             command.NotifyCanExecuteChanged();
         }
