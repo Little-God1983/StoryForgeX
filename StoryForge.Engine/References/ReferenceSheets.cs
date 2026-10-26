@@ -73,6 +73,47 @@ internal sealed class ReferenceSheets(IDbContextFactory<StoryForgeDbContext> con
         return (keys, cell.State);
     }
 
+    /// <summary>
+    /// An image you set yourself (a picture used as it is) as the image's next version, to review:
+    /// the references are always reviewed. Its cell is made when it has none yet.
+    /// </summary>
+    /// <returns>The image's state.</returns>
+    public async Task<StageState> WriteImageAsync(Guid projectId, string key, ReferenceImage image, string inputHash, CancellationToken cancellationToken)
+    {
+        await using var db = await contextFactory.CreateDbContextAsync(cancellationToken);
+        var now = clock.GetUtcNow();
+        var cell = await db.Cells.FirstOrDefaultAsync(c => c.ProjectId == projectId && c.Stage == Stage && c.Key == key, cancellationToken);
+        if (cell is null)
+        {
+            cell = new CellEntry { ProjectId = projectId, Stage = Stage, Key = key, State = StageState.NotStarted, UpdatedAt = now };
+            db.Cells.Add(cell);
+        }
+        var next = 1 + (await db.CellVersions.Where(v => v.ProjectId == projectId && v.Stage == Stage && v.Key == key).MaxAsync(v => (int?)v.Version, cancellationToken) ?? 0);
+        db.CellVersions.Add(new CellVersionEntry
+        {
+            ProjectId = projectId,
+            Stage = Stage,
+            Key = key,
+            Version = next,
+            Origin = VersionOrigin.Edited,
+            BasedOn = cell.CurrentVersion,
+            InputHash = inputHash,
+            SchemaVersion = ReferenceSheet.SchemaVersion,
+            OutputJson = StoredJson.Write(image),
+            CreatedAt = now,
+        });
+        cell.CurrentVersion = next;
+        cell.State = StageState.NeedsReview;
+        cell.Error = null;
+        cell.UpdatedAt = now;
+        if (await db.Projects.FirstOrDefaultAsync(p => p.Id == projectId, cancellationToken) is { } project)
+        {
+            project.UpdatedAt = now;
+        }
+        await db.SaveChangesAsync(cancellationToken);
+        return cell.State;
+    }
+
     /// <summary>A stage whose run failed goes back to review: what it made stays. True when it was failed.</summary>
     public async Task<bool> ReviewAgainAsync(Guid projectId, CancellationToken cancellationToken)
     {

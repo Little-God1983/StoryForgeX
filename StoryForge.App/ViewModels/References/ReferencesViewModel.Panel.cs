@@ -46,6 +46,9 @@ public sealed partial class ReferencesViewModel
 
     public bool ShowsMissing => SelectedImage is { Version: > 0, Image.Made: ImageMaking.NoPicture };
 
+    /// <summary>The image is your picture, used as it is: no model made it.</summary>
+    public bool ShowsAsIs => SelectedImage is { Version: > 0, Image.Made: ImageMaking.AsIs };
+
     /// <summary>Why nothing was made, e.g. "No picture was found on the sources."</summary>
     public string MissingWhy => ShowsMissing ? SelectedImage!.Image.Missing : "";
 
@@ -77,6 +80,7 @@ public sealed partial class ReferencesViewModel
 
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(UsePictureCommand))]
+    [NotifyCanExecuteChangedFor(nameof(UseAsItIsCommand))]
     private ReferenceChoice? _useFor;
 
     [ObservableProperty]
@@ -130,7 +134,7 @@ public sealed partial class ReferencesViewModel
         foreach (var name in new[]
         {
             nameof(SelectedCard), nameof(SelectedPicture), nameof(ShowsCard), nameof(ShowsPicture), nameof(ShowsNothingSelected), nameof(SelectedName), nameof(SelectedStatus),
-            nameof(PreviewPath), nameof(ShowsPartial), nameof(MadeUpText), nameof(ShowsMissing), nameof(MissingWhy), nameof(ImageChoices),
+            nameof(PreviewPath), nameof(ShowsPartial), nameof(MadeUpText), nameof(ShowsMissing), nameof(MissingWhy), nameof(ShowsAsIs), nameof(ImageChoices),
             nameof(Versions), nameof(MadeFrom), nameof(Look), nameof(SelectedShots), nameof(MergeChoices), nameof(UseForChoices),
         })
         {
@@ -139,7 +143,7 @@ public sealed partial class ReferencesViewModel
         foreach (var command in new IRelayCommand[]
         {
             ApproveCommand, RegenerateCommand, ShowVersionCommand, AddImageCommand, SearchAgainCommand, AddOwnPictureCommand,
-            FromDescriptionCommand, StartEditLookCommand, SaveLookCommand, MergeCommand, RemoveCommand, RemoveImageCommand, UsePictureCommand, OpenPageCommand, DiscardPictureCommand,
+            FromDescriptionCommand, StartEditLookCommand, SaveLookCommand, MergeCommand, RemoveCommand, RemoveImageCommand, UsePictureCommand, UseAsItIsCommand, OpenPageCommand, DiscardPictureCommand,
         })
         {
             command.NotifyCanExecuteChanged();
@@ -272,6 +276,16 @@ public sealed partial class ReferencesViewModel
     {
         var (picture, reference) = (SelectedPicture!.Id, UseFor!.Id);
         return ActAsync("use the picture", () => client.ChangeReferencesAsync(ProjectId, new ReferenceChange(ReferenceChangeKind.UseSource, ReferenceId: reference, PoolImageId: picture)));
+    }
+
+    // An image it can be exists once the list is confirmed.
+    private bool CanUseAsItIs() => CanUsePicture() && !IsListPhase;
+
+    [RelayCommand(CanExecute = nameof(CanUseAsItIs))]
+    private Task UseAsItIsAsync()
+    {
+        var (picture, reference) = (SelectedPicture!.Id, UseFor!.Id);
+        return ActAsync("use the picture as it is", () => client.ChangeReferencesAsync(ProjectId, new ReferenceChange(ReferenceChangeKind.UseAsItIs, ReferenceId: reference, PoolImageId: picture)));
     }
 
     private bool CanOpenPage() => SelectedPicture is { View.Image.Page.Length: > 0 };

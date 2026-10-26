@@ -57,11 +57,12 @@ public sealed partial class ReferenceCardViewModel(ReferenceView view, IReadOnly
             var n => $"from {n} pictures",
         };
 
-    /// <summary>What Qwen made up, or why nothing was made; empty otherwise.</summary>
+    /// <summary>What Qwen made up, why nothing was made, or that it is your picture as it is; empty otherwise.</summary>
     public string Note => Shown?.Image switch
     {
         { Made: ImageMaking.PartlyMadeUp } image => $"Partly made up: {image.Missing}",
         { Made: ImageMaking.NoPicture } image when Shown.Version > 0 => image.Missing,
+        { Made: ImageMaking.AsIs } when Shown.Version > 0 => "Your picture, as it is",
         _ => "",
     };
 

@@ -192,6 +192,53 @@ public sealed class ReferencesScreenTests
     }
 
     [Fact]
+    public async Task A_pool_picture_is_used_as_it_is_for_a_reference()
+    {
+        var (_, screen, _) = await OpenAsync(id => Images(id));
+
+        screen.Pool[1].SelectCommand.Execute(null);
+        Assert.False(screen.UseAsItIsCommand.CanExecute(null));   // for which reference?
+        screen.UseFor = screen.UseForChoices.Single(c => c.Id == "R03");
+        await screen.UseAsItIsCommand.ExecuteAsync(null);
+        screen.Pool[2].SelectCommand.Execute(null);
+        screen.UseFor = screen.UseForChoices.Single(c => c.Id == "R03");
+
+        Assert.False(screen.UseAsItIsCommand.CanExecute(null));   // too small to be a reference image
+        Assert.Equal(new ReferenceChange(ReferenceChangeKind.UseAsItIs, ReferenceId: "R03", PoolImageId: "P02"), _client.ReferenceChanges.Single());
+    }
+
+    [Fact]
+    public async Task On_the_list_a_picture_is_used_but_not_as_it_is()
+    {
+        var (_, screen, _) = await OpenAsync(Listed);
+
+        screen.Pool[1].SelectCommand.Execute(null);
+        screen.UseFor = screen.UseForChoices.Single(c => c.Id == "R03");
+
+        Assert.True(screen.UsePictureCommand.CanExecute(null));
+        Assert.False(screen.UseAsItIsCommand.CanExecute(null));   // no image yet for it to be
+    }
+
+    [Fact]
+    public async Task An_image_used_as_it_is_says_so_on_the_card_and_in_the_panel()
+    {
+        var (_, screen, _) = await OpenAsync(id => Images(id) with
+        {
+            References = [.. Images(id).References.Select(r => r.Reference.Id == "R01" ? r with { Images = [Image("R01", ImageMaking.AsIs, version: 2)] } : r)],
+        });
+        var karlach = screen.Characters[0];
+
+        karlach.SelectCommand.Execute(null);
+
+        Assert.Equal("Your picture, as it is", karlach.Note);
+        Assert.Equal("review", karlach.StateText);
+        Assert.True(screen.ShowsAsIs);
+        Assert.False(screen.ShowsPartial);
+        Assert.True(screen.ApproveCommand.CanExecute(null));
+        Assert.True(screen.RegenerateCommand.CanExecute(null));
+    }
+
+    [Fact]
     public async Task One_more_image_and_a_name_from_the_rest_of_the_cast()
     {
         var (_, screen, _) = await OpenAsync(id => Images(id));

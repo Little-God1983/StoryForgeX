@@ -77,6 +77,8 @@ public enum ImageMaking
     FromDescription,
     /// <summary>Nothing usable was found, so nothing was made: it cannot be approved.</summary>
     NoPicture,
+    /// <summary>A picture you trust, used as it is: no picture check, no model run.</summary>
+    AsIs,
 }
 
 /// <summary>One reference image, e.g. Karlach's image 1: the cell keyed "R01/1".</summary>
@@ -159,6 +161,11 @@ public enum ReferenceChangeKind
     DiscardFromPool,
     /// <summary>One of a reference's images goes, e.g. one with nothing on it: <see cref="ReferenceChange.ImageKey"/>.</summary>
     RemoveImage,
+    /// <summary>
+    /// <see cref="ReferenceChange.PoolImageId"/> becomes the first image of <see cref="ReferenceChange.ReferenceId"/>
+    /// unchanged, as a new version to review; the reference is made from it when it is made again.
+    /// </summary>
+    UseAsItIs,
 }
 
 /// <summary>One change to the reference list or the pool; the fields its kind names are set.</summary>

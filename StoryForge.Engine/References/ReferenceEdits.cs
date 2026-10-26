@@ -84,6 +84,7 @@ internal sealed class ReferenceEdits(
         string? remake = null;
         string? fill = null;
         string? thrownOut = null;
+        (Reference Reference, PoolImage Picture)? asIs = null;
         switch (change.Change)
         {
             case ReferenceChangeKind.Add:
@@ -189,6 +190,7 @@ internal sealed class ReferenceEdits(
                 break;
             }
             case ReferenceChangeKind.UseSource:
+            case ReferenceChangeKind.UseAsItIs:
             {
                 var reference = Find(sheet, change.ReferenceId);
                 var picture = FindPicture(sheet, change.PoolImageId);
@@ -197,15 +199,29 @@ internal sealed class ReferenceEdits(
                     throw new ArgumentException(
                         $"{picture.Id} is {picture.Width} × {picture.Height} px: an image is made only from a picture of at least {PoolImage.MinUsableSide} px on each side.");
                 }
-                // First, so it is what the image is made from, and made from at once once there are images.
-                sheet = Replace(sheet, reference with
+                // Before the list is confirmed there is no image for it to be.
+                if (change.Change == ReferenceChangeKind.UseAsItIs && sheet.Phase != ReferencePhase.Images)
+                {
+                    throw new InvalidOperationException("Make the images first: the list is still waiting for you.");
+                }
+                // First, so it is what the image is made from, and made from at once once there are
+                // images; used as it is, it is the image, and what Regenerate makes one from.
+                var used = reference with
                 {
                     Sources = [picture.Id, .. reference.Sources.Where(id => id != picture.Id)],
                     Chosen = [.. (reference.Chosen ?? []).Append(picture.Id).Distinct()],
                     Dropped = [.. (reference.Dropped ?? []).Where(id => id != picture.Id)],
                     DescriptionOnly = false,
-                });
-                remake = reference.Id;
+                };
+                sheet = Replace(sheet, used);
+                if (change.Change == ReferenceChangeKind.UseAsItIs)
+                {
+                    asIs = (used, picture);
+                }
+                else
+                {
+                    remake = reference.Id;
+                }
                 break;
             }
             case ReferenceChangeKind.DropSource:
@@ -264,12 +280,43 @@ internal sealed class ReferenceEdits(
         {
             await MakeImagesOfAsync(projectId, remake, cancellationToken);
         }
+        if (asIs is { } kept)
+        {
+            await UseAsItIsAsync(project, kept.Reference, kept.Picture, cancellationToken);
+        }
         if (fill is not null)
         {
             await MakeImagesOfAsync(projectId, fill, cancellationToken, onlyEmpty: true);
         }
         // The rest may all be approved now; or an approved stage got a reference that still needs its image.
         await runner.SettleAsync(projectId, Stage, cancellationToken);
+    }
+
+    /// <summary>
+    /// The picture, copied unchanged, as the next version of the reference's first image (image 1 if
+    /// it has none yet): no picture check, no model run.
+    /// </summary>
+    private async Task UseAsItIsAsync(Project project, Reference reference, PoolImage picture, CancellationToken cancellationToken)
+    {
+        var made = (await cells.ReferenceImagesAsync(project.Id, cancellationToken)).Where(i => i.ReferenceId == reference.Id).Select(i => i.Number);
+        var unmade = (await cells.UnmadeKeysAsync(project.Id, Stage, cancellationToken))
+            .Where(k => k.StartsWith(reference.Id + "/", StringComparison.Ordinal))
+            .Select(k => ReferencesStage.Parse(k).Number);
+        var number = made.Concat(unmade).DefaultIfEmpty(1).Min();
+        var root = await folders.RootAsync(cancellationToken);
+        var source = Path.Combine(root, picture.File);
+        if (!File.Exists(source))
+        {
+            throw new FileNotFoundException($"The file of {picture.Id} is gone from the project folder.", source);
+        }
+        // A copy of its own: the picture may leave the pool later, the image stays.
+        var file = Path.Combine(ProjectFolders.Of(project), "references", $"{reference.Id}-{number}-{Guid.NewGuid().ToString("N")[..8]}{Path.GetExtension(picture.File)}");
+        Directory.CreateDirectory(Path.GetDirectoryName(Path.Combine(root, file))!);
+        File.Copy(source, Path.Combine(root, file));
+        var key = ReferenceImage.KeyOf(reference.Id, number);
+        var image = new ReferenceImage(reference.Id, number, file, [picture.Id], 0, ImageMaking.AsIs, "");
+        var state = await sheets.WriteImageAsync(project.Id, key, image, ReferencesStage.Hash(project.Setup, reference), cancellationToken);
+        runner.Publish(new StageUpdate(project.Id, Stage, state, Key: key));
     }
 
     /// <summary>Your own picture: copied into the pool and used first for the reference, which is made again from it.</summary>
