@@ -204,6 +204,11 @@ internal sealed class ReferenceEdits(
                 {
                     throw new InvalidOperationException("Make the images first: the list is still waiting for you.");
                 }
+                // Before anything is saved: the image is a copy of the file.
+                if (change.Change == ReferenceChangeKind.UseAsItIs && !File.Exists(Path.Combine(await folders.RootAsync(cancellationToken), picture.File)))
+                {
+                    throw new FileNotFoundException($"The file of {picture.Id} is gone from the project folder.", picture.File);
+                }
                 // First, so it is what the image is made from, and made from at once once there are
                 // images; used as it is, it is the image, and what Regenerate makes one from.
                 var used = reference with
@@ -305,10 +310,6 @@ internal sealed class ReferenceEdits(
         var number = made.Concat(unmade).DefaultIfEmpty(1).Min();
         var root = await folders.RootAsync(cancellationToken);
         var source = Path.Combine(root, picture.File);
-        if (!File.Exists(source))
-        {
-            throw new FileNotFoundException($"The file of {picture.Id} is gone from the project folder.", source);
-        }
         // A copy of its own: the picture may leave the pool later, the image stays.
         var file = Path.Combine(ProjectFolders.Of(project), "references", $"{reference.Id}-{number}-{Guid.NewGuid().ToString("N")[..8]}{Path.GetExtension(picture.File)}");
         Directory.CreateDirectory(Path.GetDirectoryName(Path.Combine(root, file))!);

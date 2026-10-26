@@ -789,6 +789,43 @@ public sealed partial class ReferencesRunTests
     }
 
     [Fact]
+    public async Task A_picture_whose_file_is_gone_is_not_used_as_it_is_and_changes_nothing()
+    {
+        var (client, projectId) = await ImagedAsync();
+        var before = await client.GetReferencesAsync(projectId);
+        var coin = before.Pool.Single(p => p.Image.Caption == "Coin.png");
+        File.Delete(coin.Path!);
+
+        await Assert.ThrowsAsync<FileNotFoundException>(() =>
+            client.ChangeReferencesAsync(projectId, new ReferenceChange(ReferenceChangeKind.UseAsItIs, ReferenceId: "R01", PoolImageId: coin.Image.Id)));
+
+        var after = await client.GetReferencesAsync(projectId);
+        Assert.Equal(before.References[0].Reference.Sources, after.References[0].Reference.Sources);
+        Assert.Equal(before.Version, after.Version);
+    }
+
+    [Fact]
+    public async Task A_picture_used_as_it_is_over_a_failed_image_leaves_the_failures_log_behind()
+    {
+        // Wyll's picture is passed over first: the failed run has a log to leave.
+        _pictures.ByName["Karlach"] = [FakePictures.Picture("Wyll.png"), FakePictures.Picture("Karlach.png", main: false)];
+        _check.Decide = request => request.Name == "Karlach" && request.PicturePath.Contains("P01") ? new PictureVerdict(false, false, "", "") : null;
+        var (client, projectId) = await ImagedAsync();
+        _comfy.Failure = "ComfyUI is not reachable.";
+        await client.RegenerateSegmentAsync(projectId, PipelineStage.References, "R01/1");
+        var failed = await ReferencesAsync(client, projectId, v => v.References[0].Images[0].State == StageState.Failed);
+        Assert.NotEmpty(failed.References[0].Images[0].Activity);
+        _comfy.Failure = null;
+        var coin = (await client.GetReferencesAsync(projectId)).Pool.Single(p => p.Image.Caption == "Coin.png").Image.Id;
+
+        await client.ChangeReferencesAsync(projectId, new ReferenceChange(ReferenceChangeKind.UseAsItIs, ReferenceId: "R01", PoolImageId: coin));
+
+        var karlach = (await client.GetReferencesAsync(projectId)).References[0].Images[0];
+        Assert.Equal((StageState.NeedsReview, ImageMaking.AsIs, (string?)null), (karlach.State, karlach.Image.Made, karlach.Error));
+        Assert.Empty(karlach.Activity);
+    }
+
+    [Fact]
     public async Task A_picture_is_used_as_it_is_only_once_the_images_are_made()
     {
         var (client, projectId) = await ListedAsync();

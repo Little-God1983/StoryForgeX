@@ -105,6 +105,8 @@ internal sealed class ReferenceSheets(IDbContextFactory<StoryForgeDbContext> con
         cell.CurrentVersion = next;
         cell.State = StageState.NeedsReview;
         cell.Error = null;
+        // Nothing ran: a log left from a failed make is not this image's.
+        cell.ActivityJson = StoredJson.Write(new List<ActivityLine>());
         cell.UpdatedAt = now;
         if (await db.Projects.FirstOrDefaultAsync(p => p.Id == projectId, cancellationToken) is { } project)
         {
