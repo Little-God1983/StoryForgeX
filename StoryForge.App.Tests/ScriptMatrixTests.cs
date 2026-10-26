@@ -221,6 +221,22 @@ public sealed class ScriptMatrixTests
     }
 
     [Fact]
+    public async Task Writing_the_whole_script_again_closes_the_note_line()
+    {
+        var (matrix, project) = await OpenAsync();
+        await WrittenAsync(matrix, project);
+        var script = matrix.Script!;
+        script.AskNoteCommand.Execute(null);
+        script.RegenerateNote = "too long";
+
+        _client.Raise(new StageUpdate(project.Id, PipelineStage.Script, StageState.Running));
+        await matrix.Updating;
+
+        Assert.False(script.IsAskingNote);
+        Assert.Equal("", script.RegenerateNote);
+    }
+
+    [Fact]
     public async Task Selecting_another_cell_closes_the_note_line()
     {
         var (matrix, project) = await OpenAsync();

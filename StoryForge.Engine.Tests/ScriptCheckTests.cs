@@ -177,4 +177,15 @@ public sealed class ScriptCheckTests
 
         Assert.Contains("Why it is written again: mention Karlach earlier", prompt);
     }
+
+    [Fact]
+    public void A_note_may_ask_for_another_length()
+    {
+        IReadOnlyList<Segment> script = [new("S01", "Hook", "A coin screams in the dark of the crypt.", ["F01"])];
+
+        var prompt = ClaudeCliScriptAgent.SegmentPrompt(new ScriptRequest(Guid.NewGuid(), "b", Sheet, "", "", "English", 240), script, "S01", "too long");
+
+        Assert.Contains("Unless the note asks for another length, keep it about as long (about 4 seconds)", prompt);
+        Assert.DoesNotContain("a new take on the same part of the video, about as long", prompt);
+    }
 }

@@ -117,11 +117,18 @@ internal sealed class ClaudeCliScriptAgent(ClaudeCli claude, IOptions<StoryForge
         var current = script.First(s => s.Id == segmentId);
         var others = script.Where(s => s.Id != segmentId).SelectMany(s => s.FactIds).ToHashSet();
         var keep = request.Facts.Facts.Where(f => !f.LeftOut && f.Weight >= Fact.MustWeight && current.FactIds.Contains(f.Id) && !others.Contains(f.Id)).Select(f => f.Id).ToList();
-        prompt.AppendLine(CultureInfo.InvariantCulture,
-            $"Write {segmentId} again: a new take on the same part of the video, about as long (about {ScriptSheet.Seconds(current.Narration, request.Language)} seconds), fitting between the segments before and after it.");
-        if (note is not null)
+        var seconds = ScriptSheet.Seconds(current.Narration, request.Language);
+        if (note is null)
         {
+            prompt.AppendLine(CultureInfo.InvariantCulture,
+                $"Write {segmentId} again: a new take on the same part of the video, about as long (about {seconds} seconds), fitting between the segments before and after it.");
+        }
+        else
+        {
+            // The note comes first: "too long" must not lose to the usual "about as long".
+            prompt.AppendLine($"Write {segmentId} again: a new take on the same part of the video, fitting between the segments before and after it.");
             prompt.AppendLine($"Why it is written again: {note}");
+            prompt.AppendLine(CultureInfo.InvariantCulture, $"Unless the note asks for another length, keep it about as long (about {seconds} seconds).");
         }
         if (keep.Count > 0)
         {

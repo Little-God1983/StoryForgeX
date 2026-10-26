@@ -20,6 +20,9 @@ public sealed partial class ScriptMatrixViewModel
     [ObservableProperty]
     private string _copiedText = "";
 
+    // What Copy all put on the clipboard; "Copied" shows only while the script still reads so.
+    private string? _copied;
+
     /// <summary>Puts text on the clipboard; tests pass their own.</summary>
     public Action<string> CopyText { get; set; } = System.Windows.Clipboard.SetText;
 
@@ -45,7 +48,9 @@ public sealed partial class ScriptMatrixViewModel
         StartEdit();
     }
 
-    [RelayCommand]
+    private bool CanShowRowVersion(SegmentVersionChoice? choice) => CanActOnRow(Rows.FirstOrDefault(r => r.Id == choice?.Key));
+
+    [RelayCommand(CanExecute = nameof(CanShowRowVersion))]
     private Task ShowRowVersionAsync(SegmentVersionChoice? choice) =>
         ActAsync("switch the version", () => client.SelectSegmentVersionAsync(ProjectId, PipelineStage.Script, choice!.Key!, choice.Version));
 
@@ -55,7 +60,9 @@ public sealed partial class ScriptMatrixViewModel
     {
         try
         {
-            CopyText(string.Join(Environment.NewLine + Environment.NewLine, Rows.Select(r => r.Narration)));
+            var text = WholeNarration();
+            CopyText(text);
+            _copied = text;
             CopiedText = $"Copied: {Rows.Count} segments, {Rows.Sum(r => r.Words)} words.";
             ActionError = null;
         }
@@ -66,6 +73,8 @@ public sealed partial class ScriptMatrixViewModel
             ActionError = $"Could not copy the script: {ex.Message}";
         }
     }
+
+    private string WholeNarration() => string.Join(Environment.NewLine + Environment.NewLine, Rows.Select(r => r.Narration));
 
     partial void OnIsAskingNoteChanged(bool value) => RefreshRowModes();
 
@@ -86,5 +95,6 @@ public sealed partial class ScriptMatrixViewModel
         ApproveRowCommand.NotifyCanExecuteChanged();
         AskNoteRowCommand.NotifyCanExecuteChanged();
         StartEditRowCommand.NotifyCanExecuteChanged();
+        ShowRowVersionCommand.NotifyCanExecuteChanged();
     }
 }

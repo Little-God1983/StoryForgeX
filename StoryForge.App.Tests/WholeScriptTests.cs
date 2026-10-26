@@ -141,7 +141,9 @@ public sealed class WholeScriptTests
         Assert.False(script.ApproveRowCommand.CanExecute(script.Rows[1]));
         Assert.False(script.AskNoteRowCommand.CanExecute(script.Rows[1]));
         Assert.False(script.StartEditRowCommand.CanExecute(script.Rows[1]));
+        Assert.False(script.ShowRowVersionCommand.CanExecute(script.Rows[1].Versions[0]));
         Assert.True(script.AskNoteRowCommand.CanExecute(script.Rows[2]));
+        Assert.True(script.ShowRowVersionCommand.CanExecute(script.Rows[2].Versions[0]));
     }
 
     [Fact]
@@ -157,5 +159,25 @@ public sealed class WholeScriptTests
         var nl = Environment.NewLine;
         Assert.Equal($"Hold one, and strange whispers fill your mind.{nl}{nl}In the Nine Hells, they are money.{nl}{nl}A spell can set it free.", copied);
         Assert.Equal("Copied: 3 segments, 21 words.", script.CopiedText);
+    }
+
+    [Fact]
+    public async Task Copied_goes_away_once_the_script_changes()
+    {
+        var (matrix, project) = await OpenAsync();
+        var script = matrix.Script!;
+        script.CopyText = _ => { };
+        script.CopyAllCommand.Execute(null);
+
+        _client.Raise(new StageUpdate(project.Id, PipelineStage.Script, StageState.NeedsReview, Key: "S01"));
+        await matrix.Updating;
+        Assert.Equal("Copied: 3 segments, 21 words.", script.CopiedText);   // the same script: what was copied still holds
+
+        var view = _client.Scripts[project.Id];
+        _client.Scripts[project.Id] = view with { Segments = [view.Segments[0], view.Segments[1] with { Narration = "In Hell, souls are money." }, view.Segments[2]] };
+        _client.Raise(new StageUpdate(project.Id, PipelineStage.Script, StageState.NeedsReview, Key: "S02"));
+        await matrix.Updating;
+
+        Assert.Equal("", script.CopiedText);
     }
 }

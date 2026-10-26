@@ -416,6 +416,7 @@ public sealed partial class ScriptMatrixViewModel(IStoryForgeClient client, Guid
                 State = StageState.Running;
                 Error = null;
                 IsEditing = false;
+                CloseNote();   // every segment is written anew: a note for the old one would go with the new text
             }
             if (update.Activity is { } line)
             {
@@ -534,6 +535,10 @@ public sealed partial class ScriptMatrixViewModel(IStoryForgeClient client, Guid
             start += row.Segment.Seconds;
         }
         WholeScriptTotals = $"{Rows.Count} segments · {Clock(start)} · {Rows.Sum(r => r.Words)} words";
+        if (WholeNarration() != _copied)
+        {
+            CopiedText = "";   // the clipboard holds an older script
+        }
         ApplyVoice(voice);
         ApplyBoard(board);
         if (Selected is null || !Rows.Contains(Selected) || (IsBoardPanel && (SelectedShot is null || !Selected.Shots.Contains(SelectedShot))))
