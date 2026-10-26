@@ -111,5 +111,6 @@ public sealed partial class ScriptMatrixViewModel
         StartEditCommand.NotifyCanExecuteChanged();
         AskNoteCommand.NotifyCanExecuteChanged();
         ShowVersionCommand.NotifyCanExecuteChanged();
+        RegenerateScriptCommand.NotifyCanExecuteChanged();
     }
 }

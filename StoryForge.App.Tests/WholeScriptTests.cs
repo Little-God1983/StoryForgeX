@@ -273,6 +273,26 @@ public sealed class WholeScriptTests
     }
 
     [Fact]
+    public async Task Writing_the_whole_script_again_waits_for_your_text()
+    {
+        var (matrix, _) = await OpenAsync();
+        var script = matrix.Script!;
+        Assert.True(script.RegenerateScriptCommand.CanExecute(null));
+
+        script.StartEditRowCommand.Execute(script.Rows[1]);
+        Assert.False(script.RegenerateScriptCommand.CanExecute(null));   // it would throw your edit away
+        script.CancelEditCommand.Execute(null);
+
+        script.AskNoteRowCommand.Execute(script.Rows[2]);
+        Assert.True(script.RegenerateScriptCommand.CanExecute(null));    // an empty note line is no loss
+        script.RegenerateNote = "too long";
+        Assert.False(script.RegenerateScriptCommand.CanExecute(null));
+
+        script.CancelNoteCommand.Execute(null);
+        Assert.True(script.RegenerateScriptCommand.CanExecute(null));
+    }
+
+    [Fact]
     public async Task Copy_all_copies_the_whole_narration()
     {
         var (matrix, _) = await OpenAsync();

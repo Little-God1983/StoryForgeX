@@ -727,7 +727,8 @@ public sealed partial class ScriptMatrixViewModel(IStoryForgeClient client, Guid
         {
             Debug.WriteLine($"Could not {what}: {ex}");
             ActionError = $"Could not {what}: {ex.Message}";
-            if (note is not null && !IsAskingNote && !IsEditing && Selected == row && IsScriptPanel)
+            // Not when it is being written after all: the note would sit on a version you have not read.
+            if (note is not null && !IsAskingNote && !IsEditing && !IsRunning && Selected == row && row?.State != StageState.Running && IsScriptPanel)
             {
                 // Not sent: your note comes back to try again.
                 IsAskingNote = true;
@@ -756,7 +757,8 @@ public sealed partial class ScriptMatrixViewModel(IStoryForgeClient client, Guid
         RegenerateNote = "";
     }
 
-    private bool CanRegenerateScript() => !IsRunning;
+    // A whole run writes every segment anew and closes the editor and the note line: your text waits for Save, Send or Cancel first.
+    private bool CanRegenerateScript() => !IsRunning && !IsEditing && !HasUnsentNote;
 
     /// <summary>Regenerate the whole script; Retry after a failure; Write the script before the first run.</summary>
     [RelayCommand(CanExecute = nameof(CanRegenerateScript))]
