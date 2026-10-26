@@ -749,6 +749,95 @@ public sealed partial class ReferencesRunTests
     }
 
     [Fact]
+    public async Task A_picture_used_as_it_is_is_the_image_unchanged_with_no_check_and_no_model_run()
+    {
+        var (client, projectId) = await ImagedAsync();
+        var coin = (await client.GetReferencesAsync(projectId)).Pool.Single(p => p.Image.Caption == "Coin.png");
+        var (runs, checks) = (_comfy.Workflows.Count, _check.Requests.Count);
+
+        await client.ChangeReferencesAsync(projectId, new ReferenceChange(ReferenceChangeKind.UseAsItIs, ReferenceId: "R01", PoolImageId: coin.Image.Id));
+
+        var view = await client.GetReferencesAsync(projectId);
+        var karlach = view.References[0].Images[0];
+        Assert.Equal(("R01/1", 2, StageState.NeedsReview, ImageMaking.AsIs), (karlach.Key, karlach.Version, karlach.State, karlach.Image.Made));
+        Assert.Equal(VersionOrigin.Edited, karlach.Versions[^1].Origin);
+        Assert.Equal([coin.Image.Id], karlach.Image.Sources);
+        Assert.Equal(coin.Image.Id, view.References[0].Reference.Sources[0]);   // what Regenerate makes one from
+        Assert.Equal(await File.ReadAllBytesAsync(coin.Path!), await File.ReadAllBytesAsync(karlach.Path!));
+        Assert.NotEqual(coin.Path, karlach.Path);   // a copy: the picture may leave the pool
+        Assert.Equal((runs, checks), (_comfy.Workflows.Count, _check.Requests.Count));
+        Assert.Equal(StageState.NeedsReview, view.State);
+    }
+
+    [Fact]
+    public async Task A_picture_used_as_it_is_can_be_approved_and_made_again_by_the_model()
+    {
+        var (client, projectId) = await ImagedAsync();
+        var coin = (await client.GetReferencesAsync(projectId)).Pool.Single(p => p.Image.Caption == "Coin.png").Image.Id;
+        await client.ChangeReferencesAsync(projectId, new ReferenceChange(ReferenceChangeKind.UseAsItIs, ReferenceId: "R01", PoolImageId: coin));
+        await client.ApproveSegmentAsync(projectId, PipelineStage.References, "R01/1", 2);
+        var runs = _comfy.Workflows.Count;
+
+        await client.RegenerateSegmentAsync(projectId, PipelineStage.References, "R01/1");
+        var view = await ReferencesAsync(client, projectId, v => v.References[0].Images[0] is { Version: 3, State: not StageState.Running });
+
+        var karlach = view.References[0].Images[0];
+        Assert.Equal((ImageMaking.FromPicture, StageState.NeedsReview), (karlach.Image.Made, karlach.State));
+        Assert.Equal([coin], karlach.Image.Sources);
+        Assert.Equal(runs + 1, _comfy.Workflows.Count);
+        Assert.Equal(2, karlach.ApprovedVersion);
+    }
+
+    [Fact]
+    public async Task A_picture_whose_file_is_gone_is_not_used_as_it_is_and_changes_nothing()
+    {
+        var (client, projectId) = await ImagedAsync();
+        var before = await client.GetReferencesAsync(projectId);
+        var coin = before.Pool.Single(p => p.Image.Caption == "Coin.png");
+        File.Delete(coin.Path!);
+
+        await Assert.ThrowsAsync<FileNotFoundException>(() =>
+            client.ChangeReferencesAsync(projectId, new ReferenceChange(ReferenceChangeKind.UseAsItIs, ReferenceId: "R01", PoolImageId: coin.Image.Id)));
+
+        var after = await client.GetReferencesAsync(projectId);
+        Assert.Equal(before.References[0].Reference.Sources, after.References[0].Reference.Sources);
+        Assert.Equal(before.Version, after.Version);
+    }
+
+    [Fact]
+    public async Task A_picture_used_as_it_is_over_a_failed_image_leaves_the_failures_log_behind()
+    {
+        // Wyll's picture is passed over first: the failed run has a log to leave.
+        _pictures.ByName["Karlach"] = [FakePictures.Picture("Wyll.png"), FakePictures.Picture("Karlach.png", main: false)];
+        _check.Decide = request => request.Name == "Karlach" && request.PicturePath.Contains("P01") ? new PictureVerdict(false, false, "", "") : null;
+        var (client, projectId) = await ImagedAsync();
+        _comfy.Failure = "ComfyUI is not reachable.";
+        await client.RegenerateSegmentAsync(projectId, PipelineStage.References, "R01/1");
+        var failed = await ReferencesAsync(client, projectId, v => v.References[0].Images[0].State == StageState.Failed);
+        Assert.NotEmpty(failed.References[0].Images[0].Activity);
+        _comfy.Failure = null;
+        var coin = (await client.GetReferencesAsync(projectId)).Pool.Single(p => p.Image.Caption == "Coin.png").Image.Id;
+
+        await client.ChangeReferencesAsync(projectId, new ReferenceChange(ReferenceChangeKind.UseAsItIs, ReferenceId: "R01", PoolImageId: coin));
+
+        var karlach = (await client.GetReferencesAsync(projectId)).References[0].Images[0];
+        Assert.Equal((StageState.NeedsReview, ImageMaking.AsIs, (string?)null), (karlach.State, karlach.Image.Made, karlach.Error));
+        Assert.Empty(karlach.Activity);
+    }
+
+    [Fact]
+    public async Task A_picture_is_used_as_it_is_only_once_the_images_are_made()
+    {
+        var (client, projectId) = await ListedAsync();
+        var coin = (await client.GetReferencesAsync(projectId)).Pool.Single(p => p.Image.Caption == "Coin.png").Image.Id;
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            client.ChangeReferencesAsync(projectId, new ReferenceChange(ReferenceChangeKind.UseAsItIs, ReferenceId: "R01", PoolImageId: coin)));
+
+        Assert.DoesNotContain(coin, (await client.GetReferencesAsync(projectId)).References[0].Reference.Sources);
+    }
+
+    [Fact]
     public async Task Approving_the_rest_while_an_image_was_never_made_says_to_make_the_images()
     {
         var (client, projectId) = await ImagedAsync();

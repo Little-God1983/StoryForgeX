@@ -512,6 +512,14 @@
                   </StackPanel>
                 </Border>
 
+                <Border Style="{StaticResource PanelBoxStyle}" Margin="0,0,0,10" Visibility="{Binding ShowsAsIs, Converter={StaticResource Visible}}">
+                  <StackPanel>
+                    <TextBlock Text="Your picture, as it is" FontWeight="SemiBold" FontSize="13" />
+                    <TextBlock Text="No model made this image: it is the picture you chose, unchanged. Regenerate makes one with the project's reference model." FontSize="12"
+                               Foreground="{StaticResource TextSoftBrush}" TextWrapping="Wrap" Margin="0,4,0,0" />
+                  </StackPanel>
+                </Border>
+
                 <ItemsControl ItemsSource="{Binding Versions}" ItemsPanel="{StaticResource WrapItems}" Focusable="False" Margin="0,0,0,10" AutomationProperties.Name="Versions">
                   <ItemsControl.ItemTemplate>
                     <DataTemplate DataType="{x:Type script:SegmentVersionChoice}">
@@ -568,10 +576,15 @@
                        Foreground="{StaticResource AccentTextBrush}" TextWrapping="Wrap" Margin="0,0,0,10"
                        Visibility="{Binding SelectedPicture.TooSmall, Converter={StaticResource Visible}, FallbackValue=Collapsed}" />
             <TextBlock Text="Source image for" Style="{StaticResource FieldLabelStyle}" />
-            <DockPanel Margin="0,0,0,8">
-              <Button DockPanel.Dock="Right" Content="Use it" Style="{StaticResource SmallButtonStyle}" Margin="6,0,0,0" Command="{Binding UsePictureCommand}" AutomationProperties.Name="Use the picture" />
-              <ComboBox ItemsSource="{Binding UseForChoices}" SelectedItem="{Binding UseFor}" AutomationProperties.Name="Source image for" />
-            </DockPanel>
+            <ComboBox ItemsSource="{Binding UseForChoices}" SelectedItem="{Binding UseFor}" AutomationProperties.Name="Source image for" Margin="0,0,0,6" />
+            <UniformGrid Columns="2" Margin="0,0,0,6">
+              <Button Content="Use it" Style="{StaticResource SmallButtonStyle}" Margin="0,0,3,0" Command="{Binding UsePictureCommand}" AutomationProperties.Name="Use the picture" />
+              <Button Content="Use it as it is" Style="{StaticResource SmallButtonStyle}" Margin="3,0,0,0" Command="{Binding UseAsItIsCommand}"
+                      AutomationProperties.Name="Use the picture as it is" ToolTipService.ShowOnDisabled="True"
+                      ToolTip="Once the images are made: the picture becomes the reference's first image." />
+            </UniformGrid>
+            <TextBlock FontSize="12" Foreground="{StaticResource TextMutedBrush}" TextWrapping="Wrap" Margin="0,0,0,10"
+                       Text="Use it: the reference model makes the reference image from this picture. Use it as it is: this picture is the reference image, unchanged; Regenerate on the reference still makes one with the model." />
             <UniformGrid Columns="2">
               <Button Content="Open the page" Style="{StaticResource SecondaryButtonStyle}" MinHeight="40" Margin="0,0,4,0" Command="{Binding OpenPageCommand}" />
               <Button Content="Discard" Style="{StaticResource SecondaryButtonStyle}" MinHeight="40" Margin="4,0,0,0" Command="{Binding DiscardPictureCommand}" AutomationProperties.Name="Discard from the pool" />
