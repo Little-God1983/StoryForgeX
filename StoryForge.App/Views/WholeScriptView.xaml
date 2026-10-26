@@ -112,6 +112,13 @@
         </DockPanel>
       </Border>
 
+      <!-- Regenerate and Edit text wait for it: they would drop its text. -->
+      <Border Background="{StaticResource NoteBackBrush}" CornerRadius="8" Padding="12,8" Margin="0,0,0,14"
+              Visibility="{Binding IsEditingShot, Converter={StaticResource Visible}}">
+        <TextBlock Text="A shot description is open on the segments screen. Save or cancel it there, then Regenerate and Edit text work here again."
+                   FontSize="13" Foreground="#B4A8F5" TextWrapping="Wrap" />
+      </Border>
+
       <Border Background="{StaticResource PillErrorBackBrush}" CornerRadius="8" Padding="12,8" Margin="0,0,0,14"
               Visibility="{Binding ActionError, Converter={views:NullToCollapsedConverter}}">
         <TextBlock Text="{Binding ActionError}" Foreground="{StaticResource PillErrorTextBrush}" FontSize="13" TextWrapping="Wrap" />
@@ -248,7 +255,7 @@
                   </StackPanel>
                 </Border>
 
-                <TextBlock Text="{Binding NoteText}" FontSize="12" Foreground="{StaticResource TextSoftBrush}" Margin="0,8,0,0"
+                <TextBlock Text="{Binding NoteText}" FontSize="12" Foreground="{StaticResource TextSoftBrush}" Margin="0,8,0,0" TextWrapping="Wrap"
                            Visibility="{Binding HasNote, Converter={StaticResource Visible}}" />
               </StackPanel>
             </Border>

@@ -716,6 +716,7 @@ public sealed partial class ScriptMatrixViewModel(IStoryForgeClient client, Guid
     {
         var what = IsBoardPanel ? "plan the shot again" : IsVoicePanel ? "speak the segment again" : "write the segment again";
         var (stage, row) = (SelectedStage, Selected);
+        var version = row?.Segment.Version;
         var note = IsScriptPanel && IsAskingNote ? RegenerateNote : null;
         // The line closes with the click, so a note opened while this is on its way is not the one closed.
         CloseNote();
@@ -728,7 +729,8 @@ public sealed partial class ScriptMatrixViewModel(IStoryForgeClient client, Guid
             Debug.WriteLine($"Could not {what}: {ex}");
             ActionError = $"Could not {what}: {ex.Message}";
             // Not when it is being written after all: the note would sit on a version you have not read.
-            if (note is not null && !IsAskingNote && !IsEditing && !IsRunning && Selected == row && row?.State != StageState.Running && IsScriptPanel)
+            if (note is not null && !IsAskingNote && !IsEditing && !IsRunning && Selected == row && row?.State != StageState.Running
+                && row?.Segment.Version == version && IsScriptPanel)
             {
                 // Not sent: your note comes back to try again.
                 IsAskingNote = true;
