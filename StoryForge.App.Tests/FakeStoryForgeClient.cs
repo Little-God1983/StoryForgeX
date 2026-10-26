@@ -419,6 +419,9 @@ internal sealed class FakeStoryForgeClient : IStoryForgeClient
 
     public List<(Guid ProjectId, string SegmentId)> RegeneratedSegments { get; } = [];
 
+    /// <summary>The note each script segment was written again with, in order.</summary>
+    public List<string?> RegenerateNotes { get; } = [];
+
     public List<(Guid ProjectId, string SegmentId, string Title, string Narration)> EditedSegments { get; } = [];
 
     public List<(Guid ProjectId, string SegmentId)> CancelledSegments { get; } = [];
@@ -517,6 +520,7 @@ internal sealed class FakeStoryForgeClient : IStoryForgeClient
             return Task.CompletedTask;
         }
         RegeneratedSegments.Add((projectId, segmentId));
+        RegenerateNotes.Add(note);
         return Task.CompletedTask;
     }
 
