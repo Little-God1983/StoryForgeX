@@ -42,4 +42,12 @@ internal static class ReferenceList
         IdOf(references.Select(r => int.TryParse(r.Id.AsSpan(1), out var n) ? n : 0).DefaultIfEmpty(0).Max());
 
     public static bool Same(string a, string b) => string.Equals(a.Trim(), b.Trim(), StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>The name is the reference's, or one merged into it.</summary>
+    public static bool IsNamed(Reference reference, string name) =>
+        Same(reference.Name, name) || (reference.AlsoNamed ?? []).Any(n => Same(n, name));
+
+    /// <summary>The shots it is in: those with its name, or one merged into it, in their who and what.</summary>
+    public static IReadOnlyList<string> ShotsOf(Reference reference, IEnumerable<Shot> shots) =>
+        [.. shots.Where(s => s.Cast.Any(n => IsNamed(reference, n))).Select(s => s.Key)];
 }

@@ -150,6 +150,9 @@ internal sealed class InProcessStoryForgeClient(
 
     public Task MakeReferenceImagesAsync(Guid projectId, CancellationToken cancellationToken = default) => referenceEdits.MakeImagesAsync(projectId, cancellationToken);
 
+    public Task SetReferenceInShotAsync(Guid projectId, string referenceId, string shotKey, bool inShot, CancellationToken cancellationToken = default) =>
+        referenceEdits.SetInShotAsync(projectId, referenceId, shotKey, inShot, cancellationToken);
+
     public Task AddReferenceImageAsync(Guid projectId, string referenceId, CancellationToken cancellationToken = default) => referenceEdits.AddImageAsync(projectId, referenceId, cancellationToken);
 
     public Task SearchSourcesAgainAsync(Guid projectId, string referenceId, CancellationToken cancellationToken = default) => referenceEdits.SearchAgainAsync(projectId, referenceId, cancellationToken);

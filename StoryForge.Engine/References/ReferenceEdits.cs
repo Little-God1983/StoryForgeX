@@ -1,6 +1,7 @@
 using StoryForge.Client;
 using StoryForge.Engine.Pipeline;
 using StoryForge.Engine.Projects;
+using StoryForge.Engine.Storyboard;
 
 namespace StoryForge.Engine.References;
 
@@ -17,7 +18,8 @@ internal sealed class ReferenceEdits(
     CellReader cells,
     ProjectStore projects,
     ProjectFolders folders,
-    PoolBuilder pool)
+    PoolBuilder pool,
+    StoryboardEdits shotEdits)
 {
     private const PipelineStage Stage = PipelineStage.References;
 
@@ -92,7 +94,7 @@ internal sealed class ReferenceEdits(
                 {
                     throw new ArgumentException("A reference needs a name.");
                 }
-                if (sheet.References.Any(r => ReferenceList.Same(r.Name, name)))
+                if (sheet.References.Any(r => ReferenceList.IsNamed(r, name)))
                 {
                     throw new ArgumentException($"{name} is on the list already.");
                 }
@@ -146,6 +148,8 @@ internal sealed class ReferenceEdits(
                 var merged = into with
                 {
                     Shots = [.. into.Shots.Concat(from.Shots).Distinct()],
+                    // Its shots name the one merged in: they show the kept one now.
+                    AlsoNamed = [.. (into.AlsoNamed ?? []).Append(from.Name).Concat(from.AlsoNamed ?? []).Distinct()],
                     Sources = sources,
                     Chosen = chosen,
                     Dropped = dropped,
@@ -394,6 +398,13 @@ internal sealed class ReferenceEdits(
 
     private static ReferenceSheet Replace(ReferenceSheet sheet, Reference reference) =>
         sheet with { References = [.. sheet.References.Select(r => r.Id == reference.Id ? reference : r)] };
+
+    /// <summary>The timeline: the reference goes in the shot or out of it, by its who and what.</summary>
+    public async Task SetInShotAsync(Guid projectId, string referenceId, string shotKey, bool inShot, CancellationToken cancellationToken)
+    {
+        var reference = Find(await SheetAsync(projectId, cancellationToken), referenceId);
+        await shotEdits.SetInShotAsync(projectId, shotKey, reference.Name, name => ReferenceList.IsNamed(reference, name), inShot, cancellationToken);
+    }
 
     private static Reference Find(ReferenceSheet sheet, string? id) =>
         sheet.References.FirstOrDefault(r => r.Id == id) ?? throw new KeyNotFoundException($"There is no reference {id}.");

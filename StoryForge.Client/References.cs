@@ -29,11 +29,12 @@ public sealed record PoolImage(string Id, string Url, string Page, string Captio
 /// <param name="Id">"R01", unique within the project.</param>
 /// <param name="KeyReason">Why it carries the story when it is shown only once; empty otherwise.</param>
 /// <param name="Look">What it looks like, in words: goes into every prompt that shows it.</param>
-/// <param name="Shots">The keys of the shots it is in.</param>
+/// <param name="Shots">The keys of the shots it is in: read from the shots' who and what, by its name or one merged into it.</param>
 /// <param name="Sources">The pool pictures it is made from, by id, the first one first; one too small makes nothing.</param>
 /// <param name="DescriptionOnly">You chose to make it from its look alone.</param>
 /// <param name="Chosen">The pool pictures you picked for it ("Use it"): kept when the sources are searched again.</param>
 /// <param name="Dropped">The pool pictures you took off it: not given back when the sources are searched again.</param>
+/// <param name="AlsoNamed">The names of the references merged into it: a shot with one of them in it shows it too.</param>
 public sealed record Reference(
     string Id,
     string Name,
@@ -44,7 +45,8 @@ public sealed record Reference(
     IReadOnlyList<string> Sources,
     bool DescriptionOnly = false,
     IReadOnlyList<string>? Chosen = null,
-    IReadOnlyList<string>? Dropped = null);
+    IReadOnlyList<string>? Dropped = null,
+    IReadOnlyList<string>? AlsoNamed = null);
 
 /// <summary>On the cast but not a reference: shown in one shot and not key to the story.</summary>
 public sealed record OtherCast(string Name, CastKind Kind, int Shots);
@@ -108,6 +110,12 @@ public sealed record ReferenceView(Reference Reference, IReadOnlyList<ReferenceI
 /// <param name="Path">The picture file to show; null when it is gone.</param>
 public sealed record PoolImageView(PoolImage Image, string? Path, IReadOnlyList<string> UsedFor);
 
+/// <summary>A shot as the References timeline shows it: a column as wide as it lasts.</summary>
+/// <param name="Label">"S01·2".</param>
+/// <param name="Start">Where it starts in the whole video, in seconds.</param>
+/// <param name="Cast">Who and what is in it, references or not: at most <see cref="Shot.MaxCast"/>.</param>
+public sealed record TimelineShot(string Key, string Label, double Start, double Seconds, IReadOnlyList<string> Cast);
+
 /// <summary>Everything the References screen shows.</summary>
 /// <param name="TextOnly">The project makes its stills from text only: no references are needed.</param>
 /// <param name="ShotLabels">Each shot key's label ("S01·2"), for "in 5 shots: S01·2, …".</param>
@@ -125,7 +133,11 @@ public sealed record ReferencesView(
     bool TextOnly,
     IReadOnlyDictionary<string, string> ShotLabels,
     int Version = 0,
-    bool StoryboardApproved = false);
+    bool StoryboardApproved = false)
+{
+    /// <summary>Every shot of the storyboard in order, for the timeline.</summary>
+    public IReadOnlyList<TimelineShot> Shots { get; init; } = [];
+}
 
 /// <summary>What a change to the reference list does.</summary>
 public enum ReferenceChangeKind
