@@ -42,6 +42,26 @@ internal sealed class StoryboardEdits(
                 : [Change.Replace(changed)];
         }, cancellationToken);
 
+    /// <summary>
+    /// The References timeline: who and what is in the shot, as <paramref name="change"/> makes it
+    /// from what it is. The shot keeps its approval: that screen has no Approve for shots.
+    /// </summary>
+    public Task SetCastAsync(Guid projectId, string shotKey, Func<IReadOnlyList<string>, IReadOnlyList<string>> change, CancellationToken cancellationToken) =>
+        ChangeAsync(projectId, shotKey, board =>
+        {
+            var shot = board.Shot;
+            var cast = change(shot.Cast);
+            if (cast.SequenceEqual(shot.Cast))
+            {
+                return [];
+            }
+            if (cast.Count > Shot.MaxCast)
+            {
+                throw new ArgumentException($"{board.Label(board.Index)} has {Shot.MaxCast} in it already: what Minimax takes per clip. Take one out first.");
+            }
+            return [Change.Replace(shot with { Cast = cast })];
+        }, cancellationToken, keepApproval: true);
+
     /// <summary>Moves a shot's start or end by <paramref name="words"/>; the shot on the other side of the cut takes or gives the words.</summary>
     public Task MoveCutAsync(Guid projectId, string shotKey, ShotEdge edge, int words, CancellationToken cancellationToken) =>
         ChangeAsync(projectId, shotKey, board =>
@@ -138,7 +158,8 @@ internal sealed class StoryboardEdits(
         }
     }
 
-    private async Task ChangeAsync(Guid projectId, string shotKey, Func<Board, IReadOnlyList<Change>> plan, CancellationToken cancellationToken)
+    /// <param name="keepApproval">An approved shot stays approved with its new version; otherwise the gate decides.</param>
+    private async Task ChangeAsync(Guid projectId, string shotKey, Func<Board, IReadOnlyList<Change>> plan, CancellationToken cancellationToken, bool keepApproval = false)
     {
         if (runner.IsAnyBusy(projectId, Stage))
         {
@@ -206,9 +227,10 @@ internal sealed class StoryboardEdits(
                     OutputJson = StoredJson.Write(change.Shot),
                     CreatedAt = now,
                 });
+                var review = gated && !(keepApproval && cell.State == StageState.Approved);
                 cell.CurrentVersion = next;
-                cell.State = gated ? StageState.NeedsReview : StageState.Approved;
-                cell.ApprovedVersion = gated ? cell.ApprovedVersion : next;
+                cell.State = review ? StageState.NeedsReview : StageState.Approved;
+                cell.ApprovedVersion = review ? cell.ApprovedVersion : next;
                 cell.Error = null;
                 cell.UpdatedAt = now;
                 states.Add((change.Key, cell.State));

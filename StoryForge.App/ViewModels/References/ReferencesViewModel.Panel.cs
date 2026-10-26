@@ -126,6 +126,7 @@ public sealed partial class ReferencesViewModel
         {
             picture.IsSelected = picture.Id == _selectedPictureId && _selectedCardId is null;
         }
+        RefreshTimeline();
         foreach (var name in new[]
         {
             nameof(SelectedCard), nameof(SelectedPicture), nameof(ShowsCard), nameof(ShowsPicture), nameof(ShowsNothingSelected), nameof(SelectedName), nameof(SelectedStatus),

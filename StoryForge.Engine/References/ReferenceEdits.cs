@@ -1,6 +1,7 @@
 using StoryForge.Client;
 using StoryForge.Engine.Pipeline;
 using StoryForge.Engine.Projects;
+using StoryForge.Engine.Storyboard;
 
 namespace StoryForge.Engine.References;
 
@@ -17,7 +18,8 @@ internal sealed class ReferenceEdits(
     CellReader cells,
     ProjectStore projects,
     ProjectFolders folders,
-    PoolBuilder pool)
+    PoolBuilder pool,
+    StoryboardEdits shotEdits)
 {
     private const PipelineStage Stage = PipelineStage.References;
 
@@ -92,7 +94,7 @@ internal sealed class ReferenceEdits(
                 {
                     throw new ArgumentException("A reference needs a name.");
                 }
-                if (sheet.References.Any(r => ReferenceList.Same(r.Name, name)))
+                if (sheet.References.Any(r => ReferenceList.IsNamed(r, name)))
                 {
                     throw new ArgumentException($"{name} is on the list already.");
                 }
@@ -121,11 +123,21 @@ internal sealed class ReferenceEdits(
             case ReferenceChangeKind.Remove:
             {
                 var reference = Find(sheet, change.ReferenceId);
+                var board = await cells.CurrentStoryboardAsync(projectId, cancellationToken);
+                // Back with the rest of the cast, so "Make it a reference" takes it back; the names
+                // merged into it too, each with its own kind from the storyboard.
+                IReadOnlyList<string> names = [reference.Name, .. reference.AlsoNamed ?? []];
                 sheet = sheet with
                 {
                     References = [.. sheet.References.Where(r => r.Id != reference.Id)],
-                    // Back with the rest of the cast, so "Make it a reference" takes it back.
-                    Others = [.. sheet.Others.Where(o => !ReferenceList.Same(o.Name, reference.Name)), new OtherCast(reference.Name, reference.Kind, reference.Shots.Count)],
+                    Others =
+                    [
+                        .. sheet.Others.Where(o => !names.Any(n => ReferenceList.Same(o.Name, n))),
+                        .. names.Select(n => new OtherCast(
+                            n,
+                            board?.Cast.FirstOrDefault(c => ReferenceList.Same(c.Name, n))?.Kind ?? reference.Kind,
+                            shots.Count(s => s.Cast.Any(c => ReferenceList.Same(c, n))))),
+                    ],
                 };
                 removed.Add(reference.Id);
                 break;
@@ -146,6 +158,8 @@ internal sealed class ReferenceEdits(
                 var merged = into with
                 {
                     Shots = [.. into.Shots.Concat(from.Shots).Distinct()],
+                    // Its shots name the one merged in: they show the kept one now.
+                    AlsoNamed = [.. (into.AlsoNamed ?? []).Append(from.Name).Concat(from.AlsoNamed ?? []).Distinct()],
                     Sources = sources,
                     Chosen = chosen,
                     Dropped = dropped,
@@ -394,6 +408,23 @@ internal sealed class ReferenceEdits(
 
     private static ReferenceSheet Replace(ReferenceSheet sheet, Reference reference) =>
         sheet with { References = [.. sheet.References.Select(r => r.Id == reference.Id ? reference : r)] };
+
+    /// <summary>The timeline: the reference goes in the shot or out of it, by its who and what.</summary>
+    public async Task SetInShotAsync(Guid projectId, string referenceId, string shotKey, bool inShot, CancellationToken cancellationToken)
+    {
+        var sheet = await SheetAsync(projectId, cancellationToken);
+        var reference = Find(sheet, referenceId);
+        await shotEdits.SetCastAsync(projectId, shotKey, cast =>
+        {
+            if (inShot == cast.Any(n => ReferenceList.IsNamed(reference, n)))
+            {
+                return cast;
+            }
+            // Written tidy: a name merged into a reference goes, so the shot does not look fuller than it is.
+            var tidy = ReferenceList.Tidy(cast, sheet.References);
+            return inShot ? [.. tidy, reference.Name] : [.. tidy.Where(n => !ReferenceList.Same(n, reference.Name))];
+        }, cancellationToken);
+    }
 
     private static Reference Find(ReferenceSheet sheet, string? id) =>
         sheet.References.FirstOrDefault(r => r.Id == id) ?? throw new KeyNotFoundException($"There is no reference {id}.");

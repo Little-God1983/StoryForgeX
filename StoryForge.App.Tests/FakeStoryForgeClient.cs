@@ -647,6 +647,16 @@ internal sealed class FakeStoryForgeClient : IStoryForgeClient
 
     public Task MakeReferenceImagesAsync(Guid projectId, CancellationToken cancellationToken = default) => Record("make images", "");
 
+    /// <summary>The timeline's clicks: which reference went in or out of which shot.</summary>
+    public List<(string ReferenceId, string ShotKey, bool InShot)> TimelineChanges { get; } = [];
+
+    public Task SetReferenceInShotAsync(Guid projectId, string referenceId, string shotKey, bool inShot, CancellationToken cancellationToken = default)
+    {
+        ThrowIfFailing();
+        TimelineChanges.Add((referenceId, shotKey, inShot));
+        return Task.CompletedTask;
+    }
+
     public Task AddReferenceImageAsync(Guid projectId, string referenceId, CancellationToken cancellationToken = default) => Record("add image", referenceId);
 
     public Task SearchSourcesAgainAsync(Guid projectId, string referenceId, CancellationToken cancellationToken = default) => Record("search again", referenceId);

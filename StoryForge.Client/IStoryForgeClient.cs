@@ -190,6 +190,15 @@ public interface IStoryForgeClient
     /// <exception cref="InvalidOperationException">The References stage is running.</exception>
     Task MakeReferenceImagesAsync(Guid projectId, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// The timeline: puts the reference in the shot, or takes it out, by changing who and what is in
+    /// the shot, as the Board panel does. The shot keeps its approval.
+    /// </summary>
+    /// <exception cref="KeyNotFoundException">No such project, reference or shot.</exception>
+    /// <exception cref="ArgumentException">The shot has <see cref="Shot.MaxCast"/> in it already.</exception>
+    /// <exception cref="InvalidOperationException">The storyboard is running.</exception>
+    Task SetReferenceInShotAsync(Guid projectId, string referenceId, string shotKey, bool inShot, CancellationToken cancellationToken = default);
+
     /// <summary>"+ image": one more image of the reference, made from its pictures.</summary>
     Task AddReferenceImageAsync(Guid projectId, string referenceId, CancellationToken cancellationToken = default);
 

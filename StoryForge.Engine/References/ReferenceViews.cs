@@ -75,9 +75,11 @@ internal sealed class ReferenceViews(
                 runner.LiveActivity(projectId, Stage, cell.Key) ?? StoredJson.Read<List<ActivityLine>>(cell.ActivityJson));
         }).ToList();
 
+        // Who and what is in a shot is the shot's: the timeline and the Board panel change the same.
         var references = (sheet?.References ?? []).Select(r => new ReferenceView(
-            r,
+            r with { Shots = ReferenceList.ShotsOf(r, shots) },
             [.. images.Where(i => i.Image.ReferenceId == r.Id).OrderBy(i => i.Number)])).ToList();
+        var others = (sheet?.Others ?? []).Select(o => o with { Shots = shots.Count(s => s.Cast.Any(n => ReferenceList.Same(n, o.Name))) }).ToList();
         var pool = (sheet?.Pool ?? []).Select(p => new PoolImageView(
             p,
             Existing(root, p.File),
@@ -90,11 +92,24 @@ internal sealed class ReferenceViews(
             sheet?.Phase ?? ReferencePhase.List,
             references,
             pool,
-            sheet?.Others ?? [],
+            others,
             textOnly,
             labels,
             whole.CurrentVersion ?? 0,
-            storyboardApproved);
+            storyboardApproved) { Shots = Timeline(shots, labels, sheet?.References ?? []) };
+    }
+
+    /// <summary>The shots one after another, as the video plays them: each segment's shots add up to its audio.</summary>
+    private static IReadOnlyList<TimelineShot> Timeline(IReadOnlyList<Shot> shots, IReadOnlyDictionary<string, string> labels, IReadOnlyList<Reference> references)
+    {
+        var start = 0.0;
+        var timeline = new List<TimelineShot>();
+        foreach (var shot in shots)
+        {
+            timeline.Add(new TimelineShot(shot.Key, labels[shot.Key], start, shot.Seconds, ReferenceList.Tidy(shot.Cast, references)));
+            start += shot.Seconds;
+        }
+        return timeline;
     }
 
     private static string? Existing(string root, string? file) =>

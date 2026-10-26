@@ -107,6 +107,9 @@ public sealed class ProviderStatusBoardTests
         public Task ChangeReferencesAsync(Guid projectId, ReferenceChange change, CancellationToken cancellationToken = default) => _inner.ChangeReferencesAsync(projectId, change, cancellationToken);
         public Task AddOwnPictureAsync(Guid projectId, string referenceId, string path, CancellationToken cancellationToken = default) => _inner.AddOwnPictureAsync(projectId, referenceId, path, cancellationToken);
         public Task MakeReferenceImagesAsync(Guid projectId, CancellationToken cancellationToken = default) => _inner.MakeReferenceImagesAsync(projectId, cancellationToken);
+
+        public Task SetReferenceInShotAsync(Guid projectId, string referenceId, string shotKey, bool inShot, CancellationToken cancellationToken = default) =>
+            _inner.SetReferenceInShotAsync(projectId, referenceId, shotKey, inShot, cancellationToken);
         public Task AddReferenceImageAsync(Guid projectId, string referenceId, CancellationToken cancellationToken = default) => _inner.AddReferenceImageAsync(projectId, referenceId, cancellationToken);
         public Task SearchSourcesAgainAsync(Guid projectId, string referenceId, CancellationToken cancellationToken = default) => _inner.SearchSourcesAgainAsync(projectId, referenceId, cancellationToken);
         public Task MakeFromDescriptionAsync(Guid projectId, string referenceId, CancellationToken cancellationToken = default) => _inner.MakeFromDescriptionAsync(projectId, referenceId, cancellationToken);
