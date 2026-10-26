@@ -274,7 +274,8 @@ internal sealed class ProfileStore(
             Provider = "ComfyUI",
             Instructions = "Write one image prompt per shot for this model: subject first, then setting, light and style. No text in the image.",
             PromptTemplate = "{shot.visual}",
-            Inputs = MediaInputs,
+            // And the pictures a reference image is made from, e.g. into a multi-image loader's file list.
+            Inputs = [.. MediaInputs, new("images", "")],
             Sizes = [new("16:9", 1344, 768), new("9:16", 768, 1344)],
         },
         ProfileKind.Video => ProfileContent.Empty with

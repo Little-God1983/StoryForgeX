@@ -308,7 +308,8 @@ internal sealed class ReferencesStage(
             if (uploaded.Count > 0)
             {
                 values[ImageKey] = uploaded[0];
-                values[ImagesKey] = JsonSerializer.Serialize(uploaded);
+                // As a multi-image loader takes them (ITL Multi Image Loader's files_json): files in ComfyUI's input folder.
+                values[ImagesKey] = JsonSerializer.Serialize(uploaded.Select(name => new { name, subfolder = "", type = "input", enabled = true }));
             }
             var name = $"{reference.Name} image {number}";
             var files = await comfy.RunAsync(

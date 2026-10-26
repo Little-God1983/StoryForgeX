@@ -132,6 +132,23 @@ public sealed partial class ReferencesRunTests : IDisposable
     }
 
     [Fact]
+    public async Task A_multi_image_loader_gets_the_pictures_as_a_list_of_files_in_the_input_folder()
+    {
+        // The image is the ITL Multi Image Loader of the Qwen workflow: files_json takes [{"name": …}, …].
+        _inputs = [.. FakeImageComfy.Inputs.Where(i => i.Key != "image"), new("images", "#1.files_json")];
+        var client = await StartAsync();
+        var project = await StoryboardApprovedAsync(client, s => s with { ReviewReferenceList = false });
+
+        var view = await ReferencesAsync(client, project.Id, ImagesMade);
+
+        Assert.Null(view.Error);
+        var files = System.Text.Json.Nodes.JsonNode.Parse((string)_comfy.Workflows[0]["1"]!["inputs"]!["files_json"]!)!.AsArray();
+        var file = Assert.Single(files)!.AsObject();
+        Assert.StartsWith("uploaded-P0", (string)file["name"]!);
+        Assert.Equal(("", "input", true), ((string)file["subfolder"]!, (string)file["type"]!, (bool)file["enabled"]!));
+    }
+
+    [Fact]
     public async Task Without_the_review_the_images_are_made_straight_away()
     {
         var client = await StartAsync();
