@@ -30,7 +30,8 @@ public sealed class ProfileTests : IDisposable
         Assert.Equal("ComfyUI", v1.Content.Provider);
         Assert.Contains(new GenerationSize("16:9", 1344, 768), v1.Content.Sizes);
         Assert.Contains(new GenerationSize("9:16", 768, 1344), v1.Content.Sizes);
-        Assert.Equal(["prompt", "negative", "width", "height", "seed", "steps"], v1.Content.Inputs.Select(i => i.Key));
+        // "images": the pictures a reference image is made from, e.g. into a multi-image loader.
+        Assert.Equal(["prompt", "negative", "width", "height", "seed", "steps", "images"], v1.Content.Inputs.Select(i => i.Key));
     }
 
     [Theory]

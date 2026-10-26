@@ -1,0 +1,252 @@
+{
+  "1": {
+    "inputs": {
+      "unet_name": "qwen_image_2.1_bf16.safetensors",
+      "weight_dtype": "default"
+    },
+    "class_type": "UNETLoader",
+    "_meta": {
+      "title": "Load Diffusion Model"
+    }
+  },
+  "2": {
+    "inputs": {
+      "clip_name": "qwen3vl_8b_bf16.safetensors",
+      "type": "qwen_image",
+      "device": "default"
+    },
+    "class_type": "CLIPLoader",
+    "_meta": {
+      "title": "Load CLIP"
+    }
+  },
+  "4": {
+    "inputs": {
+      "vae_name": "qwen_image_2.1_vae_bf16.safetensors"
+    },
+    "class_type": "VAELoader",
+    "_meta": {
+      "title": "Load VAE"
+    }
+  },
+  "5": {
+    "inputs": {
+      "seed": 318342714435164,
+      "steps": 25,
+      "cfg": 1.0,
+      "sampler_name": "euler",
+      "scheduler": "simple",
+      "denoise": 1.0,
+      "model": [
+        "6",
+        0
+      ],
+      "positive": [
+        "11",
+        0
+      ],
+      "negative": [
+        "11",
+        1
+      ],
+      "latent_image": [
+        "9",
+        0
+      ]
+    },
+    "class_type": "KSampler",
+    "_meta": {
+      "title": "KSampler"
+    }
+  },
+  "6": {
+    "inputs": {
+      "device": "auto",
+      "dtype": "default",
+      "model": [
+        "22",
+        0
+      ]
+    },
+    "class_type": "QwenImage21Cache",
+    "_meta": {
+      "title": "Qwen Image 2.1 Cache"
+    }
+  },
+  "7": {
+    "inputs": {
+      "samples": [
+        "5",
+        0
+      ],
+      "vae": [
+        "4",
+        0
+      ]
+    },
+    "class_type": "VAEDecode",
+    "_meta": {
+      "title": "VAE Decode"
+    }
+  },
+  "8": {
+    "inputs": {
+      "width": 1024,
+      "height": 1024,
+      "batch_size": 1
+    },
+    "class_type": "EmptyLatentImage",
+    "_meta": {
+      "title": "Empty Latent Image"
+    }
+  },
+  "9": {
+    "inputs": {
+      "switch": true,
+      "on_false": [
+        "11",
+        2
+      ],
+      "on_true": [
+        "8",
+        0
+      ]
+    },
+    "class_type": "ComfySwitchNode",
+    "_meta": {
+      "title": "Use Custom Resolution"
+    }
+  },
+  "10": {
+    "inputs": {
+      "files_json": "[]",
+      "downscale_mode": "keep aspect ratio",
+      "max_size": 1200,
+      "output_slots": "10",
+      "Sort by name": null
+    },
+    "class_type": "ITLMultiImageLoader",
+    "_meta": {
+      "title": "ITL Multi Image Loader"
+    }
+  },
+  "11": {
+    "inputs": {
+      "prompt": [
+        "16",
+        0
+      ],
+      "negative_prompt": [
+        "17",
+        0
+      ],
+      "resolution": 0,
+      "clip": [
+        "2",
+        0
+      ],
+      "images.image_1": [
+        "10",
+        1
+      ],
+      "vae": [
+        "4",
+        0
+      ],
+      "images.image_7": [
+        "10",
+        7
+      ],
+      "images.image_8": [
+        "10",
+        8
+      ],
+      "images.image_9": [
+        "10",
+        9
+      ],
+      "images.image_10": [
+        "10",
+        10
+      ],
+      "images.image_2": [
+        "10",
+        2
+      ],
+      "images.image_3": [
+        "10",
+        3
+      ],
+      "images.image_4": [
+        "10",
+        4
+      ],
+      "images.image_5": [
+        "10",
+        5
+      ],
+      "images.image_6": [
+        "10",
+        6
+      ]
+    },
+    "class_type": "TextEncodeQwenImage21",
+    "_meta": {
+      "title": "Text Encode Qwen Image 2.1"
+    }
+  },
+  "16": {
+    "inputs": {
+      "value": ""
+    },
+    "class_type": "PrimitiveStringMultiline",
+    "_meta": {
+      "title": "Positive Prompt"
+    }
+  },
+  "17": {
+    "inputs": {
+      "value": "distilled model so leave empty"
+    },
+    "class_type": "PrimitiveStringMultiline",
+    "_meta": {
+      "title": "Positive Prompt"
+    }
+  },
+  "22": {
+    "inputs": {
+      "PowerLoraLoaderHeaderWidget": {
+        "type": "PowerLoraLoaderHeaderWidget"
+      },
+      "➕ Add Lora": "",
+      "model": [
+        "1",
+        0
+      ],
+      "clip": [
+        "2",
+        0
+      ]
+    },
+    "class_type": "Power Lora Loader (rgthree)",
+    "_meta": {
+      "title": "Power Lora Loader (rgthree)"
+    }
+  },
+  "26": {
+    "inputs": {
+      "filename_prefix": "StoryForge/Qwen21",
+      "format": "png",
+      "format.bit_depth": "8-bit",
+      "format.input_color_space": "sRGB",
+      "images": [
+        "7",
+        0
+      ]
+    },
+    "class_type": "SaveImageAdvanced",
+    "_meta": {
+      "title": "Save Image (Advanced)"
+    }
+  }
+}
