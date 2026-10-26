@@ -123,11 +123,21 @@ internal sealed class ReferenceEdits(
             case ReferenceChangeKind.Remove:
             {
                 var reference = Find(sheet, change.ReferenceId);
+                var board = await cells.CurrentStoryboardAsync(projectId, cancellationToken);
+                // Back with the rest of the cast, so "Make it a reference" takes it back; the names
+                // merged into it too, each with its own kind from the storyboard.
+                IReadOnlyList<string> names = [reference.Name, .. reference.AlsoNamed ?? []];
                 sheet = sheet with
                 {
                     References = [.. sheet.References.Where(r => r.Id != reference.Id)],
-                    // Back with the rest of the cast, so "Make it a reference" takes it back.
-                    Others = [.. sheet.Others.Where(o => !ReferenceList.Same(o.Name, reference.Name)), new OtherCast(reference.Name, reference.Kind, reference.Shots.Count)],
+                    Others =
+                    [
+                        .. sheet.Others.Where(o => !names.Any(n => ReferenceList.Same(o.Name, n))),
+                        .. names.Select(n => new OtherCast(
+                            n,
+                            board?.Cast.FirstOrDefault(c => ReferenceList.Same(c.Name, n))?.Kind ?? reference.Kind,
+                            shots.Count(s => s.Cast.Any(c => ReferenceList.Same(c, n))))),
+                    ],
                 };
                 removed.Add(reference.Id);
                 break;

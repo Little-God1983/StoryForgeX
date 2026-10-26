@@ -106,6 +106,8 @@
 
     <!-- One reference in one shot: a bar in its kind's colour when it is in it. -->
     <DataTemplate x:Key="TimelineCellTemplate" DataType="{x:Type refs:TimelineCellViewModel}">
+      <!-- A full shot's button is disabled and gets no mouse input: the cursor that says so sits around it. -->
+      <Border x:Name="Slot" Background="Transparent">
       <Button Command="{Binding DataContext.ToggleCellCommand, RelativeSource={RelativeSource AncestorType=UserControl}}" CommandParameter="{Binding}"
               Height="26" Cursor="Hand" AutomationProperties.Name="{Binding AccessibleName}" ToolTip="{Binding AccessibleName}"
               ToolTipService.ShowOnDisabled="True" FocusVisualStyle="{StaticResource RoundedFocusVisual}">
@@ -135,12 +137,17 @@
               </Trigger>
               <DataTrigger Binding="{Binding IsBlocked}" Value="True">
                 <Setter TargetName="Cell" Property="Background" Value="#1F1A1A" />
-                <Setter Property="Cursor" Value="No" />
               </DataTrigger>
             </ControlTemplate.Triggers>
           </ControlTemplate>
         </Button.Template>
       </Button>
+      </Border>
+      <DataTemplate.Triggers>
+        <DataTrigger Binding="{Binding IsBlocked}" Value="True">
+          <Setter TargetName="Slot" Property="Cursor" Value="No" />
+        </DataTrigger>
+      </DataTemplate.Triggers>
     </DataTemplate>
   </UserControl.Resources>
 

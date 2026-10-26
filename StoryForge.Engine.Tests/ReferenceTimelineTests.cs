@@ -100,6 +100,19 @@ public sealed partial class ReferencesRunTests
     }
 
     [Fact]
+    public async Task A_removed_reference_gives_back_the_names_merged_into_it_to_the_rest_of_the_cast()
+    {
+        var (client, projectId) = await ListedAsync();
+        await client.ChangeReferencesAsync(projectId, new ReferenceChange(ReferenceChangeKind.Merge, ReferenceId: "R02", OtherId: "R01"));
+
+        await client.ChangeReferencesAsync(projectId, new ReferenceChange(ReferenceChangeKind.Remove, ReferenceId: "R01"));
+
+        var others = (await client.GetReferencesAsync(projectId)).Others;
+        Assert.Equal(56, others.Single(o => o.Name == "Karlach").Shots);
+        Assert.Equal((CastKind.Object, 4), (others.Single(o => o.Name == "Soul coin").Kind, others.Single(o => o.Name == "Soul coin").Shots));
+    }
+
+    [Fact]
     public async Task Putting_a_reference_in_a_shot_it_is_in_already_changes_nothing()
     {
         var (client, projectId) = await ListedAsync();
