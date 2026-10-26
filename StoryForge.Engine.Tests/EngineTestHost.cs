@@ -70,8 +70,8 @@ internal sealed class EngineTestHost : IDisposable
         public Task<ScriptAnswer<ScriptOutput>> WriteAsync(ScriptRequest request, string? session, IReadOnlyList<string> problems,
             IProgress<ActivityLine> activity, CancellationToken cancellationToken) => throw new StageFailedException(Reason);
 
-        public Task<ScriptAnswer<ScriptPart>> RewriteAsync(ScriptRequest request, IReadOnlyList<Segment> script, string segmentId, string? session,
-            IReadOnlyList<string> problems, IProgress<ActivityLine> activity, CancellationToken cancellationToken) => throw new StageFailedException(Reason);
+        public Task<ScriptAnswer<ScriptPart>> RewriteAsync(ScriptRequest request, IReadOnlyList<Segment> script, string segmentId, string? note,
+            string? session, IReadOnlyList<string> problems, IProgress<ActivityLine> activity, CancellationToken cancellationToken) => throw new StageFailedException(Reason);
 
         public Task<ScriptAnswer<StoryboardOutput>> PlanAsync(StoryboardRequest request, string? session, IReadOnlyList<string> problems,
             IProgress<ActivityLine> activity, CancellationToken cancellationToken) => throw new StageFailedException(Reason);

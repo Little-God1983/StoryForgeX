@@ -31,9 +31,10 @@ internal interface IScriptAgent
         ScriptRequest request, string? session, IReadOnlyList<string> problems, IProgress<ActivityLine> activity, CancellationToken cancellationToken);
 
     /// <summary>One segment again, fitting into the rest of the script as it stands.</summary>
+    /// <param name="note">Why it is written again, as you said on Regenerate; null without one.</param>
     /// <exception cref="Pipeline.StageFailedException">The model could not be asked.</exception>
     Task<ScriptAnswer<ScriptPart>> RewriteAsync(
-        ScriptRequest request, IReadOnlyList<Segment> script, string segmentId, string? session, IReadOnlyList<string> problems,
+        ScriptRequest request, IReadOnlyList<Segment> script, string segmentId, string? note, string? session, IReadOnlyList<string> problems,
         IProgress<ActivityLine> activity, CancellationToken cancellationToken);
 }
 
@@ -65,12 +66,12 @@ internal sealed class ClaudeCliScriptAgent(ClaudeCli claude, IOptions<StoryForge
     }
 
     public async Task<ScriptAnswer<ScriptPart>> RewriteAsync(
-        ScriptRequest request, IReadOnlyList<Segment> script, string segmentId, string? session, IReadOnlyList<string> problems,
+        ScriptRequest request, IReadOnlyList<Segment> script, string segmentId, string? note, string? session, IReadOnlyList<string> problems,
         IProgress<ActivityLine> activity, CancellationToken cancellationToken)
     {
         Report(activity, session is null ? $"writing {segmentId} again" : $"fixing {segmentId}");
         var reply = await claude.AskAsync(
-            Call(request, session is null ? SegmentPrompt(request, script, segmentId) : CorrectionPrompt(problems, $"segment {segmentId}"), SegmentSchema, session),
+            Call(request, session is null ? SegmentPrompt(request, script, segmentId, note) : CorrectionPrompt(problems, $"segment {segmentId}"), SegmentSchema, session),
             new ClaudeStream(new ResearchPages(), activity, clock, $"writing {segmentId}"),
             cancellationToken);
         ReportCost(activity, reply);
@@ -102,7 +103,7 @@ internal sealed class ClaudeCliScriptAgent(ClaudeCli claude, IOptions<StoryForge
         return prompt.ToString();
     }
 
-    internal static string SegmentPrompt(ScriptRequest request, IReadOnlyList<Segment> script, string segmentId)
+    internal static string SegmentPrompt(ScriptRequest request, IReadOnlyList<Segment> script, string segmentId, string? note)
     {
         var prompt = new StringBuilder();
         prompt.AppendLine($"Here is the script of a video in {request.Language}, segment by segment:");
@@ -116,8 +117,19 @@ internal sealed class ClaudeCliScriptAgent(ClaudeCli claude, IOptions<StoryForge
         var current = script.First(s => s.Id == segmentId);
         var others = script.Where(s => s.Id != segmentId).SelectMany(s => s.FactIds).ToHashSet();
         var keep = request.Facts.Facts.Where(f => !f.LeftOut && f.Weight >= Fact.MustWeight && current.FactIds.Contains(f.Id) && !others.Contains(f.Id)).Select(f => f.Id).ToList();
-        prompt.AppendLine(CultureInfo.InvariantCulture,
-            $"Write {segmentId} again: a new take on the same part of the video, about as long (about {ScriptSheet.Seconds(current.Narration, request.Language)} seconds), fitting between the segments before and after it.");
+        var seconds = ScriptSheet.Seconds(current.Narration, request.Language);
+        if (note is null)
+        {
+            prompt.AppendLine(CultureInfo.InvariantCulture,
+                $"Write {segmentId} again: a new take on the same part of the video, about as long (about {seconds} seconds), fitting between the segments before and after it.");
+        }
+        else
+        {
+            // The note comes first: "too long" must not lose to the usual "about as long".
+            prompt.AppendLine($"Write {segmentId} again: a new take on the same part of the video, fitting between the segments before and after it.");
+            prompt.AppendLine($"Why it is written again: {note}");
+            prompt.AppendLine(CultureInfo.InvariantCulture, $"Unless the note asks for another length, keep it about as long (about {seconds} seconds).");
+        }
         if (keep.Count > 0)
         {
             prompt.AppendLine($"It must keep {string.Join(", ", keep)}: marked must, and no other segment uses them.");

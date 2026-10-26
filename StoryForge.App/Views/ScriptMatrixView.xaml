@@ -245,8 +245,12 @@
       </Border>
 
       <StackPanel Margin="0,0,0,12" Visibility="{Binding HasSegments, Converter={StaticResource Visible}}">
-        <TextBlock Text="{Binding LengthSummary}" FontFamily="{StaticResource MonoFont}" FontSize="12" Foreground="{StaticResource TextMutedBrush}"
-                   AutomationProperties.AutomationId="ScriptLength" />
+        <DockPanel>
+          <Button DockPanel.Dock="Right" Content="Show whole script" Style="{StaticResource SmallButtonStyle}" VerticalAlignment="Center"
+                  Command="{Binding DataContext.ShowWholeScriptCommand, RelativeSource={RelativeSource AncestorType=views:ResultMatrixView}}" />
+          <TextBlock Text="{Binding LengthSummary}" FontFamily="{StaticResource MonoFont}" FontSize="12" Foreground="{StaticResource TextMutedBrush}"
+                     VerticalAlignment="Center" AutomationProperties.AutomationId="ScriptLength" />
+        </DockPanel>
         <TextBlock Text="{Binding LengthNote}" FontSize="13" Foreground="{StaticResource AccentTextBrush}" TextWrapping="Wrap" Margin="0,4,0,0"
                    Visibility="{Binding LengthNote, Converter={views:NullToCollapsedConverter}}" />
         <TextBlock Text="{Binding PacingSummary}" FontFamily="{StaticResource MonoFont}" FontSize="12" Foreground="{StaticResource TextMutedBrush}" Margin="0,4,0,0"
@@ -420,8 +424,32 @@
             <StackPanel DockPanel.Dock="Bottom" Margin="0,14,0,0" Visibility="{Binding IsNotEditingAny, Converter={StaticResource Visible}}">
               <UniformGrid Columns="2">
                 <Button Content="Approve" Style="{StaticResource PrimaryButtonStyle}" Margin="0,0,4,0" Background="#58B7A6" Command="{Binding ApproveSegmentCommand}" />
-                <Button Content="Regenerate" Style="{StaticResource SecondaryButtonStyle}" MinHeight="44" Margin="4,0,0,0" Command="{Binding RegenerateSegmentCommand}" />
+                <Grid Margin="4,0,0,0">
+                  <!-- A segment's Regenerate opens the note line first; a voice's or a shot's makes it again at once. -->
+                  <Button Content="Regenerate" Style="{StaticResource SecondaryButtonStyle}" MinHeight="44" Command="{Binding AskNoteCommand}"
+                          Visibility="{Binding IsScriptPanel, Converter={StaticResource Visible}}" />
+                  <Button Content="Regenerate" Style="{StaticResource SecondaryButtonStyle}" MinHeight="44" Command="{Binding RegenerateSegmentCommand}"
+                          Visibility="{Binding IsNotScriptPanel, Converter={StaticResource Visible}}" />
+                </Grid>
               </UniformGrid>
+              <Border Background="{StaticResource CardBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="8" Padding="12,10" Margin="0,8,0,0"
+                      Visibility="{Binding IsAskingNote, Converter={StaticResource Visible}}">
+                <StackPanel>
+                  <TextBlock Text="Why write it again? (optional, e.g. too long)" Style="{StaticResource FieldLabelStyle}" />
+                  <TextBox Text="{Binding RegenerateNote, UpdateSourceTrigger=PropertyChanged}" FontSize="13" Padding="10,7"
+                           views:FocusWhenShown.IsEnabled="True" AutomationProperties.Name="Why write it again (optional)">
+                    <TextBox.InputBindings>
+                      <KeyBinding Key="Enter" Command="{Binding RegenerateSegmentCommand}" />
+                      <KeyBinding Key="Escape" Command="{Binding CancelNoteCommand}" />
+                    </TextBox.InputBindings>
+                  </TextBox>
+                  <UniformGrid Columns="2" Margin="0,8,0,0">
+                    <Button Content="Write it again" Style="{StaticResource PrimaryButtonStyle}" Margin="0,0,4,0" Command="{Binding RegenerateSegmentCommand}" />
+                    <Button Content="Cancel" Style="{StaticResource SecondaryButtonStyle}" MinHeight="44" Margin="4,0,0,0" Command="{Binding CancelNoteCommand}"
+                            AutomationProperties.Name="Cancel the note" />
+                  </UniformGrid>
+                </StackPanel>
+              </Border>
               <Button Content="Edit text…" Style="{StaticResource SecondaryButtonStyle}" MinHeight="44" Margin="0,8,0,0" Command="{Binding StartEditCommand}"
                       Visibility="{Binding IsScriptPanel, Converter={StaticResource Visible}}" />
               <UniformGrid Columns="2" Margin="0,8,0,0" Visibility="{Binding IsBoardPanel, Converter={StaticResource Visible}}">
@@ -439,6 +467,8 @@
                 <TextBlock Text="SELECTED" Style="{StaticResource SectionLabelStyle}" />
                 <TextBlock Text="{Binding SelectedHeading}" FontSize="18" FontWeight="Bold" Margin="0,2,0,0" />
                 <TextBlock Text="{Binding SelectedStatus}" FontSize="13" Foreground="{StaticResource TextSoftBrush}" Margin="0,2,0,10" />
+                <TextBlock Text="{Binding SelectedNote}" FontSize="12" Foreground="{StaticResource TextSoftBrush}" TextWrapping="Wrap" Margin="0,-6,0,10"
+                           Visibility="{Binding SelectedNote, Converter={views:NullToCollapsedConverter}}" />
                 <TextBlock Text="{Binding SelectedError}" FontSize="13" Foreground="{StaticResource ErrorTextBrush}" TextWrapping="Wrap" Margin="0,0,0,10"
                            Visibility="{Binding SelectedError, Converter={views:NullToCollapsedConverter}}" />
                 <Border Background="{StaticResource CardBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="8" Padding="12,8" Margin="0,0,0,12"
@@ -455,7 +485,7 @@
                   </ItemsControl.ItemsPanel>
                   <ItemsControl.ItemTemplate>
                     <DataTemplate DataType="{x:Type script:SegmentVersionChoice}">
-                      <Button Content="{Binding Label}" Margin="0,0,6,6" FontFamily="{StaticResource MonoFont}"
+                      <Button Content="{Binding Label}" Margin="0,0,6,6" FontFamily="{StaticResource MonoFont}" ToolTip="{Binding Note}"
                               Command="{Binding DataContext.ShowVersionCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
                               CommandParameter="{Binding Version}">
                         <Button.Style>

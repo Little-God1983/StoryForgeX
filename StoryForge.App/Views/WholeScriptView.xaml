@@ -1,0 +1,267 @@
+<UserControl x:Class="StoryForge.App.Views.WholeScriptView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:client="clr-namespace:StoryForge.Client;assembly=StoryForge.Client"
+             xmlns:script="clr-namespace:StoryForge.App.ViewModels.Script"
+             xmlns:views="clr-namespace:StoryForge.App.Views"
+             mc:Ignorable="d"
+             d:DataContext="{d:DesignInstance Type=script:ScriptMatrixViewModel}">
+
+  <UserControl.Resources>
+    <BooleanToVisibilityConverter x:Key="Visible" />
+
+    <Style x:Key="SmallButtonStyle" TargetType="Button" BasedOn="{StaticResource SecondaryButtonStyle}">
+      <Setter Property="FontSize" Value="12" />
+      <Setter Property="Padding" Value="10,5" />
+    </Style>
+
+    <Style x:Key="BarStyle" TargetType="Border">
+      <Setter Property="CornerRadius" Value="10" />
+      <Setter Property="Padding" Value="16,10" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="Margin" Value="0,0,0,14" />
+    </Style>
+
+    <!-- A segment's state, coloured as in the canvas legend. -->
+    <Style x:Key="StateChipStyle" TargetType="Border">
+      <Setter Property="CornerRadius" Value="10" />
+      <Setter Property="Padding" Value="10,2" />
+      <Setter Property="Margin" Value="10,0,0,0" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+      <Setter Property="Background" Value="{StaticResource CardBrush}" />
+      <Setter Property="TextElement.Foreground" Value="{StaticResource TextMutedBrush}" />
+      <Style.Triggers>
+        <DataTrigger Binding="{Binding State}" Value="{x:Static client:StageState.NeedsReview}">
+          <Setter Property="Background" Value="{StaticResource PillOffBackBrush}" />
+          <Setter Property="TextElement.Foreground" Value="{StaticResource PillOffTextBrush}" />
+        </DataTrigger>
+        <DataTrigger Binding="{Binding State}" Value="{x:Static client:StageState.Approved}">
+          <Setter Property="Background" Value="{StaticResource PillOkBackBrush}" />
+          <Setter Property="TextElement.Foreground" Value="{StaticResource PillOkTextBrush}" />
+        </DataTrigger>
+        <DataTrigger Binding="{Binding State}" Value="{x:Static client:StageState.Running}">
+          <Setter Property="Background" Value="#172536" />
+          <Setter Property="TextElement.Foreground" Value="#6FB3EE" />
+        </DataTrigger>
+        <DataTrigger Binding="{Binding State}" Value="{x:Static client:StageState.Failed}">
+          <Setter Property="Background" Value="{StaticResource PillErrorBackBrush}" />
+          <Setter Property="TextElement.Foreground" Value="{StaticResource PillErrorTextBrush}" />
+        </DataTrigger>
+        <DataTrigger Binding="{Binding State}" Value="{x:Static client:StageState.Stale}">
+          <Setter Property="Background" Value="{StaticResource NoteBackBrush}" />
+          <Setter Property="TextElement.Foreground" Value="#B4A8F5" />
+        </DataTrigger>
+      </Style.Triggers>
+    </Style>
+
+    <!-- A segment waiting for you stands out with an amber border. -->
+    <Style x:Key="SectionStyle" TargetType="Border">
+      <Setter Property="Background" Value="#17181C" />
+      <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="CornerRadius" Value="10" />
+      <Setter Property="Padding" Value="18,16" />
+      <Setter Property="Margin" Value="0,0,0,10" />
+      <Style.Triggers>
+        <DataTrigger Binding="{Binding State}" Value="{x:Static client:StageState.NeedsReview}">
+          <Setter Property="BorderBrush" Value="#5A4520" />
+        </DataTrigger>
+      </Style.Triggers>
+    </Style>
+  </UserControl.Resources>
+
+  <DockPanel>
+    <StackPanel DockPanel.Dock="Top">
+      <Border Style="{StaticResource BarStyle}" Background="{StaticResource AccentSoftBrush}" BorderBrush="#5A4520"
+              Visibility="{Binding IsReview, Converter={StaticResource Visible}}">
+        <DockPanel>
+          <Button DockPanel.Dock="Right" Content="Approve remaining" Style="{StaticResource PrimaryButtonStyle}" MinHeight="36" FontSize="13"
+                  Command="{Binding ApproveRemainingCommand}" />
+          <TextBlock Text="Gate: Script" FontSize="14" FontWeight="SemiBold" Foreground="{StaticResource AccentTextBrush}" VerticalAlignment="Center" Margin="0,0,14,0" />
+          <TextBlock VerticalAlignment="Center" FontSize="13" Foreground="#D9C9A8" TextWrapping="Wrap">
+            <Run Text="{Binding ApprovedSummary, Mode=OneWay}" /> The voice is spoken from the approved segments.
+          </TextBlock>
+        </DockPanel>
+      </Border>
+
+      <Border Style="{StaticResource BarStyle}" Background="{StaticResource PillOkBackBrush}" BorderBrush="#2F5A50"
+              Visibility="{Binding IsApproved, Converter={StaticResource Visible}}">
+        <TextBlock FontSize="13" Foreground="{StaticResource TextSoftBrush}" TextWrapping="Wrap">
+          <Run Text="Script approved" FontSize="14" FontWeight="SemiBold" Foreground="{StaticResource PillOkTextBrush}" />
+          <Run Text="  Every segment is approved. A change to one makes a new version that needs approving again." />
+        </TextBlock>
+      </Border>
+
+      <Border Style="{StaticResource BarStyle}" Background="#172536" BorderBrush="#2B4A6B"
+              Visibility="{Binding IsRunning, Converter={StaticResource Visible}}">
+        <TextBlock FontSize="13" Foreground="#BCD3EA" TextWrapping="Wrap"
+                   Text="The whole script is being written. Its segments appear here when it is done." />
+      </Border>
+
+      <Border Style="{StaticResource BarStyle}" Background="{StaticResource PillErrorBackBrush}" BorderBrush="#6B3A33"
+              Visibility="{Binding IsFailed, Converter={StaticResource Visible}}">
+        <DockPanel>
+          <Button DockPanel.Dock="Right" Content="Retry" Style="{StaticResource PrimaryButtonStyle}" MinHeight="36" FontSize="13"
+                  Background="{StaticResource ErrorTextBrush}" Command="{Binding RegenerateScriptCommand}" AutomationProperties.Name="Retry the script" />
+          <StackPanel VerticalAlignment="Center" Margin="0,0,14,0">
+            <TextBlock Text="Script failed" FontSize="14" FontWeight="SemiBold" Foreground="{StaticResource PillErrorTextBrush}" />
+            <TextBlock Text="{Binding Error}" FontSize="13" Foreground="#E2C1BB" TextWrapping="Wrap" Margin="0,2,0,0" />
+          </StackPanel>
+        </DockPanel>
+      </Border>
+
+      <!-- Regenerate and Edit text wait for it: they would drop its text. -->
+      <Border Background="{StaticResource NoteBackBrush}" CornerRadius="8" Padding="12,8" Margin="0,0,0,14"
+              Visibility="{Binding IsEditingShot, Converter={StaticResource Visible}}">
+        <TextBlock Text="A shot description is open on the segments screen. Save or cancel it there, then Regenerate and Edit text work here again."
+                   FontSize="13" Foreground="#B4A8F5" TextWrapping="Wrap" />
+      </Border>
+
+      <Border Background="{StaticResource PillErrorBackBrush}" CornerRadius="8" Padding="12,8" Margin="0,0,0,14"
+              Visibility="{Binding ActionError, Converter={views:NullToCollapsedConverter}}">
+        <TextBlock Text="{Binding ActionError}" Foreground="{StaticResource PillErrorTextBrush}" FontSize="13" TextWrapping="Wrap" />
+      </Border>
+
+      <DockPanel Margin="0,0,0,12">
+        <TextBlock DockPanel.Dock="Right" VerticalAlignment="Center" FontSize="13" Margin="14,0,0,0">
+          <Hyperlink Command="{Binding DataContext.ShowMatrixCommand, RelativeSource={RelativeSource AncestorType=views:ResultMatrixView}}"
+                     Foreground="{StaticResource AccentBrush}" TextDecorations="{x:Null}">Back to the segments</Hyperlink>
+        </TextBlock>
+        <Button DockPanel.Dock="Right" Content="Copy all" Style="{StaticResource SecondaryButtonStyle}" Command="{Binding CopyAllCommand}"
+                AutomationProperties.Name="Copy the whole narration" />
+        <TextBlock DockPanel.Dock="Right" Text="{Binding CopiedText}" FontSize="12" Foreground="{StaticResource TextMutedBrush}" VerticalAlignment="Center"
+                   Margin="0,0,10,0" AutomationProperties.AutomationId="Copied" Visibility="{Binding HasSegments, Converter={StaticResource Visible}}" />
+        <TextBlock Text="WHOLE SCRIPT" Style="{StaticResource SectionLabelStyle}" VerticalAlignment="Center" Margin="0,0,12,0" />
+        <!-- The totals of the script being replaced would mislead while it is written anew. -->
+        <TextBlock Text="{Binding WholeScriptTotals}" FontFamily="{StaticResource MonoFont}" FontSize="12" Foreground="{StaticResource TextMutedBrush}"
+                   VerticalAlignment="Center" AutomationProperties.AutomationId="WholeScriptTotals" Visibility="{Binding HasSegments, Converter={StaticResource Visible}}" />
+      </DockPanel>
+    </StackPanel>
+
+    <!-- While the whole script is written anew, the old segments go: they are being replaced. -->
+    <ScrollViewer VerticalScrollBarVisibility="Auto" Visibility="{Binding HasSegments, Converter={StaticResource Visible}}">
+      <ItemsControl ItemsSource="{Binding Rows}" Focusable="False" MaxWidth="980" AutomationProperties.Name="Whole script">
+        <ItemsControl.ItemTemplate>
+          <DataTemplate DataType="{x:Type script:SegmentRowViewModel}">
+            <Border Style="{StaticResource SectionStyle}" AutomationProperties.Name="{Binding AccessibleName}">
+              <StackPanel>
+                <DockPanel>
+                  <Border DockPanel.Dock="Right" Style="{StaticResource StateChipStyle}">
+                    <TextBlock Text="{Binding StateText}" FontSize="12" />
+                  </Border>
+                  <TextBlock DockPanel.Dock="Right" Text="{Binding Timing}" FontFamily="{StaticResource MonoFont}" FontSize="12"
+                             Foreground="{StaticResource TextMutedBrush}" VerticalAlignment="Center" />
+                  <TextBlock Text="{Binding Id}" FontFamily="{StaticResource MonoFont}" FontSize="13" FontWeight="Bold" VerticalAlignment="Center" Margin="0,0,10,0" />
+                  <TextBlock Text="{Binding Title}" FontSize="15" FontWeight="SemiBold" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" Margin="0,0,10,0" />
+                </DockPanel>
+
+                <TextBlock Text="{Binding Error}" FontSize="13" Foreground="{StaticResource ErrorTextBrush}" TextWrapping="Wrap" Margin="0,8,0,0"
+                           Visibility="{Binding Error, Converter={views:NullToCollapsedConverter}}" />
+
+                <TextBlock Text="{Binding Narration}" FontSize="17" LineHeight="27" TextWrapping="Wrap" MaxWidth="860" HorizontalAlignment="Left"
+                           Foreground="#E4E3DF" Margin="0,10,0,0">
+                  <TextBlock.Style>
+                    <Style TargetType="TextBlock">
+                      <Style.Triggers>
+                        <DataTrigger Binding="{Binding IsEditing}" Value="True">
+                          <Setter Property="Visibility" Value="Collapsed" />
+                        </DataTrigger>
+                      </Style.Triggers>
+                    </Style>
+                  </TextBlock.Style>
+                </TextBlock>
+
+                <!-- Edit text…: the panel's editor, in place. -->
+                <StackPanel Margin="0,10,0,0" Visibility="{Binding IsEditing, Converter={StaticResource Visible}}">
+                  <TextBlock Text="Title" Style="{StaticResource FieldLabelStyle}" />
+                  <TextBox Text="{Binding DataContext.EditTitle, RelativeSource={RelativeSource AncestorType=UserControl}, UpdateSourceTrigger=PropertyChanged}"
+                           FontSize="14" Padding="10,6" Margin="0,0,0,10" AutomationProperties.Name="Segment title" />
+                  <TextBlock Text="Narration" Style="{StaticResource FieldLabelStyle}" />
+                  <TextBox Text="{Binding DataContext.EditNarration, RelativeSource={RelativeSource AncestorType=UserControl}, UpdateSourceTrigger=PropertyChanged}"
+                           AcceptsReturn="True" TextWrapping="Wrap" MinHeight="120" VerticalContentAlignment="Top" FontSize="15" Padding="10,8"
+                           views:FocusWhenShown.IsEnabled="True" AutomationProperties.Name="Segment narration" />
+                  <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                    <Button Content="Save" Style="{StaticResource PrimaryButtonStyle}" MinHeight="36" FontSize="13"
+                            Command="{Binding DataContext.SaveEditCommand, RelativeSource={RelativeSource AncestorType=UserControl}}" />
+                    <Button Content="Cancel" Style="{StaticResource SecondaryButtonStyle}" Margin="8,0,0,0"
+                            Command="{Binding DataContext.CancelEditCommand, RelativeSource={RelativeSource AncestorType=UserControl}}" />
+                    <TextBlock Text="Saving makes a new version; the facts the segment lists stay as they are." FontSize="12" Foreground="{StaticResource TextMutedBrush}"
+                               VerticalAlignment="Center" Margin="12,0,0,0" />
+                  </StackPanel>
+                </StackPanel>
+
+                <DockPanel Margin="0,12,0,0">
+                  <ItemsControl DockPanel.Dock="Right" ItemsSource="{Binding Versions}" Focusable="False" VerticalAlignment="Center"
+                                AutomationProperties.Name="{Binding Id, StringFormat='Versions of {0}'}">
+                    <ItemsControl.ItemsPanel>
+                      <ItemsPanelTemplate>
+                        <StackPanel Orientation="Horizontal" />
+                      </ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                    <ItemsControl.ItemTemplate>
+                      <DataTemplate DataType="{x:Type script:SegmentVersionChoice}">
+                        <Button Content="{Binding Label}" Margin="6,0,0,0" FontFamily="{StaticResource MonoFont}" ToolTip="{Binding Note}"
+                                Command="{Binding DataContext.ShowRowVersionCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                CommandParameter="{Binding}">
+                          <Button.Style>
+                            <Style TargetType="Button" BasedOn="{StaticResource SmallButtonStyle}">
+                              <Style.Triggers>
+                                <DataTrigger Binding="{Binding IsShown}" Value="True">
+                                  <Setter Property="Background" Value="{StaticResource AccentSoftBrush}" />
+                                  <Setter Property="BorderBrush" Value="{StaticResource AccentBrush}" />
+                                  <Setter Property="Foreground" Value="{StaticResource AccentTextBrush}" />
+                                </DataTrigger>
+                              </Style.Triggers>
+                            </Style>
+                          </Button.Style>
+                        </Button>
+                      </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                  </ItemsControl>
+                  <StackPanel Orientation="Horizontal">
+                    <Button Content="Approve" Style="{StaticResource PrimaryButtonStyle}" MinHeight="36" FontSize="13" Background="#58B7A6"
+                            Command="{Binding DataContext.ApproveRowCommand, RelativeSource={RelativeSource AncestorType=UserControl}}" CommandParameter="{Binding}"
+                            AutomationProperties.Name="{Binding Id, StringFormat='Approve {0}'}" />
+                    <Button Content="Regenerate" Style="{StaticResource SecondaryButtonStyle}" Margin="8,0,0,0"
+                            Command="{Binding DataContext.AskNoteRowCommand, RelativeSource={RelativeSource AncestorType=UserControl}}" CommandParameter="{Binding}"
+                            AutomationProperties.Name="{Binding Id, StringFormat='Regenerate {0}'}" />
+                    <Button Content="Edit text…" Style="{StaticResource SecondaryButtonStyle}" Margin="8,0,0,0"
+                            Command="{Binding DataContext.StartEditRowCommand, RelativeSource={RelativeSource AncestorType=UserControl}}" CommandParameter="{Binding}"
+                            AutomationProperties.Name="{Binding Id, StringFormat='Edit the text of {0}'}" />
+                  </StackPanel>
+                </DockPanel>
+
+                <!-- Regenerate's note line: why, for Claude; Enter writes it again. -->
+                <Border Background="{StaticResource CardBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="8" Padding="12,10" Margin="0,10,0,0"
+                        Visibility="{Binding IsAskingNote, Converter={StaticResource Visible}}">
+                  <StackPanel>
+                    <TextBlock Text="Why write it again? (optional, e.g. too long, mention Karlach earlier)" Style="{StaticResource FieldLabelStyle}" />
+                    <DockPanel>
+                      <Button DockPanel.Dock="Right" Content="Cancel" Style="{StaticResource SecondaryButtonStyle}" Margin="8,0,0,0"
+                              Command="{Binding DataContext.CancelNoteCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                              AutomationProperties.Name="Cancel the note" />
+                      <Button DockPanel.Dock="Right" Content="Write it again" Style="{StaticResource PrimaryButtonStyle}" MinHeight="36" FontSize="13" Margin="8,0,0,0"
+                              Command="{Binding DataContext.RegenerateSegmentCommand, RelativeSource={RelativeSource AncestorType=UserControl}}" />
+                      <TextBox Text="{Binding DataContext.RegenerateNote, RelativeSource={RelativeSource AncestorType=UserControl}, UpdateSourceTrigger=PropertyChanged}"
+                               FontSize="13" Padding="10,7" views:FocusWhenShown.IsEnabled="True" AutomationProperties.Name="Why write it again (optional)">
+                        <TextBox.InputBindings>
+                          <KeyBinding Key="Enter" Command="{Binding DataContext.RegenerateSegmentCommand, RelativeSource={RelativeSource AncestorType=UserControl}}" />
+                          <KeyBinding Key="Escape" Command="{Binding DataContext.CancelNoteCommand, RelativeSource={RelativeSource AncestorType=UserControl}}" />
+                        </TextBox.InputBindings>
+                      </TextBox>
+                    </DockPanel>
+                  </StackPanel>
+                </Border>
+
+                <TextBlock Text="{Binding NoteText}" FontSize="12" Foreground="{StaticResource TextSoftBrush}" Margin="0,8,0,0" TextWrapping="Wrap"
+                           Visibility="{Binding HasNote, Converter={StaticResource Visible}}" />
+              </StackPanel>
+            </Border>
+          </DataTemplate>
+        </ItemsControl.ItemTemplate>
+      </ItemsControl>
+    </ScrollViewer>
+  </DockPanel>
+</UserControl>

@@ -184,7 +184,11 @@ public sealed partial class ScriptMatrixViewModel
     // Running or not, the panel's controls follow: nothing on the storyboard changes while it is planned.
     partial void OnBoardStateChanged(StageState value) => RefreshBoardPanel();
 
-    partial void OnIsEditingShotChanged(bool value) => RefreshBoardPanel();
+    partial void OnIsEditingShotChanged(bool value)
+    {
+        RefreshBoardPanel();
+        RefreshRowCommands();   // the whole script's Regenerate and Edit text would drop it
+    }
 
     private void SelectShot(ShotRowViewModel shot) => Select(Rows.FirstOrDefault(r => r.Shots.Contains(shot)), PipelineStage.Storyboard, shot);
 

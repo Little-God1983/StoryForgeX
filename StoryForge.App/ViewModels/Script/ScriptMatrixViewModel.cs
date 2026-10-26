@@ -13,9 +13,11 @@ public sealed record UsedFact(string Id, int Weight, string Statement)
     public bool IsMust => Weight >= Fact.MustWeight;
 }
 
-/// <summary>One version chip of the selected cell.</summary>
+/// <summary>One version chip of the selected cell, or of a segment in the whole script.</summary>
 /// <param name="CanPick">False for a shot's version that cuts elsewhere than the shot does now.</param>
-public sealed record SegmentVersionChoice(int Version, bool IsShown, bool IsApproved, bool CanPick = true)
+/// <param name="Key">The segment it is a version of, in the whole script; null in the panel, which has one.</param>
+/// <param name="Note">Why it was written again, as you said on Regenerate; null without one.</param>
+public sealed record SegmentVersionChoice(int Version, bool IsShown, bool IsApproved, bool CanPick = true, string? Key = null, string? Note = null)
 {
     public string Label => $"v{Version}";
 }
@@ -64,8 +66,40 @@ public sealed partial class VoiceCellViewModel(string id, Action<VoiceCellViewMo
 public sealed partial class SegmentRowViewModel(SegmentView segment, Action<SegmentRowViewModel> select, Action<VoiceCellViewModel> selectVoice) : ObservableObject
 {
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(Id), nameof(Title), nameof(State), nameof(StateText), nameof(VersionText), nameof(AccessibleName))]
+    [NotifyPropertyChangedFor(nameof(Id), nameof(Title), nameof(State), nameof(StateText), nameof(VersionText), nameof(AccessibleName),
+        nameof(Narration), nameof(Words), nameof(Timing), nameof(Versions), nameof(NoteText), nameof(HasNote), nameof(Error))]
     private SegmentView _segment = segment;
+
+    /// <summary>Where it starts in the video, in seconds: after the segments before it.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(Timing))]
+    private int _start;
+
+    /// <summary>Its note line for Regenerate is open (in the whole script).</summary>
+    [ObservableProperty]
+    private bool _isAskingNote;
+
+    /// <summary>Its text is being edited (in the whole script).</summary>
+    [ObservableProperty]
+    private bool _isEditing;
+
+    public string Narration => Segment.Narration;
+
+    /// <summary>Why writing it again failed; null unless it did.</summary>
+    public string? Error => Segment.Error;
+
+    public int Words => ScriptMatrixViewModel.WordCount(Segment.Narration);
+
+    /// <summary>"0:16–0:27 · 11 s · 7 words".</summary>
+    public string Timing => $"{ScriptMatrixViewModel.Clock(Start)}–{ScriptMatrixViewModel.Clock(Start + Segment.Seconds)} · {Segment.Seconds} s · {Words} words";
+
+    public IReadOnlyList<SegmentVersionChoice> Versions =>
+        [.. Segment.Versions.Select(v => new SegmentVersionChoice(v.Version, v.Version == Segment.Version, v.Version == Segment.ApprovedVersion, Key: Id, Note: v.Note))];
+
+    /// <summary>"v2 asked for: “too long”": the note the version shown was written with; empty without one.</summary>
+    public string NoteText => Segment.Versions.FirstOrDefault(v => v.Version == Segment.Version)?.Note is { } note ? $"v{Segment.Version} asked for: “{note}”" : "";
+
+    public bool HasNote => NoteText.Length > 0;
 
     /// <summary>The Script cell is the one selected.</summary>
     [ObservableProperty]
@@ -159,7 +193,8 @@ public sealed partial class ScriptMatrixViewModel(IStoryForgeClient client, Guid
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsRunning), nameof(IsReview), nameof(IsApproved), nameof(IsFailed), nameof(IsNotStarted), nameof(ShowsLog), nameof(HasSegments))]
-    [NotifyCanExecuteChangedFor(nameof(ApproveRemainingCommand), nameof(RegenerateScriptCommand), nameof(CancelCommand), nameof(ApproveSegmentCommand), nameof(RegenerateSegmentCommand), nameof(StartEditCommand))]
+    [NotifyCanExecuteChangedFor(nameof(ApproveRemainingCommand), nameof(RegenerateScriptCommand), nameof(CancelCommand), nameof(ApproveSegmentCommand), nameof(RegenerateSegmentCommand), nameof(StartEditCommand),
+        nameof(AskNoteCommand), nameof(ApproveRowCommand), nameof(AskNoteRowCommand), nameof(StartEditRowCommand), nameof(ShowRowVersionCommand), nameof(CopyAllCommand))]
     private StageState _state;
 
     public bool IsRunning => State == StageState.Running;
@@ -237,12 +272,14 @@ public sealed partial class ScriptMatrixViewModel(IStoryForgeClient client, Guid
 
     /// <summary>Which of the selected row's cells the panel shows: Script, Voice, or a shot's Board.</summary>
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(IsVoicePanel), nameof(IsScriptPanel), nameof(IsBoardPanel))]
+    [NotifyPropertyChangedFor(nameof(IsVoicePanel), nameof(IsScriptPanel), nameof(IsNotScriptPanel), nameof(IsBoardPanel))]
     private PipelineStage _selectedStage = PipelineStage.Script;
 
     public bool IsVoicePanel => SelectedStage == PipelineStage.Voice;
 
     public bool IsScriptPanel => SelectedStage == PipelineStage.Script;
+
+    public bool IsNotScriptPanel => !IsScriptPanel;
 
     public bool IsBoardPanel => SelectedStage == PipelineStage.Storyboard;
 
@@ -304,7 +341,7 @@ public sealed partial class ScriptMatrixViewModel(IStoryForgeClient client, Guid
             : []
         : Selected is null
             ? []
-            : [.. Selected.Segment.Versions.Select(v => new SegmentVersionChoice(v.Version, v.Version == Selected.Segment.Version, v.Version == Selected.Segment.ApprovedVersion))];
+            : [.. Selected.Segment.Versions.Select(v => new SegmentVersionChoice(v.Version, v.Version == Selected.Segment.Version, v.Version == Selected.Segment.ApprovedVersion, Note: v.Note))];
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsNotEditing), nameof(IsNotEditingAny))]
@@ -320,6 +357,17 @@ public sealed partial class ScriptMatrixViewModel(IStoryForgeClient client, Guid
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(SaveEditCommand))]
     private string _editNarration = "";
+
+    /// <summary>Regenerate on a segment opened its note line: why it is written again, before it is.</summary>
+    [ObservableProperty]
+    private bool _isAskingNote;
+
+    /// <summary>The note on why, e.g. "too long"; empty is fine.</summary>
+    [ObservableProperty]
+    private string _regenerateNote = "";
+
+    /// <summary>"v2 asked for: “too long”": the note the selected segment's version was written with.</summary>
+    public string SelectedNote => IsScriptPanel ? Selected?.NoteText ?? "" : "";
 
     public async Task LoadAsync()
     {
@@ -368,6 +416,7 @@ public sealed partial class ScriptMatrixViewModel(IStoryForgeClient client, Guid
                 State = StageState.Running;
                 Error = null;
                 IsEditing = false;
+                CloseNote();   // every segment is written anew: a note for the old one would go with the new text
             }
             if (update.Activity is { } line)
             {
@@ -479,6 +528,17 @@ public sealed partial class ScriptMatrixViewModel(IStoryForgeClient client, Guid
                 }
             }
         }
+        var start = 0;
+        foreach (var row in Rows)
+        {
+            row.Start = start;
+            start += row.Segment.Seconds;
+        }
+        WholeScriptTotals = $"{SegmentCount(Rows.Count)} · {Clock(start)} · {Rows.Sum(r => r.Words)} words";
+        if (WholeNarration() != _copied)
+        {
+            CopiedText = "";   // the clipboard holds an older script
+        }
         ApplyVoice(voice);
         ApplyBoard(board);
         if (Selected is null || !Rows.Contains(Selected) || (IsBoardPanel && (SelectedShot is null || !Selected.Shots.Contains(SelectedShot))))
@@ -499,6 +559,7 @@ public sealed partial class ScriptMatrixViewModel(IStoryForgeClient client, Guid
         ApproveRemainingCommand.NotifyCanExecuteChanged();
         ApproveRemainingVoiceCommand.NotifyCanExecuteChanged();
         RegenerateVoiceCommand.NotifyCanExecuteChanged();
+        RefreshRowCommands();
     }
 
     private void ApplyVoice(VoiceView voice)
@@ -559,6 +620,7 @@ public sealed partial class ScriptMatrixViewModel(IStoryForgeClient client, Guid
         }
         IsEditing = false;
         IsEditingShot = false;
+        CloseNote();
         if (sameRow)
         {
             RefreshSelection(keepLive: false);   // the same row, another cell: the panel changes all the same
@@ -567,6 +629,7 @@ public sealed partial class ScriptMatrixViewModel(IStoryForgeClient client, Guid
         {
             RefreshPanel();
         }
+        RefreshRowModes();
     }
 
     /// <summary>The selected row's cell changed in place: the panel reads it again.</summary>
@@ -578,13 +641,14 @@ public sealed partial class ScriptMatrixViewModel(IStoryForgeClient client, Guid
 
     private void RefreshPanel()
     {
-        foreach (var name in new[] { nameof(SelectedHeading), nameof(SelectedStatus), nameof(SelectedNarration), nameof(SelectedFacts), nameof(SelectedVersions), nameof(SelectedError), nameof(SelectedIsRunning), nameof(SelectedShowsLog) })
+        foreach (var name in new[] { nameof(SelectedHeading), nameof(SelectedStatus), nameof(SelectedNarration), nameof(SelectedNote), nameof(SelectedFacts), nameof(SelectedVersions), nameof(SelectedError), nameof(SelectedIsRunning), nameof(SelectedShowsLog) })
         {
             OnPropertyChanged(name);
         }
         ApproveSegmentCommand.NotifyCanExecuteChanged();
         RegenerateSegmentCommand.NotifyCanExecuteChanged();
         StartEditCommand.NotifyCanExecuteChanged();
+        AskNoteCommand.NotifyCanExecuteChanged();
         CancelSegmentCommand.NotifyCanExecuteChanged();
         ShowVersionCommand.NotifyCanExecuteChanged();
         RefreshBoardPanel();
@@ -646,11 +710,57 @@ public sealed partial class ScriptMatrixViewModel(IStoryForgeClient client, Guid
     [RelayCommand(CanExecute = nameof(CanApproveRemaining))]
     private Task ApproveRemainingAsync() => ActAsync("approve the script", () => client.ApproveSegmentsAsync(ProjectId, PipelineStage.Script));
 
+    /// <summary>"Write it again" on the note line, or Regenerate on a voice or a shot. The note goes with a segment's line only.</summary>
     [RelayCommand(CanExecute = nameof(SegmentIdle))]
-    private Task RegenerateSegmentAsync() =>
-        ActAsync(IsBoardPanel ? "plan the shot again" : IsVoicePanel ? "speak the segment again" : "write the segment again", () => client.RegenerateSegmentAsync(ProjectId, SelectedStage, SelectedKey));
+    private async Task RegenerateSegmentAsync()
+    {
+        var what = IsBoardPanel ? "plan the shot again" : IsVoicePanel ? "speak the segment again" : "write the segment again";
+        var (stage, row) = (SelectedStage, Selected);
+        var version = row?.Segment.Version;
+        var note = IsScriptPanel && IsAskingNote ? RegenerateNote : null;
+        // The line closes with the click, so a note opened while this is on its way is not the one closed.
+        CloseNote();
+        try
+        {
+            await client.RegenerateSegmentAsync(ProjectId, stage, SelectedKey, note);
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"Could not {what}: {ex}");
+            ActionError = $"Could not {what}: {ex.Message}";
+            // Not when it is being written after all: the note would sit on a version you have not read.
+            if (note is not null && !IsAskingNote && !IsEditing && !IsRunning && Selected == row && row?.State != StageState.Running
+                && row?.Segment.Version == version && IsScriptPanel)
+            {
+                // Not sent: your note comes back to try again.
+                IsAskingNote = true;
+                RegenerateNote = note;
+            }
+            return;
+        }
+        ActionError = null;
+        await LoadAsync();
+    }
 
-    private bool CanRegenerateScript() => !IsRunning;
+    /// <summary>Regenerate on a segment: its note line opens first.</summary>
+    [RelayCommand(CanExecute = nameof(CanStartEdit))]
+    private void AskNote()
+    {
+        IsEditing = false;
+        IsAskingNote = true;
+    }
+
+    [RelayCommand]
+    private void CancelNote() => CloseNote();
+
+    private void CloseNote()
+    {
+        IsAskingNote = false;
+        RegenerateNote = "";
+    }
+
+    // A whole run writes every segment anew and closes the editor and the note line: your text waits for Save, Send or Cancel first.
+    private bool CanRegenerateScript() => !IsRunning && !IsEditing && !HasUnsentNote;
 
     /// <summary>Regenerate the whole script; Retry after a failure; Write the script before the first run.</summary>
     [RelayCommand(CanExecute = nameof(CanRegenerateScript))]
@@ -662,7 +772,8 @@ public sealed partial class ScriptMatrixViewModel(IStoryForgeClient client, Guid
     [RelayCommand(CanExecute = nameof(SelectedIsRunning))]
     private Task CancelSegmentAsync() => ActAsync(IsBoardPanel ? "cancel the shot" : "cancel the segment", () => client.CancelSegmentAsync(ProjectId, SelectedStage, SelectedKey));
 
-    private bool CanShowVersion(int version) => SelectedVersions.FirstOrDefault(v => v.Version == version)?.CanPick ?? true;
+    // A typed note is about the version on screen: switching first would send it against another.
+    private bool CanShowVersion(int version) => (SelectedVersions.FirstOrDefault(v => v.Version == version)?.CanPick ?? true) && !HasUnsentNote;
 
     [RelayCommand(CanExecute = nameof(CanShowVersion))]
     private Task ShowVersionAsync(int version) =>
@@ -682,11 +793,15 @@ public sealed partial class ScriptMatrixViewModel(IStoryForgeClient client, Guid
     [RelayCommand(CanExecute = nameof(IsVoiceRunning))]
     private Task CancelVoiceAsync() => ActAsync("cancel the voice", () => client.CancelAsync(ProjectId, PipelineStage.Voice));
 
-    private bool CanStartEdit() => IsScriptPanel && SegmentIdle();
+    // A note typed and not sent waits for Write it again or Cancel: opening the editor would drop it.
+    private bool CanStartEdit() => IsScriptPanel && SegmentIdle() && !HasUnsentNote;
+
+    private bool HasUnsentNote => IsAskingNote && RegenerateNote.Trim().Length > 0;
 
     [RelayCommand(CanExecute = nameof(CanStartEdit))]
     private void StartEdit()
     {
+        CloseNote();
         EditTitle = Selected!.Title;
         EditNarration = Selected.Segment.Narration;
         IsEditing = true;
@@ -723,6 +838,8 @@ public sealed partial class ScriptMatrixViewModel(IStoryForgeClient client, Guid
             ActionError = $"Could not {what}: {ex.Message}";
         }
     }
+
+    internal static int WordCount(string text) => text.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries).Length;
 
     internal static string Clock(double seconds)
     {

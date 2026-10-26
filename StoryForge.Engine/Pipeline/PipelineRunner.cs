@@ -124,8 +124,14 @@ internal sealed class PipelineRunner(
     }
 
     /// <summary>Writes one segment of a stage again; the stage's other segments stay as they are.</summary>
-    public async Task RegenerateSegmentAsync(Guid projectId, PipelineStage stage, string key, CancellationToken cancellationToken)
+    /// <param name="note">Script only: why, for the model and kept with the new version; blank is none.</param>
+    public async Task RegenerateSegmentAsync(Guid projectId, PipelineStage stage, string key, string? note, CancellationToken cancellationToken)
     {
+        note = string.IsNullOrWhiteSpace(note) ? null : note.Trim();
+        if (note is not null && stage != PipelineStage.Script)
+        {
+            throw new ArgumentException("A note on why goes only with a script segment.", nameof(note));
+        }
         await projects.GetAsync(projectId, cancellationToken);
         if (!_workers.TryGetValue(stage, out var worker) || worker is not ISegmentWorker)
         {
@@ -138,7 +144,7 @@ internal sealed class PipelineRunner(
                 throw new KeyNotFoundException($"The {stage} stage has no segment {key}.");
             }
         }
-        await EnqueueAsync(projectId, stage, key, cancellationToken);
+        await EnqueueAsync(projectId, stage, key, cancellationToken, note);
     }
 
     /// <summary>
@@ -312,9 +318,9 @@ internal sealed class PipelineRunner(
         await EnqueueAsync(projectId, next, Whole, cancellationToken);
     }
 
-    private async Task EnqueueAsync(Guid projectId, PipelineStage stage, string key, CancellationToken cancellationToken)
+    private async Task EnqueueAsync(Guid projectId, PipelineStage stage, string key, CancellationToken cancellationToken, string? note = null)
     {
-        var job = new Job(projectId, stage, key, CancellationTokenSource.CreateLinkedTokenSource(_stopping.Token));
+        var job = new Job(projectId, stage, key, CancellationTokenSource.CreateLinkedTokenSource(_stopping.Token)) { Note = note };
         lock (_lock)
         {
             // Checked with the adding, so neither can slip in beside the other: a whole run replaces
@@ -332,6 +338,11 @@ internal sealed class PipelineRunner(
             if (!_jobs.TryAdd((projectId, stage, key), job))
             {
                 job.Cancel.Dispose();
+                if (note is not null)
+                {
+                    // The run under way has its own note or none: this one would be lost without a word.
+                    throw new InvalidOperationException($"{key} is being written already. Your note was not sent; try again when it is done.");
+                }
                 return;   // already running or waiting to run
             }
         }
@@ -410,7 +421,7 @@ internal sealed class PipelineRunner(
             job.Cancel.Token.ThrowIfCancellationRequested();
             var project = await projects.GetAsync(job.ProjectId, job.Cancel.Token);
             var gated = IsGated(project.Setup, job.Stage);
-            var context = new StageContext(project, reporter, job.Key == Whole ? segment => StoreRunSegmentAsync(job, segment, gated) : null);
+            var context = new StageContext(project, reporter, job.Key == Whole ? segment => StoreRunSegmentAsync(job, segment, gated) : null, job.Note);
             if (job.Key == Whole)
             {
                 var result = await _workers[job.Stage].RunAsync(context, job.Cancel.Token);
@@ -594,7 +605,7 @@ internal sealed class PipelineRunner(
     {
         await using var db = await contextFactory.CreateDbContextAsync(CancellationToken.None);
         var cell = await db.Cells.FirstAsync(c => c.ProjectId == job.ProjectId && c.Stage == job.Stage && c.Key == job.Key);
-        AddVersion(db, cell, await NextVersionAsync(db, job.ProjectId, job.Stage, job.Key), result.OutputJson, result.SchemaVersion, result.InputHash);
+        AddVersion(db, cell, await NextVersionAsync(db, job.ProjectId, job.Stage, job.Key), result.OutputJson, result.SchemaVersion, result.InputHash, job.Note);
         cell.State = gated ? StageState.NeedsReview : StageState.Approved;
         cell.ApprovedVersion = gated ? cell.ApprovedVersion : cell.CurrentVersion;
         cell.Error = null;
@@ -659,7 +670,7 @@ internal sealed class PipelineRunner(
         return [.. sheet.References.Where(r => images.All(i => !i.Key.StartsWith(r.Id + "/", StringComparison.Ordinal) || i.CurrentVersion is null)).Select(r => r.Name)];
     }
 
-    private void AddVersion(StoryForgeDbContext db, CellEntry cell, int version, string outputJson, int schemaVersion, string inputHash)
+    private void AddVersion(StoryForgeDbContext db, CellEntry cell, int version, string outputJson, int schemaVersion, string inputHash, string? note = null)
     {
         db.CellVersions.Add(new CellVersionEntry
         {
@@ -671,6 +682,7 @@ internal sealed class PipelineRunner(
             InputHash = inputHash,
             SchemaVersion = schemaVersion,
             OutputJson = outputJson,
+            Note = note,
             CreatedAt = clock.GetUtcNow(),
         });
         cell.CurrentVersion = version;
@@ -819,6 +831,9 @@ internal sealed class PipelineRunner(
         public string? PreviousError { get; set; }
 
         public string PreviousActivity { get; set; } = "[]";
+
+        /// <summary>Why one segment is made again, as you said on Regenerate; null without one.</summary>
+        public string? Note { get; init; }
 
         /// <summary>Done once EnqueueAsync has marked the cell Running and queued the job.</summary>
         public TaskCompletionSource Queued { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);

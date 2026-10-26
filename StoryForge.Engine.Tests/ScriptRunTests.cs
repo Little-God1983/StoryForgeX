@@ -211,6 +211,47 @@ public sealed class ScriptRunTests : IDisposable
     }
 
     [Fact]
+    public async Task A_note_on_regenerate_goes_to_the_model_and_stays_with_the_new_version()
+    {
+        _script.Answer(Good());
+        _script.AnswerSegment(Part("Hook - shorter", "F01"));
+        var client = await StartAsync();
+        var project = await ApprovedFactsAsync(client);
+        await ScriptAsync(client, project.Id, StageState.NeedsReview);
+
+        await client.RegenerateSegmentAsync(project.Id, PipelineStage.Script, "S01", " too long ");
+        var script = await WaitForAsync(() => client.GetScriptAsync(project.Id), v => v.Segments[0].Version == 2 || v.Segments[0].State == StageState.Failed);
+
+        Assert.Equal("too long", _script.Notes.Single());
+        Assert.Equal([null, "too long"], script.Segments[0].Versions.Select(v => v.Note));
+    }
+
+    [Fact]
+    public async Task An_empty_note_is_no_note()
+    {
+        _script.Answer(Good());
+        _script.AnswerSegment(Part("Hook - again", "F01"));
+        var client = await StartAsync();
+        var project = await ApprovedFactsAsync(client);
+        await ScriptAsync(client, project.Id, StageState.NeedsReview);
+
+        await client.RegenerateSegmentAsync(project.Id, PipelineStage.Script, "S01", "  ");
+        var script = await WaitForAsync(() => client.GetScriptAsync(project.Id), v => v.Segments[0].Version == 2 || v.Segments[0].State == StageState.Failed);
+
+        Assert.Null(_script.Notes.Single());
+        Assert.Null(script.Segments[0].Versions[1].Note);
+    }
+
+    [Fact]
+    public async Task A_note_goes_only_with_a_script_segment()
+    {
+        var client = await StartAsync();
+        var project = await client.CreateProjectAsync(await ProjectTests.ValidSetup(client));
+
+        await Assert.ThrowsAsync<ArgumentException>(() => client.RegenerateSegmentAsync(project.Id, PipelineStage.Voice, "S01", "louder"));
+    }
+
+    [Fact]
     public async Task A_rewritten_segment_that_drops_its_must_fact_goes_back()
     {
         _script.Answer(new([Part("Hook", "F01"), Part("Money", "F02"), Part("More", "F03"), Part("Outro", "F02")], ""));
@@ -365,6 +406,22 @@ public sealed class ScriptRunTests : IDisposable
         await Assert.ThrowsAsync<InvalidOperationException>(() => client.ApproveSegmentsAsync(project.Id, PipelineStage.Script));
         await Assert.ThrowsAsync<InvalidOperationException>(() => client.RegenerateAsync(project.Id, PipelineStage.Script));
         await client.CancelAsync(project.Id, PipelineStage.Script);   // the whole stage is not running: nothing to cancel
+    }
+
+    [Fact]
+    public async Task A_note_for_a_segment_already_being_written_is_refused_not_lost()
+    {
+        _script.Answer(Good());
+        _script.HoldSegment();
+        var client = await StartAsync();
+        var project = await ApprovedFactsAsync(client);
+        await ScriptAsync(client, project.Id, StageState.NeedsReview);
+        await client.RegenerateSegmentAsync(project.Id, PipelineStage.Script, "S01");
+
+        await client.RegenerateSegmentAsync(project.Id, PipelineStage.Script, "S01");   // without a note: nothing to lose, it just runs once
+        await Assert.ThrowsAsync<InvalidOperationException>(() => client.RegenerateSegmentAsync(project.Id, PipelineStage.Script, "S01", "too long"));
+
+        await client.CancelSegmentAsync(project.Id, PipelineStage.Script, "S01");
     }
 
     [Fact]
@@ -538,6 +595,9 @@ public sealed class ScriptRunTests : IDisposable
 
         public List<ScriptRequest> RewriteRequests { get; } = [];
 
+        /// <summary>The note each rewrite was asked with.</summary>
+        public List<string?> Notes { get; } = [];
+
         public FakeScriptAgent Answer(ScriptOutput output)
         {
             _scripts.Enqueue(output);
@@ -569,13 +629,14 @@ public sealed class ScriptRunTests : IDisposable
             return Task.FromResult(new ScriptAnswer<ScriptOutput>("s", _scripts.Dequeue()));
         }
 
-        public async Task<ScriptAnswer<ScriptPart>> RewriteAsync(ScriptRequest request, IReadOnlyList<Segment> script, string segmentId, string? session,
-            IReadOnlyList<string> problems, IProgress<ActivityLine> activity, CancellationToken cancellationToken)
+        public async Task<ScriptAnswer<ScriptPart>> RewriteAsync(ScriptRequest request, IReadOnlyList<Segment> script, string segmentId, string? note,
+            string? session, IReadOnlyList<string> problems, IProgress<ActivityLine> activity, CancellationToken cancellationToken)
         {
             lock (Requests)
             {
                 Rewrites.Add(segmentId);
                 RewriteRequests.Add(request);
+                Notes.Add(note);
                 Problems.Add(problems);
             }
             activity.Report(new ActivityLine(DateTimeOffset.UtcNow, ActivityKind.Model, $"rewriting {segmentId}"));

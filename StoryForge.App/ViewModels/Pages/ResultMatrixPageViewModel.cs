@@ -87,10 +87,15 @@ public sealed partial class ResultMatrixPageViewModel : PageViewModel
 
     public bool ShowsReferences => References is not null;
 
-    /// <summary>A stage's own screen is on, with "← Result matrix" to go back.</summary>
-    public bool ShowsStageScreen => ShowsFactSheet || ShowsReferences;
+    /// <summary>The whole script (board 2c), while it is on screen in place of the matrix.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowsMatrix), nameof(ShowsStageScreen))]
+    private bool _showsWholeScript;
 
-    public bool ShowsMatrix => HasProject && FactSheet is null && References is null;
+    /// <summary>A stage's own screen is on, with "← Result matrix" to go back.</summary>
+    public bool ShowsStageScreen => ShowsFactSheet || ShowsReferences || ShowsWholeScript;
+
+    public bool ShowsMatrix => HasProject && FactSheet is null && References is null && !ShowsWholeScript;
 
     /// <summary>The script of the open project: the matrix's rows and the panel of the selected segment.</summary>
     [ObservableProperty]
@@ -108,6 +113,7 @@ public sealed partial class ResultMatrixPageViewModel : PageViewModel
         Project = project;
         FactSheet = null;
         References = null;
+        ShowsWholeScript = false;
         Breadcrumb = $"Projects / {project.Setup.Name}";
         Script?.Playback.Stop();   // the project before keeps no file open
         Script = new ScriptMatrixViewModel(_client, project.Id, _newPlayer?.Invoke());
@@ -170,10 +176,26 @@ public sealed partial class ResultMatrixPageViewModel : PageViewModel
     {
         FactSheet = null;
         References = null;
+        ShowsWholeScript = false;
         if (Project is not null)
         {
             Breadcrumb = $"Projects / {Project.Setup.Name}";
         }
+    }
+
+    /// <summary>"Show whole script" on the home screen: every segment to read, approve or write again (board 2c).</summary>
+    [RelayCommand]
+    private void ShowWholeScript()
+    {
+        if (Project is null)
+        {
+            return;
+        }
+        StopPlayback();
+        FactSheet = null;
+        References = null;
+        ShowsWholeScript = true;
+        Breadcrumb = $"Projects / {Project.Setup.Name} / Whole script";
     }
 
     /// <summary>Stops a voice playing in the matrix: it goes out of sight, and so does its Pause.</summary>
@@ -187,6 +209,7 @@ public sealed partial class ResultMatrixPageViewModel : PageViewModel
         }
         StopPlayback();
         References = null;
+        ShowsWholeScript = false;
         var sheet = new FactSheetViewModel(_client, Project.Id, Project.Setup.ResearchSources, _openUrl);
         // "Approve and continue": back to the matrix, where the script is being written.
         sheet.Approved += (_, _) => ShowMatrix();
@@ -205,6 +228,7 @@ public sealed partial class ResultMatrixPageViewModel : PageViewModel
         }
         StopPlayback();
         FactSheet = null;
+        ShowsWholeScript = false;
         var screen = new ReferencesViewModel(_client, Project.Id, _openUrl, _pickPicture);
         References = screen;
         Breadcrumb = $"Projects / {Project.Setup.Name} / References";

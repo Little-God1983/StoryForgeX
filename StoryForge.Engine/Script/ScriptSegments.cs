@@ -55,7 +55,7 @@ internal sealed class ScriptSegments(
                 cell.State,
                 cell.CurrentVersion ?? 0,
                 cell.ApprovedVersion,
-                [.. own.Select(v => new ResultVersion(v.Version, v.Origin, v.CreatedAt, v.BasedOn))],
+                [.. own.Select(v => new ResultVersion(v.Version, v.Origin, v.CreatedAt, v.BasedOn, v.Note))],
                 shown.Narration,
                 shown.FactIds,
                 ScriptSheet.Seconds(shown.Narration, setup.Output.Language),

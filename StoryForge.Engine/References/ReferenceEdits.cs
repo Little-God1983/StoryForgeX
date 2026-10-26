@@ -385,7 +385,7 @@ internal sealed class ReferenceEdits(
         }
         foreach (var number in own.Where(i => !onlyEmpty || i.Made == ImageMaking.NoPicture).Select(i => i.Number))
         {
-            await runner.RegenerateSegmentAsync(projectId, Stage, ReferenceImage.KeyOf(referenceId, number), cancellationToken);
+            await runner.RegenerateSegmentAsync(projectId, Stage, ReferenceImage.KeyOf(referenceId, number), null, cancellationToken);
         }
         foreach (var key in unmade)
         {

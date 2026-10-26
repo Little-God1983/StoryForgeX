@@ -186,6 +186,136 @@ public sealed class ScriptMatrixTests
     }
 
     [Fact]
+    public async Task Regenerate_on_a_segment_opens_a_note_line_and_Write_it_again_sends_the_note()
+    {
+        var (matrix, project) = await OpenAsync();
+        await WrittenAsync(matrix, project);
+        var script = matrix.Script!;
+
+        script.AskNoteCommand.Execute(null);
+        Assert.True(script.IsAskingNote);
+        Assert.Empty(_client.RegeneratedSegments);
+        script.RegenerateNote = "too long";
+        await script.RegenerateSegmentCommand.ExecuteAsync(null);
+
+        Assert.Equal([(project.Id, "S01")], _client.RegeneratedSegments);
+        Assert.Equal(["too long"], _client.RegenerateNotes);
+        Assert.False(script.IsAskingNote);
+        Assert.Equal("", script.RegenerateNote);
+    }
+
+    [Fact]
+    public async Task A_note_that_could_not_be_sent_stays_to_try_again()
+    {
+        var (matrix, project) = await OpenAsync();
+        await WrittenAsync(matrix, project);
+        var script = matrix.Script!;
+        script.AskNoteCommand.Execute(null);
+        script.RegenerateNote = "too long";
+        _client.StageFailure = new InvalidOperationException("S01 is being written already.");
+
+        await script.RegenerateSegmentCommand.ExecuteAsync(null);
+
+        Assert.True(script.IsAskingNote);
+        Assert.Equal("too long", script.RegenerateNote);
+        Assert.Equal("Could not write the segment again: S01 is being written already.", script.ActionError);
+    }
+
+    [Fact]
+    public async Task Edit_text_waits_while_the_note_line_holds_a_note()
+    {
+        var (matrix, project) = await OpenAsync();
+        await WrittenAsync(matrix, project);
+        var script = matrix.Script!;
+        script.AskNoteCommand.Execute(null);
+        Assert.True(script.StartEditCommand.CanExecute(null));   // an empty line is no loss
+
+        script.RegenerateNote = "mention Karlach earlier";
+
+        Assert.False(script.StartEditCommand.CanExecute(null));
+        script.CancelNoteCommand.Execute(null);
+        Assert.True(script.StartEditCommand.CanExecute(null));
+    }
+
+    [Fact]
+    public async Task Cancel_closes_the_note_line_and_writes_nothing()
+    {
+        var (matrix, project) = await OpenAsync();
+        await WrittenAsync(matrix, project);
+        var script = matrix.Script!;
+        script.AskNoteCommand.Execute(null);
+        script.RegenerateNote = "too long";
+
+        script.CancelNoteCommand.Execute(null);
+
+        Assert.False(script.IsAskingNote);
+        Assert.Equal("", script.RegenerateNote);
+        Assert.Empty(_client.RegeneratedSegments);
+    }
+
+    [Fact]
+    public async Task Writing_the_whole_script_again_closes_the_note_line()
+    {
+        var (matrix, project) = await OpenAsync();
+        await WrittenAsync(matrix, project);
+        var script = matrix.Script!;
+        script.AskNoteCommand.Execute(null);
+        script.RegenerateNote = "too long";
+
+        _client.Raise(new StageUpdate(project.Id, PipelineStage.Script, StageState.Running));
+        await matrix.Updating;
+
+        Assert.False(script.IsAskingNote);
+        Assert.Equal("", script.RegenerateNote);
+    }
+
+    [Fact]
+    public async Task Selecting_another_cell_closes_the_note_line()
+    {
+        var (matrix, project) = await OpenAsync();
+        await WrittenAsync(matrix, project);
+        var script = matrix.Script!;
+        script.AskNoteCommand.Execute(null);
+
+        script.Rows[1].SelectCommand.Execute(null);
+
+        Assert.False(script.IsAskingNote);
+    }
+
+    [Fact]
+    public async Task Regenerate_without_the_note_line_open_sends_no_note()
+    {
+        var (matrix, project) = await OpenAsync();
+        await WrittenAsync(matrix, project);
+        var script = matrix.Script!;
+
+        script.RegenerateNote = "left over";
+        await script.RegenerateSegmentCommand.ExecuteAsync(null);
+
+        Assert.Equal([null], _client.RegenerateNotes);   // not asked for: no line was open
+    }
+
+    [Fact]
+    public async Task A_version_written_with_a_note_shows_it()
+    {
+        var (matrix, project) = await OpenAsync();
+        await WrittenAsync(matrix, project);
+        var view = _client.Scripts[project.Id];
+        _client.Scripts[project.Id] = view with
+        {
+            Segments = [view.Segments[0] with { Version = 2, Versions = [new ResultVersion(1, VersionOrigin.Generated, At, null), new ResultVersion(2, VersionOrigin.Generated, At, null, "too long")] }, .. view.Segments.Skip(1)],
+        };
+        _client.Raise(new StageUpdate(project.Id, PipelineStage.Script, StageState.NeedsReview, Key: "S01"));
+        await matrix.Updating;
+        var script = matrix.Script!;
+
+        Assert.Equal("v2 asked for: “too long”", script.SelectedNote);
+        Assert.Equal([null, "too long"], script.SelectedVersions.Select(v => v.Note));
+        Assert.Equal("v2 asked for: “too long”", script.Rows[0].NoteText);
+        Assert.Equal("", script.Rows[1].NoteText);
+    }
+
+    [Fact]
     public async Task A_segment_written_again_shows_its_log_in_the_panel_and_Cancel_stops_it()
     {
         var (matrix, project) = await OpenAsync();
