@@ -26,7 +26,8 @@ public sealed partial class ScriptMatrixViewModel
     /// <summary>Puts text on the clipboard; tests pass their own.</summary>
     public Action<string> CopyText { get; set; } = System.Windows.Clipboard.SetText;
 
-    private bool CanActOnRow(SegmentRowViewModel? row) => row is not null && !IsRunning && row.State != StageState.Running;
+    // The segment being edited waits for Save or Cancel: anything else on it would drop your text.
+    private bool CanActOnRow(SegmentRowViewModel? row) => row is not null && !IsRunning && row.State != StageState.Running && !row.IsEditing;
 
     private bool CanApproveRow(SegmentRowViewModel? row) => CanActOnRow(row) && row!.State != StageState.Approved;
 
@@ -54,8 +55,8 @@ public sealed partial class ScriptMatrixViewModel
     private Task ShowRowVersionAsync(SegmentVersionChoice? choice) =>
         ActAsync("switch the version", () => client.SelectSegmentVersionAsync(ProjectId, PipelineStage.Script, choice!.Key!, choice.Version));
 
-    /// <summary>The whole narration as text, a blank line between segments.</summary>
-    [RelayCommand]
+    /// <summary>The whole narration as text, a blank line between segments. Not while it is written anew.</summary>
+    [RelayCommand(CanExecute = nameof(HasSegments))]
     private void CopyAll()
     {
         try
@@ -88,6 +89,7 @@ public sealed partial class ScriptMatrixViewModel
             row.IsAskingNote = IsAskingNote && IsScriptPanel && row == Selected;
             row.IsEditing = IsEditing && row == Selected;
         }
+        RefreshRowCommands();
     }
 
     private void RefreshRowCommands()
@@ -96,5 +98,6 @@ public sealed partial class ScriptMatrixViewModel
         AskNoteRowCommand.NotifyCanExecuteChanged();
         StartEditRowCommand.NotifyCanExecuteChanged();
         ShowRowVersionCommand.NotifyCanExecuteChanged();
+        CopyAllCommand.NotifyCanExecuteChanged();
     }
 }

@@ -120,7 +120,8 @@
       </DockPanel>
     </StackPanel>
 
-    <ScrollViewer VerticalScrollBarVisibility="Auto">
+    <!-- While the whole script is written anew, the old segments go: they are being replaced. -->
+    <ScrollViewer VerticalScrollBarVisibility="Auto" Visibility="{Binding HasSegments, Converter={StaticResource Visible}}">
       <ItemsControl ItemsSource="{Binding Rows}" Focusable="False" MaxWidth="980" AutomationProperties.Name="Whole script">
         <ItemsControl.ItemTemplate>
           <DataTemplate DataType="{x:Type script:SegmentRowViewModel}">

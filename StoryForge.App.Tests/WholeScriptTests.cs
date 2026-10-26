@@ -147,6 +147,38 @@ public sealed class WholeScriptTests
     }
 
     [Fact]
+    public async Task While_the_whole_script_is_written_again_nothing_on_it_can_be_used()
+    {
+        var (matrix, project) = await OpenAsync();
+        var script = matrix.Script!;
+
+        _client.Raise(new StageUpdate(project.Id, PipelineStage.Script, StageState.Running));
+        await matrix.Updating;
+
+        Assert.False(script.ShowRowVersionCommand.CanExecute(script.Rows[2].Versions[0]));
+        Assert.False(script.CopyAllCommand.CanExecute(null));   // it would copy the script being replaced
+        Assert.False(script.HasSegments);
+    }
+
+    [Fact]
+    public async Task The_segment_being_edited_keeps_your_text_until_Save_or_Cancel()
+    {
+        var (matrix, _) = await OpenAsync();
+        var script = matrix.Script!;
+        script.StartEditRowCommand.Execute(script.Rows[1]);
+        script.EditNarration = "In Hell, souls are money.";
+
+        Assert.False(script.StartEditRowCommand.CanExecute(script.Rows[1]));
+        Assert.False(script.AskNoteRowCommand.CanExecute(script.Rows[1]));
+        Assert.False(script.ApproveRowCommand.CanExecute(script.Rows[1]));
+        Assert.True(script.ApproveRowCommand.CanExecute(script.Rows[2]));
+
+        script.CancelEditCommand.Execute(null);
+
+        Assert.True(script.StartEditRowCommand.CanExecute(script.Rows[1]));
+    }
+
+    [Fact]
     public async Task Copy_all_copies_the_whole_narration()
     {
         var (matrix, _) = await OpenAsync();
