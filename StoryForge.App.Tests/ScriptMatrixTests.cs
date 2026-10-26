@@ -222,6 +222,22 @@ public sealed class ScriptMatrixTests
     }
 
     [Fact]
+    public async Task Edit_text_waits_while_the_note_line_holds_a_note()
+    {
+        var (matrix, project) = await OpenAsync();
+        await WrittenAsync(matrix, project);
+        var script = matrix.Script!;
+        script.AskNoteCommand.Execute(null);
+        Assert.True(script.StartEditCommand.CanExecute(null));   // an empty line is no loss
+
+        script.RegenerateNote = "mention Karlach earlier";
+
+        Assert.False(script.StartEditCommand.CanExecute(null));
+        script.CancelNoteCommand.Execute(null);
+        Assert.True(script.StartEditCommand.CanExecute(null));
+    }
+
+    [Fact]
     public async Task Cancel_closes_the_note_line_and_writes_nothing()
     {
         var (matrix, project) = await OpenAsync();

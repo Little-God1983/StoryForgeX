@@ -727,7 +727,7 @@ public sealed partial class ScriptMatrixViewModel(IStoryForgeClient client, Guid
         {
             Debug.WriteLine($"Could not {what}: {ex}");
             ActionError = $"Could not {what}: {ex.Message}";
-            if (note is not null && !IsAskingNote && Selected == row && IsScriptPanel)
+            if (note is not null && !IsAskingNote && !IsEditing && Selected == row && IsScriptPanel)
             {
                 // Not sent: your note comes back to try again.
                 IsAskingNote = true;
@@ -788,7 +788,10 @@ public sealed partial class ScriptMatrixViewModel(IStoryForgeClient client, Guid
     [RelayCommand(CanExecute = nameof(IsVoiceRunning))]
     private Task CancelVoiceAsync() => ActAsync("cancel the voice", () => client.CancelAsync(ProjectId, PipelineStage.Voice));
 
-    private bool CanStartEdit() => IsScriptPanel && SegmentIdle();
+    // A note typed and not sent waits for Write it again or Cancel: opening the editor would drop it.
+    private bool CanStartEdit() => IsScriptPanel && SegmentIdle() && !HasUnsentNote;
+
+    private bool HasUnsentNote => IsAskingNote && RegenerateNote.Trim().Length > 0;
 
     [RelayCommand(CanExecute = nameof(CanStartEdit))]
     private void StartEdit()

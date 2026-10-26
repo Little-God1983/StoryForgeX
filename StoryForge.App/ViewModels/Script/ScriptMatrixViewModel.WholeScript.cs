@@ -33,7 +33,7 @@ public sealed partial class ScriptMatrixViewModel
 
     // Regenerate and Edit text select their segment, which would close an editor or a note line and drop what you typed.
     private bool CanOpenOnRow(SegmentRowViewModel? row) =>
-        CanActOnRow(row) && !IsEditing && !IsEditingShot && !(IsAskingNote && RegenerateNote.Trim().Length > 0);
+        CanActOnRow(row) && !IsEditing && !IsEditingShot && !HasUnsentNote;
 
     [RelayCommand(CanExecute = nameof(CanApproveRow))]
     private Task ApproveRowAsync(SegmentRowViewModel? row) =>
@@ -104,5 +104,7 @@ public sealed partial class ScriptMatrixViewModel
         StartEditRowCommand.NotifyCanExecuteChanged();
         ShowRowVersionCommand.NotifyCanExecuteChanged();
         CopyAllCommand.NotifyCanExecuteChanged();
+        StartEditCommand.NotifyCanExecuteChanged();
+        AskNoteCommand.NotifyCanExecuteChanged();
     }
 }
