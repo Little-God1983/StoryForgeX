@@ -141,7 +141,7 @@ public sealed class StoryboardRunTests : IDisposable
         {
             var entry = await db.Projects.SingleAsync();
             var json = JsonNode.Parse(entry.SetupJson)!.AsObject();
-            json["Writing"]!["Provider"] = "LM Studio";
+            json["Script"]!["Provider"] = "LM Studio";
             entry.SetupJson = json.ToJsonString();
             await db.SaveChangesAsync();
         }

@@ -269,13 +269,14 @@
     <Setter Property="Template">
       <Setter.Value>
         <ControlTemplate TargetType="CheckBox">
-          <StackPanel Orientation="Horizontal" Background="Transparent">
-            <Border x:Name="Box" Width="18" Height="18" CornerRadius="4" BorderThickness="1"
+          <!-- A dock, not a horizontal stack: the text gets the width that is left, so a long one wraps. -->
+          <DockPanel Background="Transparent">
+            <Border x:Name="Box" DockPanel.Dock="Left" Width="18" Height="18" CornerRadius="4" BorderThickness="1"
                     BorderBrush="{StaticResource FieldBorderBrush}" Background="{StaticResource FieldBrush}" VerticalAlignment="Center">
               <Path x:Name="Tick" Data="M3 9 L7 13 L15 4" Stroke="#1A1206" StrokeThickness="2" Visibility="Collapsed" />
             </Border>
             <ContentPresenter Margin="10,0,0,0" VerticalAlignment="Center" />
-          </StackPanel>
+          </DockPanel>
           <ControlTemplate.Triggers>
             <Trigger Property="IsChecked" Value="True">
               <Setter TargetName="Box" Property="Background" Value="{StaticResource AccentBrush}" />

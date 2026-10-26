@@ -20,8 +20,8 @@ public sealed partial class NewProjectPageViewModel : PageViewModel
 
     public static IReadOnlyList<Choice<Consistency>> ConsistencyChoices { get; } =
     [
-        new(Consistency.ReferenceImages, "From reference images · Qwen Image 2.1"),
-        new(Consistency.TextToImageOnly, "Text-to-image only"),
+        new(Consistency.ReferenceImages, "From reference images"),
+        new(Consistency.TextToImageOnly, "Text-to-image only (no references)"),
     ];
 
     public const int CustomTarget = -1;
@@ -49,18 +49,23 @@ public sealed partial class NewProjectPageViewModel : PageViewModel
     {
         _client = client;
         ResearchSlot = new ProfileSlotViewModel(ProfileKind.Research, "Research profile");
+        StoryboardSlot = new ProfileSlotViewModel(ProfileKind.Storyboard, "Storyboard profile");
         ImageSlot = new ProfileSlotViewModel(ProfileKind.Image, "Image profile");
         VideoSlot = new ProfileSlotViewModel(ProfileKind.Video, "Video profile");
-        Writing = new StageCardViewModel("Research & script", 0, TextProviders, [new("", "Provider default")],
-            ResearchSlot, new(ProfileKind.Script, "Script profile"), new(ProfileKind.Storyboard, "Storyboard profile"));
-        Voice = new StageCardViewModel("Voice (TTS)", 1, ComfyUi, [new("Breeze TTS", "Breeze TTS")],
+        Research = new StageCardViewModel("Research", 0, TextProviders, [new("", "Provider default")], ResearchSlot);
+        Script = new StageCardViewModel("Script", 1, TextProviders, [new("", "Provider default")],
+            new(ProfileKind.Script, "Script profile"), StoryboardSlot);
+        Voice = new StageCardViewModel("Voice (TTS)", 2, ComfyUi, [new("Breeze TTS", "Breeze TTS")],
             new ProfileSlotViewModel(ProfileKind.Voice, "Voice profile"));
-        Stills = new StageCardViewModel("Still images", 2, ComfyUi, [new("Qwen Image 2.1", "Qwen Image 2.1"), new("Krea 2 Turbo", "Krea 2 Turbo")],
+        // Reference images are image profiles too: ones whose workflow edits a found picture.
+        References = new StageCardViewModel("Image references", 3, ComfyUi,
+            [new("Qwen Image 2.1 edit", "Qwen Image 2.1 edit"), new("Krea 2 edit", "Krea 2 edit")],
+            new ProfileSlotViewModel(ProfileKind.Image, "Reference profile"));
+        Stills = new StageCardViewModel("Still images", 4, ComfyUi, [new("Qwen Image 2.1", "Qwen Image 2.1"), new("Krea 2 Turbo", "Krea 2 Turbo")],
             ImageSlot);
-        Clips = new StageCardViewModel("Video clips", 3, ComfyUi, [new("Minimax H3", "Minimax H3"), new("LTX 2.5", "LTX 2.5 (fallback)")],
+        Clips = new StageCardViewModel("Video clips", 5, ComfyUi, [new("Minimax H3", "Minimax H3"), new("LTX 2.5", "LTX 2.5 (fallback)")],
             VideoSlot);
-        Cards = [Writing, Voice, Stills, Clips];
-        StoryboardSlot = Writing.Slots[2];
+        Cards = [Research, Script, Voice, References, Stills, Clips];
 
         ResearchSlot.PropertyChanged += (_, e) => OnSlotChanged(e, ResearchSlot, ApplyResearchProfile);
         StoryboardSlot.PropertyChanged += (_, e) => OnSlotChanged(e, StoryboardSlot,
@@ -88,12 +93,19 @@ public sealed partial class NewProjectPageViewModel : PageViewModel
             new(PipelineStage.Script, "Script", "Segments + narration", gate: true),
             new(PipelineStage.Voice, "Voice", "TTS · word timings", gate: false),
             new(PipelineStage.Storyboard, "Storyboard", "Shots timed to the audio · gate required", gate: true),
-            new(PipelineStage.References, "References", "Reference images · gate required", gate: true),
+            new(PipelineStage.References, "References", ReferencesVia(), gate: true),
             new(PipelineStage.Stills, "Stills", "One image per shot", gate: true),
             new(PipelineStage.Clips, "Clips", "Image-to-video", gate: false),
             new(PipelineStage.Assembly, "Assembly", "LLM cut list → FFmpeg or Resolve", gate: true),
             new(PipelineStage.Publish, "Publish to CAX", "Content Automator X tenant", gate: false),
         ];
+        References.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName == nameof(StageCardViewModel.Model))
+            {
+                UpdateReferencesVia();
+            }
+        };
         UpdateMissing();
     }
 
@@ -114,9 +126,13 @@ public sealed partial class NewProjectPageViewModel : PageViewModel
 
     // ── Providers ──
 
-    public StageCardViewModel Writing { get; }
+    public StageCardViewModel Research { get; }
+
+    public StageCardViewModel Script { get; }
 
     public StageCardViewModel Voice { get; }
+
+    public StageCardViewModel References { get; }
 
     public StageCardViewModel Stills { get; }
 
@@ -317,15 +333,16 @@ public sealed partial class NewProjectPageViewModel : PageViewModel
         Name,
         Brief,
         [.. ResearchSources],
-        new WritingSetup(Writing.Provider, Writing.Model, ResearchSlot.ToRef()!, Writing.Slots[1].ToRef()!, Writing.Slots[2].ToRef()!),
+        new ResearchSetup(Research.Provider, Research.Model, ResearchSlot.ToRef()!),
+        new ScriptSetup(Script.Provider, Script.Model, Script.Slots[0].ToRef()!, StoryboardSlot.ToRef()!),
         new VoiceSetup(Voice.Provider, Voice.Model, Voice.Slots[0].ToRef()!),
-        new StillsSetup(Stills.Provider, Stills.Model, ImageSlot.ToRef()!, Consistency, StillSize.Value!),
+        new ReferencesSetup(References.Provider, References.Model, References.Slots[0].ToRef()!, Consistency, ReviewReferenceList),
+        new StillsSetup(Stills.Provider, Stills.Model, ImageSlot.ToRef()!, StillSize.Value!),
         new ClipsSetup(Clips.Provider, Clips.Model, VideoSlot.ToRef()!, MaxClip.Value!.Value, ClipSize.Value!),
         new OutputSetup(Aspect, SelectedDelivery.Value.Width, SelectedDelivery.Value.Height, TargetLength()!.Value, Language, Assembly),
         [.. RunPlan.Where(s => s.IsGated).Select(s => s.Stage)],
         StopAtGates ? RunMode.StopAtGates : RunMode.RunThrough,
-        Pacing.Override,
-        ReviewReferenceList);
+        Pacing.Override);
 
     private int? TargetLength()
     {
@@ -354,6 +371,15 @@ public sealed partial class NewProjectPageViewModel : PageViewModel
         ClipSize.UseDefaultFor(value, _content.GetValueOrDefault(VideoSlot));
         UpdateMissing();
     }
+
+    partial void OnConsistencyChanged(Consistency value) => UpdateReferencesVia();
+
+    /// <summary>The References row of the run plan names the model that makes the images, or that none are made.</summary>
+    private string ReferencesVia() => Consistency == Consistency.TextToImageOnly
+        ? "None: the stills are made from text only"
+        : $"{References.Model} · gate required";
+
+    private void UpdateReferencesVia() => RunPlan.Single(s => s.Stage == PipelineStage.References).Via = ReferencesVia();
 
     partial void OnNameChanged(string value) => UpdateMissing();
 

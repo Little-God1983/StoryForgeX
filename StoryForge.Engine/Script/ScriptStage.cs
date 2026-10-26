@@ -98,9 +98,9 @@ internal sealed class ScriptStage(IScriptAgent agent, CellReader cells, ProfileS
         schema = ScriptSheet.SchemaVersion,
         facts = factsVersion,
         brief = setup.Brief,
-        provider = setup.Writing.Provider,
-        model = setup.Writing.Model,
-        profile = setup.Writing.Script,
+        provider = setup.Script.Provider,
+        model = setup.Script.Model,
+        profile = setup.Script.Script,
         language = setup.Output.Language,
         target = setup.Output.TargetSeconds,
     });
@@ -112,10 +112,10 @@ internal sealed class ScriptStage(IScriptAgent agent, CellReader cells, ProfileS
     private async Task<(ScriptRequest Request, int FactsVersion)> RequestAsync(StageContext context, int? factsVersion, CancellationToken cancellationToken)
     {
         var setup = context.Project.Setup;
-        if (setup.Writing.Provider != ResearchStage.ClaudeCli)
+        if (setup.Script.Provider != ResearchStage.ClaudeCli)
         {
             throw new StageFailedException(
-                $"The script is written through Claude CLI for now, and this project uses {setup.Writing.Provider}. LM Studio follows with #19.");
+                $"The script is written through Claude CLI for now, and this project uses {setup.Script.Provider}. LM Studio follows with #19.");
         }
         (FactSheet Sheet, int Version) facts;
         if (factsVersion is { } wanted && await cells.FactSheetAsync(context.Project.Id, wanted, cancellationToken) is { } written)
@@ -131,13 +131,13 @@ internal sealed class ScriptStage(IScriptAgent agent, CellReader cells, ProfileS
         {
             throw new StageFailedException("Every fact on the approved fact sheet is left out, so there is nothing to write from.");
         }
-        var profile = await profiles.GetVersionAsync(setup.Writing.Script.ProfileId, setup.Writing.Script.Version, cancellationToken);
+        var profile = await profiles.GetVersionAsync(setup.Script.Script.ProfileId, setup.Script.Script.Version, cancellationToken);
         return (new ScriptRequest(
             context.Project.Id,
             setup.Brief,
             facts.Sheet,
             profile.Content.Instructions,
-            setup.Writing.Model,
+            setup.Script.Model,
             setup.Output.Language,
             setup.Output.TargetSeconds), facts.Version);
     }

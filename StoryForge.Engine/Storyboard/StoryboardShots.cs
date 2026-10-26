@@ -83,6 +83,6 @@ internal sealed class StoryboardShots(
     /// <summary>The pacing a storyboard planned now would use: the project's own, else its storyboard profile's.</summary>
     private async Task<Pacing> PacingAsync(ProjectSetup setup, CancellationToken cancellationToken) =>
         setup.Pacing
-        ?? (await profiles.GetVersionAsync(setup.Writing.Storyboard.ProfileId, setup.Writing.Storyboard.Version, cancellationToken)).Content.Pacing
+        ?? (await profiles.GetVersionAsync(setup.Script.Storyboard.ProfileId, setup.Script.Storyboard.Version, cancellationToken)).Content.Pacing
         ?? Pacing.Default;
 }

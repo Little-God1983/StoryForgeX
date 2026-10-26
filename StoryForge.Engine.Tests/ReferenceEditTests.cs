@@ -28,7 +28,7 @@ public sealed partial class ReferencesRunTests
     private async Task<(IStoryForgeClient Client, Guid ProjectId)> ImagedAsync()
     {
         var client = await StartAsync();
-        var project = await StoryboardApprovedAsync(client, s => s with { ReviewReferenceList = false });
+        var project = await StoryboardApprovedAsync(client, s => s with { References = s.References with { ReviewList = false } });
         await ReferencesAsync(client, project.Id, ImagesMade);
         return (client, project.Id);
     }
@@ -271,7 +271,7 @@ public sealed partial class ReferencesRunTests
     {
         _comfy.Hold = new TaskCompletionSource();
         var client = await StartAsync();
-        var project = await StoryboardApprovedAsync(client, s => s with { ReviewReferenceList = false });
+        var project = await StoryboardApprovedAsync(client, s => s with { References = s.References with { ReviewList = false } });
         await ReferencesAsync(client, project.Id, v => v.State == StageState.Running);
 
         await Assert.ThrowsAsync<InvalidOperationException>(() =>
@@ -466,7 +466,7 @@ public sealed partial class ReferencesRunTests
     public async Task An_empty_list_needs_nothing_to_make_images_with()
     {
         var client = await StartAsync();
-        var project = await StoryboardApprovedAsync(client, s => s with { Stills = s.Stills with { Provider = "Elsewhere" } });
+        var project = await StoryboardApprovedAsync(client, s => s with { References = s.References with { Provider = "Elsewhere" } });
         await ReferencesAsync(client, project.Id, v => v.State == StageState.NeedsReview);
         await client.ChangeReferencesAsync(project.Id, new ReferenceChange(ReferenceChangeKind.Remove, ReferenceId: "R01"));
         await client.ChangeReferencesAsync(project.Id, new ReferenceChange(ReferenceChangeKind.Remove, ReferenceId: "R02"));
@@ -556,7 +556,7 @@ public sealed partial class ReferencesRunTests
         _comfy.Failure = "ComfyUI is not reachable.";
         _comfy.FailFor = "Soul coin";
         var client = await StartAsync();
-        var project = await StoryboardApprovedAsync(client, s => s with { ReviewReferenceList = false });
+        var project = await StoryboardApprovedAsync(client, s => s with { References = s.References with { ReviewList = false } });
 
         var failed = await ReferencesAsync(client, project.Id, v => v.State == StageState.Failed);
 
@@ -601,7 +601,7 @@ public sealed partial class ReferencesRunTests
         _pictures.ByName["Karlach"] = [FakePictures.Picture("Tiny.png", 200, 200)];
         _pictures.ByName["Soul coin"] = [FakePictures.Picture("Tiny coin.png", 200, 200, page: "https://bg3.wiki/wiki/Soul_Coin")];
         var client = await StartAsync();
-        var project = await StoryboardApprovedAsync(client, s => s with { ReviewReferenceList = false, Stills = s.Stills with { Provider = "Elsewhere" } });
+        var project = await StoryboardApprovedAsync(client, s => s with { References = s.References with { ReviewList = false, Provider = "Elsewhere" } });
 
         var view = await ReferencesAsync(client, project.Id, ImagesMade);
 
@@ -614,7 +614,7 @@ public sealed partial class ReferencesRunTests
     {
         _inputs = [.. FakeImageComfy.Inputs.Where(i => i.Key != "image")];
         var client = await StartAsync();
-        var project = await StoryboardApprovedAsync(client, s => s with { ReviewReferenceList = false });
+        var project = await StoryboardApprovedAsync(client, s => s with { References = s.References with { ReviewList = false } });
 
         var view = await ReferencesAsync(client, project.Id, _ => false);
 
@@ -629,7 +629,7 @@ public sealed partial class ReferencesRunTests
         _comfy.Failure = "ComfyUI is not reachable.";
         _comfy.FailFor = "Soul coin";
         var client = await StartAsync();
-        var project = await StoryboardApprovedAsync(client, s => s with { ReviewReferenceList = false });
+        var project = await StoryboardApprovedAsync(client, s => s with { References = s.References with { ReviewList = false } });
 
         var failed = await ReferencesAsync(client, project.Id, v => v.State == StageState.Failed);
 
@@ -658,7 +658,7 @@ public sealed partial class ReferencesRunTests
         _comfy.Hold = new TaskCompletionSource();
         _comfy.HoldFor = "Soul coin";
         var client = await StartAsync();
-        var project = await StoryboardApprovedAsync(client, s => s with { ReviewReferenceList = false });
+        var project = await StoryboardApprovedAsync(client, s => s with { References = s.References with { ReviewList = false } });
         await ReferencesAsync(client, project.Id, v => v.References is [{ Images: [{ Version: > 0 }] }, ..]);
 
         await client.CancelAsync(project.Id, PipelineStage.References);
@@ -766,7 +766,7 @@ public sealed partial class ReferencesRunTests
     {
         _comfy.Hold = new TaskCompletionSource();
         var client = await StartAsync();
-        var project = await StoryboardApprovedAsync(client, s => s with { ReviewReferenceList = false });
+        var project = await StoryboardApprovedAsync(client, s => s with { References = s.References with { ReviewList = false } });
         await ReferencesAsync(client, project.Id, v => v is { State: StageState.Running, Phase: ReferencePhase.Images, References.Count: 2 });
 
         await client.CancelAsync(project.Id, PipelineStage.References);

@@ -50,7 +50,7 @@ internal sealed class ReferencesStage(
     public async Task<StageResult> RunAsync(StageContext context, CancellationToken cancellationToken)
     {
         var project = context.Project;
-        if (project.Setup.Stills.Consistency == Consistency.TextToImageOnly)
+        if (project.Setup.References.Consistency == Consistency.TextToImageOnly)
         {
             Report(context, ActivityKind.Check, "This project makes its stills from text only: no references are needed.");
             return Result(new ReferenceSheet([], [], [], ReferencePhase.Images), []);
@@ -60,7 +60,7 @@ internal sealed class ReferencesStage(
         if (sheet is not { Phase: ReferencePhase.Images })
         {
             sheet = await ProposeAsync(context, cancellationToken);
-            if (project.Setup.ReviewReferenceList)
+            if (project.Setup.References.ReviewList)
             {
                 Report(context, ActivityKind.Check, $"{sheet.References.Count} references proposed, {sheet.Pool.Count} pictures in the pool: check the list, then make the images.");
                 return Result(sheet, null);
@@ -139,9 +139,9 @@ internal sealed class ReferencesStage(
         reference.Sources,
         reference.Chosen,
         reference.DescriptionOnly,
-        provider = setup.Stills.Provider,
-        model = setup.Stills.Model,
-        profile = setup.Stills.Profile,
+        provider = setup.References.Provider,
+        model = setup.References.Model,
+        profile = setup.References.Profile,
     });
 
     /// <summary>"R01/2" → ("R01", 2).</summary>
@@ -183,11 +183,11 @@ internal sealed class ReferencesStage(
     private async Task<Maker> MakerAsync(StageContext context, CancellationToken cancellationToken)
     {
         var setup = context.Project.Setup;
-        if (!string.Equals(setup.Stills.Provider, VoiceStage.ComfyUi, StringComparison.OrdinalIgnoreCase))
+        if (!string.Equals(setup.References.Provider, VoiceStage.ComfyUi, StringComparison.OrdinalIgnoreCase))
         {
-            throw new StageFailedException($"Reference images are made through ComfyUI for now, and this project uses {setup.Stills.Provider}.");
+            throw new StageFailedException($"Reference images are made through ComfyUI for now, and this project uses {setup.References.Provider}.");
         }
-        var profile = (await profiles.GetVersionAsync(setup.Stills.Profile.ProfileId, setup.Stills.Profile.Version, cancellationToken)).Content;
+        var profile = (await profiles.GetVersionAsync(setup.References.Profile.ProfileId, setup.References.Profile.Version, cancellationToken)).Content;
         var templates = (await settings.LoadAsync(cancellationToken)).ComfyUi.WorkflowTemplatesFolder;
         var workflow = await WorkflowTemplate.LoadAsync(templates, profile.WorkflowTemplate, cancellationToken, "image");
         if (!WorkflowTemplate.Maps(profile.Inputs, PromptKey))
@@ -243,7 +243,7 @@ internal sealed class ReferencesStage(
             try
             {
                 verdict = await check.CheckAsync(
-                    new PictureCheckRequest(context.Project.Id, reference.Name, reference.Kind, reference.KeyReason, Path.Combine(root, picture.File), context.Project.Setup.Writing.Model),
+                    new PictureCheckRequest(context.Project.Id, reference.Name, reference.Kind, reference.KeyReason, Path.Combine(root, picture.File), context.Project.Setup.Research.Model),
                     context.Activity, cancellationToken);
             }
             catch (StageFailedException ex)

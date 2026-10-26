@@ -101,9 +101,9 @@ internal sealed class StoryboardStage(IStoryboardAgent agent, CellReader cells, 
         stage = PipelineStage.Storyboard,
         schema = Shot.SchemaVersion,
         voices = voices.OrderBy(v => v.Key, StringComparer.Ordinal).ToDictionary(),
-        provider = setup.Writing.Provider,
-        model = setup.Writing.Model,
-        profile = setup.Writing.Storyboard,
+        provider = setup.Script.Provider,
+        model = setup.Script.Model,
+        profile = setup.Script.Storyboard,
         pacing,
         maxClip = setup.Clips.MaxClipSeconds,
     });
@@ -116,10 +116,10 @@ internal sealed class StoryboardStage(IStoryboardAgent agent, CellReader cells, 
         StageContext context, IReadOnlyDictionary<string, int>? voiceVersions, CancellationToken cancellationToken)
     {
         var setup = context.Project.Setup;
-        if (setup.Writing.Provider != ResearchStage.ClaudeCli)
+        if (setup.Script.Provider != ResearchStage.ClaudeCli)
         {
             throw new StageFailedException(
-                $"The storyboard is planned through Claude CLI for now, and this project uses {setup.Writing.Provider}. LM Studio follows with #19.");
+                $"The storyboard is planned through Claude CLI for now, and this project uses {setup.Script.Provider}. LM Studio follows with #19.");
         }
         var script = await cells.ApprovedSegmentsAsync(context.Project.Id, cancellationToken);
         if (script.Count == 0)
@@ -149,13 +149,13 @@ internal sealed class StoryboardStage(IStoryboardAgent agent, CellReader cells, 
             segments.Add(new StoryboardSegment(segment, new SegmentWords(segment.Id, clip.Words, clip.Seconds)));
             voices[segment.Id] = version;
         }
-        var profile = await profiles.GetVersionAsync(setup.Writing.Storyboard.ProfileId, setup.Writing.Storyboard.Version, cancellationToken);
+        var profile = await profiles.GetVersionAsync(setup.Script.Storyboard.ProfileId, setup.Script.Storyboard.Version, cancellationToken);
         return (new StoryboardRequest(
             context.Project.Id,
             setup.Brief,
             segments,
             profile.Content.Instructions,
-            setup.Writing.Model,
+            setup.Script.Model,
             (setup.Pacing ?? profile.Content.Pacing ?? Pacing.Default).HeldTo(setup.Clips.MaxClipSeconds),
             setup.Clips.MaxClipSeconds), voices);
     }

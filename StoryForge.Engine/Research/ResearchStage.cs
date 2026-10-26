@@ -21,23 +21,23 @@ internal sealed class ResearchStage(IResearchAgent agent, ProfileStore profiles,
     public async Task<StageResult> RunAsync(StageContext context, CancellationToken cancellationToken)
     {
         var setup = context.Project.Setup;
-        if (setup.Writing.Provider != ClaudeCli)
+        if (setup.Research.Provider != ClaudeCli)
         {
             throw new StageFailedException(
-                $"Research runs through Claude CLI for now, and this project uses {setup.Writing.Provider}. LM Studio follows with #19.");
+                $"Research runs through Claude CLI for now, and this project uses {setup.Research.Provider}. LM Studio follows with #19.");
         }
         if (setup.ResearchSources.Count == 0)
         {
             throw new StageFailedException("The project has no research sources, so there is nothing research may read.");
         }
 
-        var profile = await profiles.GetVersionAsync(setup.Writing.Research.ProfileId, setup.Writing.Research.Version, cancellationToken);
+        var profile = await profiles.GetVersionAsync(setup.Research.Profile.ProfileId, setup.Research.Profile.Version, cancellationToken);
         var request = new ResearchRequest(
             context.Project.Id,
             setup.Brief,
             setup.ResearchSources,
             profile.Content.Instructions,
-            setup.Writing.Model,
+            setup.Research.Model,
             setup.Output.Language,
             setup.Output.TargetSeconds);
 
@@ -74,9 +74,9 @@ internal sealed class ResearchStage(IResearchAgent agent, ProfileStore profiles,
         schema = FactSheet.SchemaVersion,
         brief = setup.Brief,
         sources = setup.ResearchSources,
-        provider = setup.Writing.Provider,
-        model = setup.Writing.Model,
-        profile = setup.Writing.Research,
+        provider = setup.Research.Provider,
+        model = setup.Research.Model,
+        profile = setup.Research.Profile,
         language = setup.Output.Language,
         target = setup.Output.TargetSeconds,
     });

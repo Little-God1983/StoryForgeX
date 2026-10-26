@@ -44,8 +44,8 @@ public sealed class NewProjectPageTests
 
         var page = await ShownPage();
 
-        Assert.Equal(["Lore explainer", "Story narration"], page.Writing.Slots[1].Choices.Select(p => p.Name));
-        Assert.Equal("Lore explainer", page.Writing.Slots[1].Selected!.Name);
+        Assert.Equal(["Lore explainer", "Story narration"], page.Script.Slots[0].Choices.Select(p => p.Name));
+        Assert.Equal("Lore explainer", page.Script.Slots[0].Selected!.Name);
         Assert.Equal("Calm narrator", page.Voice.Slots[0].Selected!.Name);
     }
 
@@ -394,9 +394,70 @@ public sealed class NewProjectPageTests
 
         page.ApplyToAllCommand.Execute(page.Clips);
 
-        Assert.Equal("Noir", page.Writing.Slots[1].Selected!.Name);
-        Assert.Equal("Shot planner", page.Writing.Slots[2].Selected!.Name);   // no storyboard "Noir"
-        Assert.Equal("Claude CLI", page.Writing.Provider);                    // ComfyUI is no text provider
+        Assert.Equal("Noir", page.Script.Slots[0].Selected!.Name);
+        Assert.Equal("Shot planner", page.StoryboardSlot.Selected!.Name);   // no storyboard "Noir"
+        Assert.Equal("Claude CLI", page.Script.Provider);                   // ComfyUI is no text provider
+        Assert.Equal("Claude CLI", page.Research.Provider);
+    }
+
+    [Fact]
+    public async Task Research_and_script_each_have_their_own_provider_and_model()
+    {
+        AddOneOfEach();
+        var page = await ShownPage();
+        FillBrief(page);
+
+        page.Script.Provider = "LM Studio";
+        await page.StartCommand.ExecuteAsync(null);
+
+        var setup = Assert.Single(_client.Projects).Setup;
+        Assert.Equal("Claude CLI", setup.Research.Provider);
+        Assert.Equal("LM Studio", setup.Script.Provider);
+    }
+
+    [Fact]
+    public async Task Later_stages_from_research_reaches_the_script_card()
+    {
+        AddOneOfEach();
+        var page = await ShownPage();
+
+        page.Research.Provider = "LM Studio";
+        page.ApplyToLaterStagesCommand.Execute(page.Research);
+
+        Assert.Equal("LM Studio", page.Script.Provider);
+        Assert.Equal("ComfyUI", page.Voice.Provider);   // no text provider: kept
+    }
+
+    [Fact]
+    public async Task The_image_references_card_picks_its_own_image_profile_and_later_stages_carries_it_to_the_stills()
+    {
+        AddOneOfEach();
+        _client.AddProfile(ProfileKind.Image, "Qwen edit", Empty);
+        var page = await ShownPage();
+        var references = page.References.Slots[0];
+        Assert.Equal(["Painted dark fantasy", "Qwen edit"], references.Choices.Select(p => p.Name));
+
+        references.Selected = references.Choices.Single(p => p.Name == "Qwen edit");
+        Assert.Equal("Painted dark fantasy", page.ImageSlot.Selected!.Name);   // the stills keep theirs
+
+        page.ApplyToLaterStagesCommand.Execute(page.References);
+
+        Assert.Equal("Qwen edit", page.ImageSlot.Selected!.Name);
+        Assert.Equal("Qwen Image 2.1", page.Stills.Model);   // an edit model is no stills model: kept
+    }
+
+    [Fact]
+    public async Task The_run_plan_names_the_reference_model()
+    {
+        var page = await ShownPage();
+        var references = page.RunPlan.Single(s => s.Stage == PipelineStage.References);
+        Assert.StartsWith("Qwen Image 2.1 edit", references.Via);
+
+        page.References.Model = "Krea 2 edit";
+        Assert.StartsWith("Krea 2 edit", references.Via);
+
+        page.Consistency = Consistency.TextToImageOnly;
+        Assert.DoesNotContain("Krea", references.Via);
     }
 
     [Fact]
@@ -429,6 +490,7 @@ public sealed class NewProjectPageTests
         page.Language = "Deutsch";
         page.Assembly = AssemblyTarget.DavinciResolve;
         page.Consistency = Consistency.TextToImageOnly;
+        page.References.Model = "Krea 2 edit";
         page.RunThrough = true;
         page.RunPlan.Single(s => s.Stage == PipelineStage.Clips).IsGated = true;
         Project? started = null;
@@ -440,11 +502,11 @@ public sealed class NewProjectPageTests
         Assert.Same(_client.Projects[0], started);
         Assert.Equal("Soul Coins – BG3 lore", setup.Name);
         Assert.Equal(["bg3.wiki", "forgottenrealms.fandom.com"], setup.ResearchSources);
-        Assert.Equal(2, setup.Writing.Script.Version);              // the script profile is at v2
+        Assert.Equal(2, setup.Script.Script.Version);              // the script profile is at v2
         Assert.Equal(3, setup.Stills.Profile.Version);
+        Assert.Equal(new ReferencesSetup("ComfyUI", "Krea 2 edit", setup.Stills.Profile, Consistency.TextToImageOnly), setup.References);
         Assert.Equal(new GenerationSize("9:16", 768, 1344), setup.Stills.Size);
         Assert.Equal(new OutputSetup("9:16", 1080, 1920, 150, "Deutsch", AssemblyTarget.DavinciResolve), setup.Output);
-        Assert.Equal(Consistency.TextToImageOnly, setup.Stills.Consistency);
         Assert.Equal(30, setup.Clips.MaxClipSeconds);
         Assert.Equal(RunMode.RunThrough, setup.Mode);
         Assert.Contains(PipelineStage.Clips, setup.Gates);
@@ -545,7 +607,7 @@ public sealed class NewProjectPageTests
         AddOneOfEach();
         _client.AddProfile(ProfileKind.Storyboard, "Quick cuts", Empty with { Pacing = new Pacing(2, 3, 5) });
         var page = await ShownPage();
-        page.Writing.Slots[2].Selected = page.Writing.Slots[2].Choices.Single(p => p.Name == "Quick cuts");
+        page.StoryboardSlot.Selected = page.StoryboardSlot.Choices.Single(p => p.Name == "Quick cuts");
         await page.WhenSettled();
         FillBrief(page);
 
@@ -666,6 +728,6 @@ public sealed class NewProjectPageTests
         page.ReviewReferenceList = false;
         await page.StartCommand.ExecuteAsync(null);
 
-        Assert.False(Assert.Single(_client.Projects).Setup.ReviewReferenceList);
+        Assert.False(Assert.Single(_client.Projects).Setup.References.ReviewList);
     }
 }
