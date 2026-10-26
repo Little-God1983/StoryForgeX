@@ -32,7 +32,8 @@ public sealed partial class ScriptMatrixViewModel
     private bool CanApproveRow(SegmentRowViewModel? row) => CanActOnRow(row) && row!.State != StageState.Approved;
 
     // Regenerate and Edit text select their segment, which would close an editor or a note line and drop what you typed.
-    private bool CanOpenOnRow(SegmentRowViewModel? row) => CanActOnRow(row) && !IsEditing && !(IsAskingNote && RegenerateNote.Trim().Length > 0);
+    private bool CanOpenOnRow(SegmentRowViewModel? row) =>
+        CanActOnRow(row) && !IsEditing && !IsEditingShot && !(IsAskingNote && RegenerateNote.Trim().Length > 0);
 
     [RelayCommand(CanExecute = nameof(CanApproveRow))]
     private Task ApproveRowAsync(SegmentRowViewModel? row) =>
@@ -68,7 +69,6 @@ public sealed partial class ScriptMatrixViewModel
             CopyText(text);
             _copied = text;
             CopiedText = $"Copied: {Rows.Count} segments, {Rows.Sum(r => r.Words)} words.";
-            ActionError = null;
         }
         catch (Exception ex)
         {

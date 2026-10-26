@@ -205,6 +205,23 @@ public sealed class ScriptMatrixTests
     }
 
     [Fact]
+    public async Task A_note_that_could_not_be_sent_stays_to_try_again()
+    {
+        var (matrix, project) = await OpenAsync();
+        await WrittenAsync(matrix, project);
+        var script = matrix.Script!;
+        script.AskNoteCommand.Execute(null);
+        script.RegenerateNote = "too long";
+        _client.StageFailure = new InvalidOperationException("S01 is being written already.");
+
+        await script.RegenerateSegmentCommand.ExecuteAsync(null);
+
+        Assert.True(script.IsAskingNote);
+        Assert.Equal("too long", script.RegenerateNote);
+        Assert.Equal("Could not write the segment again: S01 is being written already.", script.ActionError);
+    }
+
+    [Fact]
     public async Task Cancel_closes_the_note_line_and_writes_nothing()
     {
         var (matrix, project) = await OpenAsync();

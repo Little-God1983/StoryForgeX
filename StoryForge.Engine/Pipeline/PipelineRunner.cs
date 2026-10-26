@@ -338,6 +338,11 @@ internal sealed class PipelineRunner(
             if (!_jobs.TryAdd((projectId, stage, key), job))
             {
                 job.Cancel.Dispose();
+                if (note is not null)
+                {
+                    // The run under way has its own note or none: this one would be lost without a word.
+                    throw new InvalidOperationException($"{key} is being written already. Your note was not sent; try again when it is done.");
+                }
                 return;   // already running or waiting to run
             }
         }

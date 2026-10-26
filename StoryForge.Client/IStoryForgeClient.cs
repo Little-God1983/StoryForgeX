@@ -117,7 +117,7 @@ public interface IStoryForgeClient
     /// new version. Null or blank for none.
     /// </param>
     /// <exception cref="KeyNotFoundException">No such project or segment.</exception>
-    /// <exception cref="InvalidOperationException">The whole stage is running.</exception>
+    /// <exception cref="InvalidOperationException">The whole stage is running, or a note came for a segment already being written.</exception>
     /// <exception cref="ArgumentException">A note for a stage other than Script.</exception>
     Task RegenerateSegmentAsync(Guid projectId, PipelineStage stage, string segmentId, string? note = null, CancellationToken cancellationToken = default);
 

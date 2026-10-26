@@ -215,6 +215,31 @@ public sealed class WholeScriptTests
     }
 
     [Fact]
+    public async Task An_open_shot_description_is_not_dropped_from_the_whole_script()
+    {
+        var (matrix, _) = await OpenAsync();
+        var script = matrix.Script!;
+
+        script.IsEditingShot = true;   // left open in the Board panel before "Show whole script"
+
+        Assert.False(script.AskNoteRowCommand.CanExecute(script.Rows[2]));
+        Assert.False(script.StartEditRowCommand.CanExecute(script.Rows[2]));
+    }
+
+    [Fact]
+    public async Task Copy_all_leaves_an_earlier_error_in_place()
+    {
+        var (matrix, _) = await OpenAsync();
+        var script = matrix.Script!;
+        script.CopyText = _ => { };
+        script.ActionError = "Could not approve the segment: S02 is being written.";
+
+        script.CopyAllCommand.Execute(null);
+
+        Assert.Equal("Could not approve the segment: S02 is being written.", script.ActionError);
+    }
+
+    [Fact]
     public async Task Copy_all_copies_the_whole_narration()
     {
         var (matrix, _) = await OpenAsync();

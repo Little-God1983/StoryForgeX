@@ -714,13 +714,29 @@ public sealed partial class ScriptMatrixViewModel(IStoryForgeClient client, Guid
     [RelayCommand(CanExecute = nameof(SegmentIdle))]
     private async Task RegenerateSegmentAsync()
     {
+        var what = IsBoardPanel ? "plan the shot again" : IsVoicePanel ? "speak the segment again" : "write the segment again";
+        var (stage, key, row) = (SelectedStage, SelectedKey, Selected);
         var note = IsScriptPanel && IsAskingNote ? RegenerateNote : null;
-        await ActAsync(IsBoardPanel ? "plan the shot again" : IsVoicePanel ? "speak the segment again" : "write the segment again",
-            () => client.RegenerateSegmentAsync(ProjectId, SelectedStage, SelectedKey, note));
-        if (ActionError is null)
+        // The line closes with the click, so a note opened while this is on its way is not the one closed.
+        CloseNote();
+        try
         {
-            CloseNote();   // sent; when it was not, your note stays to try again
+            await client.RegenerateSegmentAsync(ProjectId, stage, key, note);
         }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"Could not {what}: {ex}");
+            ActionError = $"Could not {what}: {ex.Message}";
+            if (note is not null && !IsAskingNote && Selected == row && IsScriptPanel)
+            {
+                // Not sent: your note comes back to try again.
+                IsAskingNote = true;
+                RegenerateNote = note;
+            }
+            return;
+        }
+        ActionError = null;
+        await LoadAsync();
     }
 
     /// <summary>Regenerate on a segment: its note line opens first.</summary>

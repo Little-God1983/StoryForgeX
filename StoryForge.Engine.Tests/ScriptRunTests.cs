@@ -409,6 +409,22 @@ public sealed class ScriptRunTests : IDisposable
     }
 
     [Fact]
+    public async Task A_note_for_a_segment_already_being_written_is_refused_not_lost()
+    {
+        _script.Answer(Good());
+        _script.HoldSegment();
+        var client = await StartAsync();
+        var project = await ApprovedFactsAsync(client);
+        await ScriptAsync(client, project.Id, StageState.NeedsReview);
+        await client.RegenerateSegmentAsync(project.Id, PipelineStage.Script, "S01");
+
+        await client.RegenerateSegmentAsync(project.Id, PipelineStage.Script, "S01");   // without a note: nothing to lose, it just runs once
+        await Assert.ThrowsAsync<InvalidOperationException>(() => client.RegenerateSegmentAsync(project.Id, PipelineStage.Script, "S01", "too long"));
+
+        await client.CancelSegmentAsync(project.Id, PipelineStage.Script, "S01");
+    }
+
+    [Fact]
     public async Task Approving_the_fact_sheet_again_keeps_the_script_already_written()
     {
         _script.Answer(Good());
