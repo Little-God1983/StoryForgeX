@@ -320,7 +320,9 @@
                   </ItemsControl>
                 </Grid>
 
-                <ItemsControl ItemsSource="{Binding TimelineRows}" Focusable="False" AutomationProperties.Name="References in the shots">
+                <!-- One Tab stop for the whole grid; the arrow keys move inside it. -->
+                <ItemsControl ItemsSource="{Binding TimelineRows}" Focusable="False" AutomationProperties.Name="References in the shots"
+                              KeyboardNavigation.TabNavigation="Once" KeyboardNavigation.DirectionalNavigation="Contained">
                   <ItemsControl.ItemTemplate>
                     <DataTemplate DataType="{x:Type refs:TimelineRowViewModel}">
                       <Border x:Name="Row" CornerRadius="6" Background="Transparent">

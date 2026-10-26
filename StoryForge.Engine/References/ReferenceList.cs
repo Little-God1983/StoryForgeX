@@ -47,6 +47,23 @@ internal static class ReferenceList
     public static bool IsNamed(Reference reference, string name) =>
         Same(reference.Name, name) || (reference.AlsoNamed ?? []).Any(n => Same(n, name));
 
+    /// <summary>
+    /// Who and what is in a shot, each reference once under its own name: a shot that names Karlach
+    /// and "Soul coin" merged into her holds one reference, not two.
+    /// </summary>
+    public static IReadOnlyList<string> Tidy(IEnumerable<string> cast, IReadOnlyList<Reference> references)
+    {
+        var tidy = new List<string>();
+        foreach (var name in cast.Select(n => references.FirstOrDefault(r => IsNamed(r, n))?.Name ?? n))
+        {
+            if (!tidy.Any(n => Same(n, name)))
+            {
+                tidy.Add(name);
+            }
+        }
+        return tidy;
+    }
+
     /// <summary>The shots it is in: those with its name, or one merged into it, in their who and what.</summary>
     public static IReadOnlyList<string> ShotsOf(Reference reference, IEnumerable<Shot> shots) =>
         [.. shots.Where(s => s.Cast.Any(n => IsNamed(reference, n))).Select(s => s.Key)];

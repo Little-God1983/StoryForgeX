@@ -1,5 +1,4 @@
 using System.Collections.ObjectModel;
-using System.Globalization;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using StoryForge.Client;
@@ -99,12 +98,8 @@ public sealed partial class ReferencesViewModel
     [RelayCommand]
     private void ToggleTimeline() => IsTimelineOpen = !IsTimelineOpen;
 
-    /// <summary>"1:05", from seconds.</summary>
-    internal static string Clock(double seconds)
-    {
-        var whole = (int)seconds;
-        return string.Create(CultureInfo.InvariantCulture, $"{whole / 60}:{whole % 60:00}");
-    }
+    /// <summary>"1:05", from seconds, as the other screens show times.</summary>
+    internal static string Clock(double seconds) => Script.ScriptMatrixViewModel.Clock(seconds);
 
     /// <summary>Made again from the view, after the cards: a row per card, in their order.</summary>
     private void FillTimeline(ReferencesView view)

@@ -79,6 +79,12 @@ public sealed class ReferencesTimelineTests
     }
 
     [Fact]
+    public void Times_are_rounded_to_the_second_as_on_the_rest_of_the_screens()
+    {
+        Assert.Equal("0:10", new TimelineShotViewModel(new TimelineShot("S01/a", "S01·1", 9.8, 4, [])).StartText);
+    }
+
+    [Fact]
     public async Task A_click_puts_the_reference_in_the_shot_or_takes_it_out()
     {
         var (screen, _) = await OpenAsync();

@@ -96,17 +96,17 @@ internal sealed class ReferenceViews(
             textOnly,
             labels,
             whole.CurrentVersion ?? 0,
-            storyboardApproved) { Shots = Timeline(shots, labels) };
+            storyboardApproved) { Shots = Timeline(shots, labels, sheet?.References ?? []) };
     }
 
     /// <summary>The shots one after another, as the video plays them: each segment's shots add up to its audio.</summary>
-    private static IReadOnlyList<TimelineShot> Timeline(IReadOnlyList<Shot> shots, IReadOnlyDictionary<string, string> labels)
+    private static IReadOnlyList<TimelineShot> Timeline(IReadOnlyList<Shot> shots, IReadOnlyDictionary<string, string> labels, IReadOnlyList<Reference> references)
     {
         var start = 0.0;
         var timeline = new List<TimelineShot>();
         foreach (var shot in shots)
         {
-            timeline.Add(new TimelineShot(shot.Key, labels[shot.Key], start, shot.Seconds, shot.Cast));
+            timeline.Add(new TimelineShot(shot.Key, labels[shot.Key], start, shot.Seconds, ReferenceList.Tidy(shot.Cast, references)));
             start += shot.Seconds;
         }
         return timeline;

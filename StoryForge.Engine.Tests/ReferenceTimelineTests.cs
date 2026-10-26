@@ -100,6 +100,22 @@ public sealed partial class ReferencesRunTests
     }
 
     [Fact]
+    public async Task A_shot_with_both_names_of_a_merged_reference_counts_it_once_and_has_room_for_one_more()
+    {
+        var (client, projectId) = await ListedAsync();
+        var shot = (await client.GetReferencesAsync(projectId)).Shots[1];
+        await client.ChangeReferencesAsync(projectId, new ReferenceChange(ReferenceChangeKind.Add, Name: "Raphael", Kind: CastKind.Character));
+        await client.EditShotAsync(projectId, shot.Key, new ShotChange(Cast: ["Karlach", "Soul coin", "A tavern mug", "Mammon's mint"]));
+        await client.ChangeReferencesAsync(projectId, new ReferenceChange(ReferenceChangeKind.Merge, ReferenceId: "R02", OtherId: "R01"));
+
+        Assert.Equal(["Karlach", "A tavern mug", "Mammon's mint"], (await client.GetReferencesAsync(projectId)).Shots[1].Cast);
+
+        await client.SetReferenceInShotAsync(projectId, "R03", shot.Key, true);
+
+        Assert.Equal(["Karlach", "A tavern mug", "Mammon's mint", "Raphael"], (await ShotAsync(client, projectId, shot.Key)).Shot.Cast);
+    }
+
+    [Fact]
     public async Task A_removed_reference_gives_back_the_names_merged_into_it_to_the_rest_of_the_cast()
     {
         var (client, projectId) = await ListedAsync();

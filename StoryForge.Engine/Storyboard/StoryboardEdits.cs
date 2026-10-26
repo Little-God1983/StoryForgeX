@@ -43,23 +43,22 @@ internal sealed class StoryboardEdits(
         }, cancellationToken);
 
     /// <summary>
-    /// The References timeline: <paramref name="name"/> goes in the shot's who and what, or every
-    /// name <paramref name="isIt"/> takes for it goes out. The shot keeps its approval: that screen
-    /// has no Approve for shots.
+    /// The References timeline: who and what is in the shot, as <paramref name="change"/> makes it
+    /// from what it is. The shot keeps its approval: that screen has no Approve for shots.
     /// </summary>
-    public Task SetInShotAsync(Guid projectId, string shotKey, string name, Func<string, bool> isIt, bool inShot, CancellationToken cancellationToken) =>
+    public Task SetCastAsync(Guid projectId, string shotKey, Func<IReadOnlyList<string>, IReadOnlyList<string>> change, CancellationToken cancellationToken) =>
         ChangeAsync(projectId, shotKey, board =>
         {
             var shot = board.Shot;
-            if (inShot == shot.Cast.Any(isIt))
+            var cast = change(shot.Cast);
+            if (cast.SequenceEqual(shot.Cast))
             {
                 return [];
             }
-            if (inShot && shot.Cast.Count >= Shot.MaxCast)
+            if (cast.Count > Shot.MaxCast)
             {
                 throw new ArgumentException($"{board.Label(board.Index)} has {Shot.MaxCast} in it already: what Minimax takes per clip. Take one out first.");
             }
-            IReadOnlyList<string> cast = inShot ? [.. shot.Cast, name] : [.. shot.Cast.Where(n => !isIt(n))];
             return [Change.Replace(shot with { Cast = cast })];
         }, cancellationToken, keepApproval: true);
 

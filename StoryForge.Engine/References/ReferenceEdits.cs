@@ -412,8 +412,18 @@ internal sealed class ReferenceEdits(
     /// <summary>The timeline: the reference goes in the shot or out of it, by its who and what.</summary>
     public async Task SetInShotAsync(Guid projectId, string referenceId, string shotKey, bool inShot, CancellationToken cancellationToken)
     {
-        var reference = Find(await SheetAsync(projectId, cancellationToken), referenceId);
-        await shotEdits.SetInShotAsync(projectId, shotKey, reference.Name, name => ReferenceList.IsNamed(reference, name), inShot, cancellationToken);
+        var sheet = await SheetAsync(projectId, cancellationToken);
+        var reference = Find(sheet, referenceId);
+        await shotEdits.SetCastAsync(projectId, shotKey, cast =>
+        {
+            if (inShot == cast.Any(n => ReferenceList.IsNamed(reference, n)))
+            {
+                return cast;
+            }
+            // Written tidy: a name merged into a reference goes, so the shot does not look fuller than it is.
+            var tidy = ReferenceList.Tidy(cast, sheet.References);
+            return inShot ? [.. tidy, reference.Name] : [.. tidy.Where(n => !ReferenceList.Same(n, reference.Name))];
+        }, cancellationToken);
     }
 
     private static Reference Find(ReferenceSheet sheet, string? id) =>
