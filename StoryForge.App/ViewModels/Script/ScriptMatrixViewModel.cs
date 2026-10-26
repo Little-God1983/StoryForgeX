@@ -715,13 +715,13 @@ public sealed partial class ScriptMatrixViewModel(IStoryForgeClient client, Guid
     private async Task RegenerateSegmentAsync()
     {
         var what = IsBoardPanel ? "plan the shot again" : IsVoicePanel ? "speak the segment again" : "write the segment again";
-        var (stage, key, row) = (SelectedStage, SelectedKey, Selected);
+        var (stage, row) = (SelectedStage, Selected);
         var note = IsScriptPanel && IsAskingNote ? RegenerateNote : null;
         // The line closes with the click, so a note opened while this is on its way is not the one closed.
         CloseNote();
         try
         {
-            await client.RegenerateSegmentAsync(ProjectId, stage, key, note);
+            await client.RegenerateSegmentAsync(ProjectId, stage, SelectedKey, note);
         }
         catch (Exception ex)
         {
