@@ -4,6 +4,9 @@ using System.Text.Json.Serialization;
 using Microsoft.EntityFrameworkCore;
 using StoryForge.Client;
 using StoryForge.Engine.Data;
+using StoryForge.Engine.Profiles;
+using StoryForge.Engine.References;
+using StoryForge.Engine.Voice;
 
 namespace StoryForge.Engine.Projects;
 
@@ -250,6 +253,21 @@ internal sealed class ProjectStore(IDbContextFactory<StoryForgeDbContext> contex
             var versionExists = await db.ProfileVersions.AnyAsync(
                 v => v.ProfileId == profileRef!.ProfileId && v.Version == profileRef.Version, cancellationToken);
             Require(versionExists, $"\"{profile.Name}\" has no version {profileRef!.Version}.");
+        }
+        // The setup never changes once started: a reference profile whose workflow takes no picture
+        // would leave the references unmakeable, found out only after research, script and storyboard.
+        if (s.References.Consistency == Consistency.ReferenceImages)
+        {
+            var name = (await db.Profiles.AsNoTracking().FirstAsync(p => p.Id == s.References.Profile.ProfileId, cancellationToken)).Name;
+            var json = await db.ProfileVersions.AsNoTracking()
+                .Where(v => v.ProfileId == s.References.Profile.ProfileId && v.Version == s.References.Profile.Version)
+                .Select(v => v.Json)
+                .FirstAsync(cancellationToken);
+            var inputs = ProfileStore.Read(json).Inputs;
+            Require(WorkflowTemplate.Maps(inputs, ReferencesStage.PromptKey),
+                $"\"{name}\" cannot make reference images: it does not say where the prompt goes. Map '{ReferencesStage.PromptKey}' in the profile, or pick another reference profile.");
+            Require(WorkflowTemplate.Maps(inputs, ReferencesStage.ImageKey) || WorkflowTemplate.Maps(inputs, ReferencesStage.ImagesKey),
+                $"\"{name}\" cannot make reference images: it does not say where the picture goes. Map '{ReferencesStage.ImageKey}' (or '{ReferencesStage.ImagesKey}') in the profile, or pick another reference profile.");
         }
     }
 

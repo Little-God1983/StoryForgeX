@@ -612,14 +612,14 @@ public sealed partial class ReferencesRunTests
     [Fact]
     public async Task An_image_profile_that_does_not_say_where_the_picture_goes_is_refused()
     {
+        // At the start: the project could never make its references (the stage checks it too, for projects saved before).
         _inputs = [.. FakeImageComfy.Inputs.Where(i => i.Key != "image")];
         var client = await StartAsync();
-        var project = await StoryboardApprovedAsync(client, s => s with { References = s.References with { ReviewList = false } });
 
-        var view = await ReferencesAsync(client, project.Id, _ => false);
+        var refused = await Assert.ThrowsAsync<ArgumentException>(() =>
+            StoryboardApprovedAsync(client, s => s with { References = s.References with { ReviewList = false } }));
 
-        Assert.Equal(StageState.Failed, view.State);
-        Assert.Contains("'image'", view.Error);
+        Assert.Contains("'image'", refused.Message);
         Assert.Empty(_comfy.Workflows);
     }
 

@@ -231,7 +231,7 @@ internal sealed class ProfileStore(
     private static string Serialize(ProfileContent content) => JsonSerializer.Serialize(content, Json);
 
     /// <summary>The saved fields laid over <see cref="ProfileContent.Empty"/>, so a field added later reads as empty, not null.</summary>
-    private static ProfileContent Read(string json)
+    internal static ProfileContent Read(string json)
     {
         var merged = JsonSerializer.SerializeToNode(ProfileContent.Empty, Json)!.AsObject();
         if (JsonNode.Parse(json) is JsonObject stored)

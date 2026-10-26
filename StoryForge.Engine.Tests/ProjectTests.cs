@@ -14,8 +14,18 @@ public sealed class ProjectTests : IDisposable
     {
         async Task<ProfileRef> Profile(ProfileKind kind)
         {
-            var existing = (await client.GetProfilesAsync()).FirstOrDefault(p => p.Kind == kind)
-                ?? await client.CreateProfileAsync(kind, $"{kind} default");
+            var existing = (await client.GetProfilesAsync()).FirstOrDefault(p => p.Kind == kind);
+            if (existing is null)
+            {
+                existing = await client.CreateProfileAsync(kind, $"{kind} default");
+                if (kind == ProfileKind.Image)
+                {
+                    // One that can make reference images: it says where the prompt and the picture go.
+                    var starter = await client.GetProfileVersionAsync(existing.Id);
+                    var saved = await client.SaveProfileVersionAsync(existing.Id, starter.Content with { Inputs = [new("prompt", "#6.text"), new("image", "#1.image")] });
+                    return new ProfileRef(existing.Id, saved.Version);
+                }
+            }
             return new ProfileRef(existing.Id, existing.LatestVersion);
         }
 
@@ -82,11 +92,11 @@ public sealed class ProjectTests : IDisposable
         var setup = await ValidSetup(client);
         var project = await client.CreateProjectAsync(setup);
         var image = setup.Stills.Profile;
-        var v1 = await client.GetProfileVersionAsync(image.ProfileId);
+        var v1 = await client.GetProfileVersionAsync(image.ProfileId, image.Version);
 
         await client.SaveProfileVersionAsync(image.ProfileId, v1.Content with { PromptTemplate = "changed" });
 
-        Assert.Equal(new ProfileRef(image.ProfileId, 1), (await client.GetProjectAsync(project.Id)).Setup.Stills.Profile);
+        Assert.Equal(image, (await client.GetProjectAsync(project.Id)).Setup.Stills.Profile);
     }
 
     [Fact]
@@ -268,6 +278,27 @@ public sealed class ProjectTests : IDisposable
             s with { References = s.References with { Profile = s.Voice.Profile } }));
 
         Assert.Contains("image", refused.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task A_reference_profile_that_cannot_take_a_picture_is_refused_at_the_start()
+    {
+        // The setup never changes once started: a text-to-image workflow here would leave the
+        // references unmakeable after research, script and storyboard are done.
+        var client = await _engine.StartClientAsync();
+        var s = await ValidSetup(client);
+        var plain = await client.CreateProfileAsync(ProfileKind.Image, "Painted dark fantasy");
+        var starter = await client.GetProfileVersionAsync(plain.Id);
+        var saved = await client.SaveProfileVersionAsync(plain.Id, starter.Content with { Inputs = [new("prompt", "#6.text")] });
+        var textOnly = s with { References = s.References with { Profile = new ProfileRef(plain.Id, saved.Version) } };
+
+        var refused = await Assert.ThrowsAsync<ArgumentException>(() => client.CreateProjectAsync(textOnly));
+
+        Assert.Contains("Painted dark fantasy", refused.Message);
+        Assert.Contains("picture", refused.Message);
+        Assert.Empty(await client.GetRecentProjectsAsync());
+        // Without references it is never used, so anything goes.
+        await client.CreateProjectAsync(textOnly with { References = textOnly.References with { Consistency = Consistency.TextToImageOnly } });
     }
 
     [Fact]
