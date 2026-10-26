@@ -240,6 +240,39 @@ public sealed class WholeScriptTests
     }
 
     [Fact]
+    public async Task A_typed_note_keeps_its_segment_on_the_version_it_was_written_about()
+    {
+        var (matrix, _) = await OpenAsync();
+        var script = matrix.Script!;
+        script.AskNoteRowCommand.Execute(script.Rows[2]);
+        script.RegenerateNote = "too long";
+
+        Assert.False(script.ShowRowVersionCommand.CanExecute(script.Rows[2].Versions[0]));
+        Assert.False(script.ShowVersionCommand.CanExecute(1));   // the panel's chips, on the same segment
+
+        script.CancelNoteCommand.Execute(null);
+
+        Assert.True(script.ShowRowVersionCommand.CanExecute(script.Rows[2].Versions[0]));
+    }
+
+    [Fact]
+    public async Task One_segment_reads_1_segment()
+    {
+        var (matrix, project) = await OpenAsync();
+        var view = _client.Scripts[project.Id];
+        _client.Scripts[project.Id] = view with { Segments = [view.Segments[0]] };
+        _client.Raise(new StageUpdate(project.Id, PipelineStage.Script, StageState.NeedsReview));
+        await matrix.Updating;
+        var script = matrix.Script!;
+        script.CopyText = _ => { };
+
+        script.CopyAllCommand.Execute(null);
+
+        Assert.Equal("1 segment · 0:16 · 8 words", script.WholeScriptTotals);
+        Assert.Equal("Copied: 1 segment, 8 words.", script.CopiedText);
+    }
+
+    [Fact]
     public async Task Copy_all_copies_the_whole_narration()
     {
         var (matrix, _) = await OpenAsync();

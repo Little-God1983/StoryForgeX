@@ -53,7 +53,8 @@ public sealed partial class ScriptMatrixViewModel
         StartEdit();
     }
 
-    private bool CanShowRowVersion(SegmentVersionChoice? choice) => CanActOnRow(Rows.FirstOrDefault(r => r.Id == choice?.Key));
+    private bool CanShowRowVersion(SegmentVersionChoice? choice) =>
+        Rows.FirstOrDefault(r => r.Id == choice?.Key) is { } row && CanActOnRow(row) && !(HasUnsentNote && row == Selected);
 
     [RelayCommand(CanExecute = nameof(CanShowRowVersion))]
     private Task ShowRowVersionAsync(SegmentVersionChoice? choice) =>
@@ -68,7 +69,7 @@ public sealed partial class ScriptMatrixViewModel
             var text = WholeNarration();
             CopyText(text);
             _copied = text;
-            CopiedText = $"Copied: {Rows.Count} segments, {Rows.Sum(r => r.Words)} words.";
+            CopiedText = $"Copied: {SegmentCount(Rows.Count)}, {Rows.Sum(r => r.Words)} words.";
         }
         catch (Exception ex)
         {
@@ -77,6 +78,9 @@ public sealed partial class ScriptMatrixViewModel
             ActionError = $"Could not copy the script: {ex.Message}";
         }
     }
+
+    /// <summary>"1 segment", "5 segments".</summary>
+    private static string SegmentCount(int count) => count == 1 ? "1 segment" : $"{count} segments";
 
     private string WholeNarration() => string.Join(Environment.NewLine + Environment.NewLine, Rows.Select(r => r.Narration));
 
@@ -106,5 +110,6 @@ public sealed partial class ScriptMatrixViewModel
         CopyAllCommand.NotifyCanExecuteChanged();
         StartEditCommand.NotifyCanExecuteChanged();
         AskNoteCommand.NotifyCanExecuteChanged();
+        ShowVersionCommand.NotifyCanExecuteChanged();
     }
 }

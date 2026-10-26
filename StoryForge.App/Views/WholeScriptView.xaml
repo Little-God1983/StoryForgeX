@@ -125,10 +125,11 @@
         <Button DockPanel.Dock="Right" Content="Copy all" Style="{StaticResource SecondaryButtonStyle}" Command="{Binding CopyAllCommand}"
                 AutomationProperties.Name="Copy the whole narration" />
         <TextBlock DockPanel.Dock="Right" Text="{Binding CopiedText}" FontSize="12" Foreground="{StaticResource TextMutedBrush}" VerticalAlignment="Center"
-                   Margin="0,0,10,0" AutomationProperties.AutomationId="Copied" />
+                   Margin="0,0,10,0" AutomationProperties.AutomationId="Copied" Visibility="{Binding HasSegments, Converter={StaticResource Visible}}" />
         <TextBlock Text="WHOLE SCRIPT" Style="{StaticResource SectionLabelStyle}" VerticalAlignment="Center" Margin="0,0,12,0" />
+        <!-- The totals of the script being replaced would mislead while it is written anew. -->
         <TextBlock Text="{Binding WholeScriptTotals}" FontFamily="{StaticResource MonoFont}" FontSize="12" Foreground="{StaticResource TextMutedBrush}"
-                   VerticalAlignment="Center" AutomationProperties.AutomationId="WholeScriptTotals" />
+                   VerticalAlignment="Center" AutomationProperties.AutomationId="WholeScriptTotals" Visibility="{Binding HasSegments, Converter={StaticResource Visible}}" />
       </DockPanel>
     </StackPanel>
 

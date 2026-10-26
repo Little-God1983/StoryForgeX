@@ -534,7 +534,7 @@ public sealed partial class ScriptMatrixViewModel(IStoryForgeClient client, Guid
             row.Start = start;
             start += row.Segment.Seconds;
         }
-        WholeScriptTotals = $"{Rows.Count} segments · {Clock(start)} · {Rows.Sum(r => r.Words)} words";
+        WholeScriptTotals = $"{SegmentCount(Rows.Count)} · {Clock(start)} · {Rows.Sum(r => r.Words)} words";
         if (WholeNarration() != _copied)
         {
             CopiedText = "";   // the clipboard holds an older script
@@ -768,7 +768,8 @@ public sealed partial class ScriptMatrixViewModel(IStoryForgeClient client, Guid
     [RelayCommand(CanExecute = nameof(SelectedIsRunning))]
     private Task CancelSegmentAsync() => ActAsync(IsBoardPanel ? "cancel the shot" : "cancel the segment", () => client.CancelSegmentAsync(ProjectId, SelectedStage, SelectedKey));
 
-    private bool CanShowVersion(int version) => SelectedVersions.FirstOrDefault(v => v.Version == version)?.CanPick ?? true;
+    // A typed note is about the version on screen: switching first would send it against another.
+    private bool CanShowVersion(int version) => (SelectedVersions.FirstOrDefault(v => v.Version == version)?.CanPick ?? true) && !HasUnsentNote;
 
     [RelayCommand(CanExecute = nameof(CanShowVersion))]
     private Task ShowVersionAsync(int version) =>
