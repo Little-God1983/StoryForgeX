@@ -13,7 +13,8 @@ public sealed partial class RunStageViewModel(PipelineStage stage, string name, 
     public string Name { get; } = name;
 
     /// <summary>What the stage does and with what, e.g. "Claude CLI · sources + fact sheet".</summary>
-    public string Via { get; } = via;
+    [ObservableProperty]
+    private string _via = via;
 
     /// <summary>The storyboard and references gates cannot be switched off.</summary>
     public bool IsRequired { get; } = ProjectSetup.RequiredGates.Contains(stage);

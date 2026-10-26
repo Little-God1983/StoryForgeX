@@ -186,22 +186,39 @@
             <ColumnDefinition Width="*" />
             <ColumnDefinition Width="14" />
             <ColumnDefinition Width="*" />
-            <ColumnDefinition Width="14" />
-            <ColumnDefinition Width="*" />
           </Grid.ColumnDefinitions>
+          <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="14" />
+            <RowDefinition Height="Auto" />
+          </Grid.RowDefinitions>
 
-          <Border Grid.Column="0" Style="{StaticResource CardStyle}">
+          <Border Grid.Row="0" Grid.Column="0" Style="{StaticResource CardStyle}">
             <DockPanel>
               <UniformGrid DockPanel.Dock="Bottom" Columns="2" Margin="0,6,0,0">
                 <Button Content="→ Later stages" Style="{StaticResource SmallButtonStyle}" Margin="0,0,3,0"
-                        Command="{Binding ApplyToLaterStagesCommand}" CommandParameter="{Binding Writing}"
+                        Command="{Binding ApplyToLaterStagesCommand}" CommandParameter="{Binding Research}"
                         ToolTip="Copy provider, model and matching profiles to every later stage" />
                 <Button Content="→ All" Style="{StaticResource SmallButtonStyle}" Margin="3,0,0,0"
-                        Command="{Binding ApplyToAllCommand}" CommandParameter="{Binding Writing}"
+                        Command="{Binding ApplyToAllCommand}" CommandParameter="{Binding Research}"
+                        ToolTip="Copy provider, model and matching profiles to every stage" />
+              </UniformGrid>
+              <ContentPresenter Content="{Binding Research}" ContentTemplate="{StaticResource CardCommonTemplate}" />
+            </DockPanel>
+          </Border>
+
+          <Border Grid.Row="0" Grid.Column="2" Style="{StaticResource CardStyle}">
+            <DockPanel>
+              <UniformGrid DockPanel.Dock="Bottom" Columns="2" Margin="0,6,0,0">
+                <Button Content="→ Later stages" Style="{StaticResource SmallButtonStyle}" Margin="0,0,3,0"
+                        Command="{Binding ApplyToLaterStagesCommand}" CommandParameter="{Binding Script}"
+                        ToolTip="Copy provider, model and matching profiles to every later stage" />
+                <Button Content="→ All" Style="{StaticResource SmallButtonStyle}" Margin="3,0,0,0"
+                        Command="{Binding ApplyToAllCommand}" CommandParameter="{Binding Script}"
                         ToolTip="Copy provider, model and matching profiles to every stage" />
               </UniformGrid>
               <StackPanel>
-                <ContentPresenter Content="{Binding Writing}" ContentTemplate="{StaticResource CardCommonTemplate}" />
+                <ContentPresenter Content="{Binding Script}" ContentTemplate="{StaticResource CardCommonTemplate}" />
                 <StackPanel Style="{StaticResource CardFieldStyle}">
                   <TextBlock Text="Pacing" Style="{StaticResource FieldLabelStyle}" />
                   <ComboBox ItemsSource="{Binding Pacing.Options}" DisplayMemberPath="Label" SelectedIndex="{Binding Pacing.SelectedIndex}" AutomationProperties.Name="Pacing" />
@@ -222,7 +239,7 @@
             </DockPanel>
           </Border>
 
-          <Border Grid.Column="2" Style="{StaticResource CardStyle}">
+          <Border Grid.Row="0" Grid.Column="4" Style="{StaticResource CardStyle}">
             <DockPanel>
               <UniformGrid DockPanel.Dock="Bottom" Columns="2" Margin="0,6,0,0">
                 <Button Content="→ Later stages" Style="{StaticResource SmallButtonStyle}" Margin="0,0,3,0"
@@ -236,7 +253,32 @@
             </DockPanel>
           </Border>
 
-          <Border Grid.Column="4" Style="{StaticResource CardStyle}">
+          <Border Grid.Row="2" Grid.Column="0" Style="{StaticResource CardStyle}">
+            <DockPanel>
+              <UniformGrid DockPanel.Dock="Bottom" Columns="2" Margin="0,6,0,0">
+                <Button Content="→ Later stages" Style="{StaticResource SmallButtonStyle}" Margin="0,0,3,0"
+                        Command="{Binding ApplyToLaterStagesCommand}" CommandParameter="{Binding References}"
+                        ToolTip="Copy provider, model and matching profiles to every later stage" />
+                <Button Content="→ All" Style="{StaticResource SmallButtonStyle}" Margin="3,0,0,0"
+                        Command="{Binding ApplyToAllCommand}" CommandParameter="{Binding References}"
+                        ToolTip="Copy provider, model and matching profiles to every stage" />
+              </UniformGrid>
+              <StackPanel>
+                <ContentPresenter Content="{Binding References}" ContentTemplate="{StaticResource CardCommonTemplate}" />
+                <StackPanel Style="{StaticResource CardFieldStyle}">
+                  <TextBlock Text="Consistency" Style="{StaticResource FieldLabelStyle}" />
+                  <ComboBox ItemsSource="{x:Static pages:NewProjectPageViewModel.ConsistencyChoices}" SelectedValuePath="Value" DisplayMemberPath="Label"
+                            SelectedValue="{Binding Consistency}" AutomationProperties.Name="Consistency" />
+                  <CheckBox IsChecked="{Binding ReviewReferenceList}" Margin="0,8,0,0" Foreground="{StaticResource TextBrush}" FontSize="12"
+                            AutomationProperties.Name="Review the reference list first">
+                    <TextBlock Text="Review the reference list first: no image is made before you confirm it" TextWrapping="Wrap" />
+                  </CheckBox>
+                </StackPanel>
+              </StackPanel>
+            </DockPanel>
+          </Border>
+
+          <Border Grid.Row="2" Grid.Column="2" Style="{StaticResource CardStyle}">
             <DockPanel>
               <UniformGrid DockPanel.Dock="Bottom" Columns="2" Margin="0,6,0,0">
                 <Button Content="→ Later stages" Style="{StaticResource SmallButtonStyle}" Margin="0,0,3,0"
@@ -249,15 +291,6 @@
               <StackPanel>
                 <ContentPresenter Content="{Binding Stills}" ContentTemplate="{StaticResource CardCommonTemplate}" />
                 <StackPanel Style="{StaticResource CardFieldStyle}">
-                  <TextBlock Text="Consistency" Style="{StaticResource FieldLabelStyle}" />
-                  <ComboBox ItemsSource="{x:Static pages:NewProjectPageViewModel.ConsistencyChoices}" SelectedValuePath="Value" DisplayMemberPath="Label"
-                            SelectedValue="{Binding Consistency}" AutomationProperties.Name="Consistency" />
-                  <CheckBox IsChecked="{Binding ReviewReferenceList}" Margin="0,8,0,0" Foreground="{StaticResource TextBrush}" FontSize="12"
-                            AutomationProperties.Name="Review the reference list first">
-                    <TextBlock Text="Review the reference list first: no image is made before you confirm it" TextWrapping="Wrap" />
-                  </CheckBox>
-                </StackPanel>
-                <StackPanel Style="{StaticResource CardFieldStyle}">
                   <TextBlock Text="Generation size" Style="{StaticResource FieldLabelStyle}" />
                   <ContentPresenter Content="{Binding StillSize}" ContentTemplate="{StaticResource SizeTemplate}" Tag="Still image generation size" />
                 </StackPanel>
@@ -265,7 +298,7 @@
             </DockPanel>
           </Border>
 
-          <Border Grid.Column="6" Style="{StaticResource CardStyle}">
+          <Border Grid.Row="2" Grid.Column="4" Style="{StaticResource CardStyle}">
             <DockPanel>
               <Button DockPanel.Dock="Bottom" Content="→ All" Style="{StaticResource SmallButtonStyle}" Margin="0,6,0,0"
                       Command="{Binding ApplyToAllCommand}" CommandParameter="{Binding Clips}"

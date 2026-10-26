@@ -161,7 +161,7 @@ public sealed class ResearchRunTests : IDisposable
     public async Task A_project_on_LM_Studio_fails_research_with_the_reason()
     {
         var client = await StartAsync();
-        var project = await NewProjectAsync(client, s => s with { Writing = s.Writing with { Provider = "LM Studio" } });
+        var project = await NewProjectAsync(client, s => s with { Research = s.Research with { Provider = "LM Studio" } });
 
         await client.StartRunAsync(project.Id);
 

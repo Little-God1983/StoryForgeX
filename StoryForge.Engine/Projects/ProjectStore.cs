@@ -1,8 +1,12 @@
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
 using Microsoft.EntityFrameworkCore;
 using StoryForge.Client;
 using StoryForge.Engine.Data;
+using StoryForge.Engine.Profiles;
+using StoryForge.Engine.References;
+using StoryForge.Engine.Voice;
 
 namespace StoryForge.Engine.Projects;
 
@@ -105,17 +109,61 @@ internal sealed class ProjectStore(IDbContextFactory<StoryForgeDbContext> contex
     private static Project ToProject(ProjectEntry entry, IEnumerable<StageStatus> cells) => new(
         entry.Id,
         entry.CreatedAt,
-        JsonSerializer.Deserialize<ProjectSetup>(entry.SetupJson, Json)
+        Upgrade(JsonNode.Parse(entry.SetupJson))?.Deserialize<ProjectSetup>(Json)
             ?? throw new InvalidOperationException($"Project {entry.Id} has no setup."),
         Stages(cells));
+
+    /// <summary>
+    /// A setup saved before Research, Script and Image references were cards of their own (#59) in
+    /// today's shape: research and script take the shared provider and model, the references what
+    /// the still images had, with the consistency and the list review that were stored there.
+    /// </summary>
+    internal static JsonNode? Upgrade(JsonNode? setup)
+    {
+        if (setup is not JsonObject json || json["Writing"] is not JsonObject writing || json.ContainsKey("Research"))
+        {
+            return setup;
+        }
+        json["Research"] = new JsonObject
+        {
+            ["Provider"] = writing["Provider"]?.DeepClone(),
+            ["Model"] = writing["Model"]?.DeepClone(),
+            ["Profile"] = writing["Research"]?.DeepClone(),
+        };
+        json["Script"] = new JsonObject
+        {
+            ["Provider"] = writing["Provider"]?.DeepClone(),
+            ["Model"] = writing["Model"]?.DeepClone(),
+            ["Script"] = writing["Script"]?.DeepClone(),
+            ["Storyboard"] = writing["Storyboard"]?.DeepClone(),
+        };
+        if (json["Stills"] is JsonObject stills)
+        {
+            json["References"] = new JsonObject
+            {
+                ["Provider"] = stills["Provider"]?.DeepClone(),
+                ["Model"] = stills["Model"]?.DeepClone(),
+                ["Profile"] = stills["Profile"]?.DeepClone(),
+                ["Consistency"] = stills["Consistency"]?.DeepClone() ?? nameof(Consistency.ReferenceImages),
+                // Saved before the list review existed: it is reviewed, as every new project is unless it says otherwise.
+                ["ReviewList"] = json["ReviewReferenceList"]?.DeepClone() ?? true,
+            };
+            stills.Remove("Consistency");
+        }
+        json.Remove("Writing");
+        json.Remove("ReviewReferenceList");
+        return json;
+    }
 
     private static ProjectSetup Normalize(ProjectSetup s) => s with
     {
         Name = (s.Name ?? "").Trim(),
         Brief = (s.Brief ?? "").Trim(),
         ResearchSources = [.. (s.ResearchSources ?? []).Select(r => (r ?? "").Trim()).Where(r => r.Length > 0)],
-        Writing = s.Writing with { Provider = Tidy(s.Writing.Provider), Model = Tidy(s.Writing.Model) },
+        Research = s.Research with { Provider = Tidy(s.Research.Provider), Model = Tidy(s.Research.Model) },
+        Script = s.Script with { Provider = Tidy(s.Script.Provider), Model = Tidy(s.Script.Model) },
         Voice = s.Voice with { Provider = Tidy(s.Voice.Provider), Model = Tidy(s.Voice.Model) },
+        References = s.References with { Provider = Tidy(s.References.Provider), Model = Tidy(s.References.Model) },
         Stills = s.Stills with { Provider = Tidy(s.Stills.Provider), Model = Tidy(s.Stills.Model) },
         Clips = s.Clips with { Provider = Tidy(s.Clips.Provider), Model = Tidy(s.Clips.Model) },
         Output = s.Output with { Aspect = Tidy(s.Output.Aspect), Language = Tidy(s.Output.Language) },
@@ -147,8 +195,10 @@ internal sealed class ProjectStore(IDbContextFactory<StoryForgeDbContext> contex
     private static void RequireParts(ProjectSetup s)
     {
         Require(s is not null, "A project needs a setup.");
-        Require(s!.Writing is not null, "The research & script choices are missing.");
+        Require(s!.Research is not null, "The research choices are missing.");
+        Require(s.Script is not null, "The script choices are missing.");
         Require(s.Voice is not null, "The voice choices are missing.");
+        Require(s.References is not null, "The image reference choices are missing.");
         Require(s.Stills is not null && s.Stills.Size is not null, "The still image choices are missing.");
         Require(s.Clips is not null && s.Clips.Size is not null, "The video clip choices are missing.");
         Require(s.Output is not null, "The output choices are missing.");
@@ -165,7 +215,7 @@ internal sealed class ProjectStore(IDbContextFactory<StoryForgeDbContext> contex
             $"A {s.Output.Width} × {s.Output.Height} delivery does not fit a {s.Output.Aspect} video.");
         Require(s.Output.Language.Length > 0, "A project needs a language.");
         Require(Enum.IsDefined(s.Output.Assembly), $"There is no assembly \"{s.Output.Assembly}\".");
-        Require(Enum.IsDefined(s.Stills.Consistency), $"There is no consistency \"{s.Stills.Consistency}\".");
+        Require(Enum.IsDefined(s.References.Consistency), $"There is no consistency \"{s.References.Consistency}\".");
         Require(Enum.IsDefined(s.Mode), $"There is no run mode \"{s.Mode}\".");
         Require(s.Gates.All(Enum.IsDefined), "A gate names a stage that does not exist.");
         Require(s.Output.TargetSeconds >= 1, "The target length must be at least 1 second.");
@@ -185,10 +235,11 @@ internal sealed class ProjectStore(IDbContextFactory<StoryForgeDbContext> contex
     {
         (ProfileRef Ref, ProfileKind Kind)[] slots =
         [
-            (s.Writing.Research, ProfileKind.Research),
-            (s.Writing.Script, ProfileKind.Script),
-            (s.Writing.Storyboard, ProfileKind.Storyboard),
+            (s.Research.Profile, ProfileKind.Research),
+            (s.Script.Script, ProfileKind.Script),
+            (s.Script.Storyboard, ProfileKind.Storyboard),
             (s.Voice.Profile, ProfileKind.Voice),
+            (s.References.Profile, ProfileKind.Image),
             (s.Stills.Profile, ProfileKind.Image),
             (s.Clips.Profile, ProfileKind.Video),
         ];
@@ -202,6 +253,21 @@ internal sealed class ProjectStore(IDbContextFactory<StoryForgeDbContext> contex
             var versionExists = await db.ProfileVersions.AnyAsync(
                 v => v.ProfileId == profileRef!.ProfileId && v.Version == profileRef.Version, cancellationToken);
             Require(versionExists, $"\"{profile.Name}\" has no version {profileRef!.Version}.");
+        }
+        // The setup never changes once started: a reference profile whose workflow takes no picture
+        // would leave the references unmakeable, found out only after research, script and storyboard.
+        if (s.References.Consistency == Consistency.ReferenceImages)
+        {
+            var name = (await db.Profiles.AsNoTracking().FirstAsync(p => p.Id == s.References.Profile.ProfileId, cancellationToken)).Name;
+            var json = await db.ProfileVersions.AsNoTracking()
+                .Where(v => v.ProfileId == s.References.Profile.ProfileId && v.Version == s.References.Profile.Version)
+                .Select(v => v.Json)
+                .FirstAsync(cancellationToken);
+            var inputs = ProfileStore.Read(json).Inputs;
+            Require(WorkflowTemplate.Maps(inputs, ReferencesStage.PromptKey),
+                $"\"{name}\" cannot make reference images: it does not say where the prompt goes. Map '{ReferencesStage.PromptKey}' in the profile, or pick another reference profile.");
+            Require(WorkflowTemplate.Maps(inputs, ReferencesStage.ImageKey) || WorkflowTemplate.Maps(inputs, ReferencesStage.ImagesKey),
+                $"\"{name}\" cannot make reference images: it does not say where the picture goes. Map '{ReferencesStage.ImageKey}' (or '{ReferencesStage.ImagesKey}') in the profile, or pick another reference profile.");
         }
     }
 

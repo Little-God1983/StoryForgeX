@@ -81,8 +81,8 @@ public sealed partial class ProfileSlotViewModel(ProfileKind kind, string label)
 }
 
 /// <summary>
-/// One provider card on the New project screen ("Research &amp; script", "Voice", "Still images",
-/// "Video clips"): provider, model and the profile per stage it covers.
+/// One provider card on the New project screen ("Research", "Script", "Voice", "Image references",
+/// "Still images", "Video clips"): provider, model and the profile per stage it covers.
 /// </summary>
 public sealed partial class StageCardViewModel : ObservableObject
 {

@@ -24,7 +24,7 @@ internal sealed class ReferenceViews(
     public async Task<ReferencesView> GetAsync(Guid projectId, CancellationToken cancellationToken)
     {
         var setup = (await projects.GetAsync(projectId, cancellationToken)).Setup;
-        var textOnly = setup.Stills.Consistency == Consistency.TextToImageOnly;
+        var textOnly = setup.References.Consistency == Consistency.TextToImageOnly;
         var root = await folders.RootAsync(cancellationToken);
         var shots = await cells.CurrentShotsAsync(projectId, cancellationToken);
         var labels = shots.ToDictionary(s => s.Key, s => ShotTiming.Label(shots, s.Key));

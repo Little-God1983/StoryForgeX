@@ -72,7 +72,7 @@ public sealed partial class ReferencesRunTests : IDisposable
             s = s with
             {
                 Gates = [.. s.Gates.Where(g => g is not (PipelineStage.Script or PipelineStage.Voice))],
-                Stills = s.Stills with { Profile = new ProfileRef(image.Id, saved.Version) },
+                References = s.References with { Profile = new ProfileRef(image.Id, saved.Version) },
             };
             return change is null ? s : change(s);
         });
@@ -137,7 +137,7 @@ public sealed partial class ReferencesRunTests : IDisposable
         // The image is the ITL Multi Image Loader of the Qwen workflow: files_json takes [{"name": …}, …].
         _inputs = [.. FakeImageComfy.Inputs.Where(i => i.Key != "image"), new("images", "#1.files_json")];
         var client = await StartAsync();
-        var project = await StoryboardApprovedAsync(client, s => s with { ReviewReferenceList = false });
+        var project = await StoryboardApprovedAsync(client, s => s with { References = s.References with { ReviewList = false } });
 
         var view = await ReferencesAsync(client, project.Id, ImagesMade);
 
@@ -152,7 +152,7 @@ public sealed partial class ReferencesRunTests : IDisposable
     public async Task Without_the_review_the_images_are_made_straight_away()
     {
         var client = await StartAsync();
-        var project = await StoryboardApprovedAsync(client, s => s with { ReviewReferenceList = false });
+        var project = await StoryboardApprovedAsync(client, s => s with { References = s.References with { ReviewList = false } });
 
         var view = await ReferencesAsync(client, project.Id, ImagesMade);
 
@@ -162,11 +162,29 @@ public sealed partial class ReferencesRunTests : IDisposable
     }
 
     [Fact]
+    public async Task The_images_are_made_with_the_image_references_profile_not_the_stills_one()
+    {
+        var client = await StartAsync();
+        // A stills profile with no workflow at all: the references must not need it.
+        var stills = await client.CreateProfileAsync(ProfileKind.Image, "Painted dark fantasy");
+        var project = await StoryboardApprovedAsync(client, s => s with
+        {
+            References = s.References with { ReviewList = false },
+            Stills = s.Stills with { Profile = new ProfileRef(stills.Id, stills.LatestVersion) },
+        });
+
+        var view = await ReferencesAsync(client, project.Id, ImagesMade);
+
+        Assert.Null(view.Error);
+        Assert.Equal(2, _comfy.Workflows.Count);
+    }
+
+    [Fact]
     public async Task With_no_usable_picture_nothing_is_made_and_it_cannot_be_approved()
     {
         _pictures.ByName["Soul coin"] = [FakePictures.Picture("Tiny.png", 200, 200)];
         var client = await StartAsync();
-        var project = await StoryboardApprovedAsync(client, s => s with { ReviewReferenceList = false });
+        var project = await StoryboardApprovedAsync(client, s => s with { References = s.References with { ReviewList = false } });
 
         var view = await ReferencesAsync(client, project.Id, ImagesMade);
 
@@ -186,7 +204,7 @@ public sealed partial class ReferencesRunTests : IDisposable
         // The first picture Claude is shown is Wyll's: it says so, and the next one is used.
         _check.Decide = request => request.Name == "Karlach" && request.PicturePath.Contains("P01") ? new PictureVerdict(false, false, "", "") : null;
         var client = await StartAsync();
-        var project = await StoryboardApprovedAsync(client, s => s with { ReviewReferenceList = false });
+        var project = await StoryboardApprovedAsync(client, s => s with { References = s.References with { ReviewList = false } });
 
         var view = await ReferencesAsync(client, project.Id, ImagesMade);
 
@@ -202,7 +220,7 @@ public sealed partial class ReferencesRunTests : IDisposable
         // The page's second picture could be anyone: nobody checked it.
         _pictures.ByName["Karlach"] = [FakePictures.Picture("Karlach.png"), FakePictures.Picture("Party.png", main: false)];
         var client = await StartAsync();
-        var project = await StoryboardApprovedAsync(client, s => s with { ReviewReferenceList = false });
+        var project = await StoryboardApprovedAsync(client, s => s with { References = s.References with { ReviewList = false } });
 
         var view = await ReferencesAsync(client, project.Id, ImagesMade);
 
@@ -215,7 +233,7 @@ public sealed partial class ReferencesRunTests : IDisposable
     public async Task One_image_is_made_again_on_its_own()
     {
         var client = await StartAsync();
-        var project = await StoryboardApprovedAsync(client, s => s with { ReviewReferenceList = false });
+        var project = await StoryboardApprovedAsync(client, s => s with { References = s.References with { ReviewList = false } });
         await ReferencesAsync(client, project.Id, ImagesMade);
 
         await client.RegenerateSegmentAsync(project.Id, PipelineStage.References, "R01/1");
@@ -230,7 +248,7 @@ public sealed partial class ReferencesRunTests : IDisposable
     {
         _check.ByName.Clear();
         var client = await StartAsync();
-        var project = await StoryboardApprovedAsync(client, s => s with { ReviewReferenceList = false });
+        var project = await StoryboardApprovedAsync(client, s => s with { References = s.References with { ReviewList = false } });
         await ReferencesAsync(client, project.Id, ImagesMade);
 
         await client.ApproveSegmentsAsync(project.Id, PipelineStage.References);
@@ -244,7 +262,7 @@ public sealed partial class ReferencesRunTests : IDisposable
     public async Task A_project_with_stills_from_text_only_needs_no_references()
     {
         var client = await StartAsync();
-        var project = await StoryboardApprovedAsync(client, s => s with { Stills = s.Stills with { Consistency = Consistency.TextToImageOnly } });
+        var project = await StoryboardApprovedAsync(client, s => s with { References = s.References with { Consistency = Consistency.TextToImageOnly } });
 
         var view = await ReferencesAsync(client, project.Id, v => v.State == StageState.NeedsReview);
 
@@ -258,7 +276,7 @@ public sealed partial class ReferencesRunTests : IDisposable
     {
         _comfy.Failure = "ComfyUI is not reachable at 127.0.0.1:8188. Start it, or check Settings → ComfyUI.";
         var client = await StartAsync();
-        var project = await StoryboardApprovedAsync(client, s => s with { ReviewReferenceList = false });
+        var project = await StoryboardApprovedAsync(client, s => s with { References = s.References with { ReviewList = false } });
 
         var view = await ReferencesAsync(client, project.Id, _ => false);
 

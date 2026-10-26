@@ -15,9 +15,11 @@ public sealed class StoryboardMatrixTests
         var profile = new ProfileRef(Guid.NewGuid(), 1);
         return new ProjectSetup(
             "Soul Coins – BG3 lore", "Soul coins in BG3.", ["bg3.wiki"],
-            new WritingSetup("Claude CLI", "", profile, profile, profile),
+            new ResearchSetup("Claude CLI", "", profile),
+            new ScriptSetup("Claude CLI", "", profile, profile),
             new VoiceSetup("ComfyUI", "Breeze TTS", profile),
-            new StillsSetup("ComfyUI", "Qwen Image 2.1", profile, Consistency.ReferenceImages, new GenerationSize("16:9", 1344, 768)),
+            new ReferencesSetup("ComfyUI", "Qwen Image 2.1", profile, Consistency.ReferenceImages),
+            new StillsSetup("ComfyUI", "Qwen Image 2.1", profile, new GenerationSize("16:9", 1344, 768)),
             new ClipsSetup("ComfyUI", "Minimax H3", profile, 20, new GenerationSize("16:9", 1280, 720)),
             new OutputSetup("16:9", 1920, 1080, 60, "English", AssemblyTarget.FfmpegWithFcpxml),
             [PipelineStage.Research, PipelineStage.Script, PipelineStage.Storyboard], RunMode.StopAtGates);

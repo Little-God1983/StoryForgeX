@@ -14,8 +14,18 @@ public sealed class ProjectTests : IDisposable
     {
         async Task<ProfileRef> Profile(ProfileKind kind)
         {
-            var existing = (await client.GetProfilesAsync()).FirstOrDefault(p => p.Kind == kind)
-                ?? await client.CreateProfileAsync(kind, $"{kind} default");
+            var existing = (await client.GetProfilesAsync()).FirstOrDefault(p => p.Kind == kind);
+            if (existing is null)
+            {
+                existing = await client.CreateProfileAsync(kind, $"{kind} default");
+                if (kind == ProfileKind.Image)
+                {
+                    // One that can make reference images: it says where the prompt and the picture go.
+                    var starter = await client.GetProfileVersionAsync(existing.Id);
+                    var saved = await client.SaveProfileVersionAsync(existing.Id, starter.Content with { Inputs = [new("prompt", "#6.text"), new("image", "#1.image")] });
+                    return new ProfileRef(existing.Id, saved.Version);
+                }
+            }
             return new ProfileRef(existing.Id, existing.LatestVersion);
         }
 
@@ -23,9 +33,11 @@ public sealed class ProjectTests : IDisposable
             name,
             "Make a lore video about the soul coins from Baldur's Gate 3.",
             ["bg3.wiki", "forgottenrealms.fandom.com"],
-            new WritingSetup("Claude CLI", "", await Profile(ProfileKind.Research), await Profile(ProfileKind.Script), await Profile(ProfileKind.Storyboard)),
+            new ResearchSetup("Claude CLI", "", await Profile(ProfileKind.Research)),
+            new ScriptSetup("Claude CLI", "", await Profile(ProfileKind.Script), await Profile(ProfileKind.Storyboard)),
             new VoiceSetup("ComfyUI", "Breeze TTS", await Profile(ProfileKind.Voice)),
-            new StillsSetup("ComfyUI", "Qwen Image 2.1", await Profile(ProfileKind.Image), Consistency.ReferenceImages, new GenerationSize("16:9", 1344, 768)),
+            new ReferencesSetup("ComfyUI", "Qwen Image 2.1 edit", await Profile(ProfileKind.Image), Consistency.ReferenceImages),
+            new StillsSetup("ComfyUI", "Qwen Image 2.1", await Profile(ProfileKind.Image), new GenerationSize("16:9", 1344, 768)),
             new ClipsSetup("ComfyUI", "Minimax H3", await Profile(ProfileKind.Video), 20, new GenerationSize("16:9", 1280, 720)),
             new OutputSetup("16:9", 1920, 1080, 240, "English", AssemblyTarget.FfmpegWithFcpxml),
             [PipelineStage.Research, PipelineStage.Script, PipelineStage.Storyboard, PipelineStage.References, PipelineStage.Stills, PipelineStage.Assembly],
@@ -80,11 +92,11 @@ public sealed class ProjectTests : IDisposable
         var setup = await ValidSetup(client);
         var project = await client.CreateProjectAsync(setup);
         var image = setup.Stills.Profile;
-        var v1 = await client.GetProfileVersionAsync(image.ProfileId);
+        var v1 = await client.GetProfileVersionAsync(image.ProfileId, image.Version);
 
         await client.SaveProfileVersionAsync(image.ProfileId, v1.Content with { PromptTemplate = "changed" });
 
-        Assert.Equal(new ProfileRef(image.ProfileId, 1), (await client.GetProjectAsync(project.Id)).Setup.Stills.Profile);
+        Assert.Equal(image, (await client.GetProjectAsync(project.Id)).Setup.Stills.Profile);
     }
 
     [Fact]
@@ -160,8 +172,10 @@ public sealed class ProjectTests : IDisposable
     }
 
     [Theory]
-    [InlineData("writing")]
+    [InlineData("research")]
+    [InlineData("script")]
     [InlineData("voice")]
+    [InlineData("references")]
     [InlineData("stills")]
     [InlineData("clips")]
     [InlineData("output")]
@@ -171,8 +185,10 @@ public sealed class ProjectTests : IDisposable
         var s = await ValidSetup(client);
         var bad = part switch
         {
-            "writing" => s with { Writing = null! },
+            "research" => s with { Research = null! },
+            "script" => s with { Script = null! },
             "voice" => s with { Voice = null! },
+            "references" => s with { References = null! },
             "stills" => s with { Stills = null! },
             "clips" => s with { Clips = null! },
             _ => s with { Output = null! },
@@ -209,7 +225,7 @@ public sealed class ProjectTests : IDisposable
             "language" => s with { Output = s.Output with { Language = "  " } },
             "gate" => s with { Gates = [(PipelineStage)42] },
             "mode" => s with { Mode = (RunMode)7 },
-            "consistency" => s with { Stills = s.Stills with { Consistency = (Consistency)9 } },
+            "consistency" => s with { References = s.References with { Consistency = (Consistency)9 } },
             _ => s with { Output = s.Output with { Assembly = (AssemblyTarget)5 } },
         };
 
@@ -247,9 +263,42 @@ public sealed class ProjectTests : IDisposable
         var s = await ValidSetup(client);
 
         var refused = await Assert.ThrowsAsync<ArgumentException>(() => client.CreateProjectAsync(
-            s with { Writing = s.Writing with { Script = s.Stills.Profile } }));
+            s with { Script = s.Script with { Script = s.Stills.Profile } }));
 
         Assert.Contains("script", refused.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task The_references_are_made_with_an_image_profile()
+    {
+        var client = await _engine.StartClientAsync();
+        var s = await ValidSetup(client);
+
+        var refused = await Assert.ThrowsAsync<ArgumentException>(() => client.CreateProjectAsync(
+            s with { References = s.References with { Profile = s.Voice.Profile } }));
+
+        Assert.Contains("image", refused.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task A_reference_profile_that_cannot_take_a_picture_is_refused_at_the_start()
+    {
+        // The setup never changes once started: a text-to-image workflow here would leave the
+        // references unmakeable after research, script and storyboard are done.
+        var client = await _engine.StartClientAsync();
+        var s = await ValidSetup(client);
+        var plain = await client.CreateProfileAsync(ProfileKind.Image, "Painted dark fantasy");
+        var starter = await client.GetProfileVersionAsync(plain.Id);
+        var saved = await client.SaveProfileVersionAsync(plain.Id, starter.Content with { Inputs = [new("prompt", "#6.text")] });
+        var textOnly = s with { References = s.References with { Profile = new ProfileRef(plain.Id, saved.Version) } };
+
+        var refused = await Assert.ThrowsAsync<ArgumentException>(() => client.CreateProjectAsync(textOnly));
+
+        Assert.Contains("Painted dark fantasy", refused.Message);
+        Assert.Contains("picture", refused.Message);
+        Assert.Empty(await client.GetRecentProjectsAsync());
+        // Without references it is never used, so anything goes.
+        await client.CreateProjectAsync(textOnly with { References = textOnly.References with { Consistency = Consistency.TextToImageOnly } });
     }
 
     [Fact]
@@ -307,10 +356,58 @@ public sealed class ProjectTests : IDisposable
         var setup = await ValidSetup(client);
 
         var reviewing = await client.CreateProjectAsync(setup);
-        var auto = await client.CreateProjectAsync(setup with { Name = "Auto", ReviewReferenceList = false });
+        var auto = await client.CreateProjectAsync(setup with { Name = "Auto", References = setup.References with { ReviewList = false } });
 
-        Assert.True((await client.GetProjectAsync(reviewing.Id)).Setup.ReviewReferenceList);
-        Assert.False((await client.GetProjectAsync(auto.Id)).Setup.ReviewReferenceList);
+        Assert.True((await client.GetProjectAsync(reviewing.Id)).Setup.References.ReviewList);
+        Assert.False((await client.GetProjectAsync(auto.Id)).Setup.References.ReviewList);
+    }
+
+    /// <summary>
+    /// The setup as it was stored before #59: one "Writing" part for research, script and
+    /// storyboard, the consistency on the stills, and (before that) no list review at all.
+    /// </summary>
+    private async Task StoreOldShapeAsync(bool? reviewList, string consistency = "ReferenceImages")
+    {
+        await using var db = await _engine.DbAsync();
+        var entry = db.Projects.Single();
+        var json = System.Text.Json.Nodes.JsonNode.Parse(entry.SetupJson)!.AsObject();
+        var research = json["Research"]!.AsObject();
+        var script = json["Script"]!.AsObject();
+        json["Writing"] = new System.Text.Json.Nodes.JsonObject
+        {
+            ["Provider"] = "Claude CLI",
+            ["Model"] = "opus",
+            ["Research"] = research["Profile"]!.DeepClone(),
+            ["Script"] = script["Script"]!.DeepClone(),
+            ["Storyboard"] = script["Storyboard"]!.DeepClone(),
+        };
+        json["Stills"]!["Consistency"] = consistency;
+        if (reviewList is { } review)
+        {
+            json["ReviewReferenceList"] = review;
+        }
+        json.Remove("Research");
+        json.Remove("Script");
+        json.Remove("References");
+        entry.SetupJson = json.ToJsonString();
+        await db.SaveChangesAsync();
+    }
+
+    [Fact]
+    public async Task A_project_saved_with_one_research_and_script_card_opens_with_both()
+    {
+        var client = await _engine.StartClientAsync();
+        var setup = await ValidSetup(client);
+        var created = await client.CreateProjectAsync(setup);
+        await StoreOldShapeAsync(reviewList: false, consistency: "TextToImageOnly");
+
+        var loaded = (await client.GetProjectAsync(created.Id)).Setup;
+
+        Assert.Equal(new ResearchSetup("Claude CLI", "opus", setup.Research.Profile), loaded.Research);
+        Assert.Equal(new ScriptSetup("Claude CLI", "opus", setup.Script.Script, setup.Script.Storyboard), loaded.Script);
+        // The references are made with what the still images had.
+        Assert.Equal(new ReferencesSetup("ComfyUI", "Qwen Image 2.1", setup.Stills.Profile, Consistency.TextToImageOnly, ReviewList: false), loaded.References);
+        Assert.Equal(setup.Stills, loaded.Stills);
     }
 
     [Fact]
@@ -318,15 +415,8 @@ public sealed class ProjectTests : IDisposable
     {
         var client = await _engine.StartClientAsync();
         var created = await client.CreateProjectAsync(await ValidSetup(client));
-        await using (var db = await _engine.DbAsync())
-        {
-            var entry = db.Projects.Single();
-            var json = System.Text.Json.Nodes.JsonNode.Parse(entry.SetupJson)!.AsObject();
-            json.Remove("ReviewReferenceList");
-            entry.SetupJson = json.ToJsonString();
-            await db.SaveChangesAsync();
-        }
+        await StoreOldShapeAsync(reviewList: null);
 
-        Assert.True((await client.GetProjectAsync(created.Id)).Setup.ReviewReferenceList);
+        Assert.True((await client.GetProjectAsync(created.Id)).Setup.References.ReviewList);
     }
 }
