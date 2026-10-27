@@ -823,9 +823,13 @@ public sealed class StillsRunTests : IDisposable
         var project = await ReferencesApprovedAsync(client);
         await StillsAsync(client, project.Id);
         var references = await client.GetReferencesAsync(project.Id);
-        // Karlach's picture goes into the stills that do not continue the one before (the workflow takes one picture).
-        Assert.Equal(28, references.StillsUsing["R01"]);
-        Assert.Equal(4, references.StillsUsing["R02"]);
+        // Karlach's picture goes into the stills that do not continue the one before (the workflow takes
+        // one picture): 7 a segment, and 6 more start from those. In words she is in 14 a segment.
+        Assert.Equal(52, references.StillsUsing["R01"]);
+        Assert.Equal(56, references.StillsShowing["R01"]);
+        // The coin is pictured in each segment's first shot, and the second one starts from it.
+        Assert.Equal(8, references.StillsUsing["R02"]);
+        Assert.Equal(8, references.StillsShowing["R02"]);
 
         await client.ChangeReferencesAsync(project.Id, new ReferenceChange(ReferenceChangeKind.EditLook, ReferenceId: "R02", Look: "A coin of black iron with a screaming face."));
 

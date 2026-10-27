@@ -156,13 +156,14 @@ public sealed partial class ReferencesViewModel
     /// Before a change to a reference that stills are made from: "6 stills use Karlach and would be
     /// out of date. Go on?". True when none does, or you said yes.
     /// </summary>
-    private bool Confirmed(string referenceId)
+    /// <param name="all">The change reaches every still showing it (its look, merge, remove), not only the ones its images went into.</param>
+    private bool Confirmed(string referenceId, bool all = false)
     {
-        if (_view?.StillsUsing.GetValueOrDefault(referenceId) is not (> 0 and var count) || confirm is null)
+        if ((all ? _view?.StillsShowing : _view?.StillsUsing)?.GetValueOrDefault(referenceId) is not (> 0 and var count) || confirm is null)
         {
             return true;
         }
-        var name = _view.References.FirstOrDefault(r => r.Reference.Id == referenceId)?.Reference.Name ?? referenceId;
+        var name = _view!.References.FirstOrDefault(r => r.Reference.Id == referenceId)?.Reference.Name ?? referenceId;
         return confirm($"{count} {(count == 1 ? "still uses" : "stills use")} {name} and would be out of date. Go on?");
     }
 
@@ -243,7 +244,7 @@ public sealed partial class ReferencesViewModel
     private async Task SaveLookAsync()
     {
         var id = SelectedCard!.Id;
-        if (Confirmed(id) && await ActAsync("save the look", () => client.ChangeReferencesAsync(ProjectId, new ReferenceChange(ReferenceChangeKind.EditLook, ReferenceId: id, Look: EditLook.Trim()))))
+        if (Confirmed(id, all: true) && await ActAsync("save the look", () => client.ChangeReferencesAsync(ProjectId, new ReferenceChange(ReferenceChangeKind.EditLook, ReferenceId: id, Look: EditLook.Trim()))))
         {
             IsEditingLook = false;   // saved; when it was not, your text stays to try again
         }
@@ -258,14 +259,14 @@ public sealed partial class ReferencesViewModel
     private Task MergeAsync()
     {
         var (id, into) = (SelectedCard!.Id, MergeTarget!.Id);
-        return Confirmed(id) ? ActAsync("merge the references", () => client.ChangeReferencesAsync(ProjectId, new ReferenceChange(ReferenceChangeKind.Merge, ReferenceId: id, OtherId: into))) : Task.CompletedTask;
+        return Confirmed(id, all: true) ? ActAsync("merge the references", () => client.ChangeReferencesAsync(ProjectId, new ReferenceChange(ReferenceChangeKind.Merge, ReferenceId: id, OtherId: into))) : Task.CompletedTask;
     }
 
     [RelayCommand(CanExecute = nameof(CardIdle))]
     private Task RemoveAsync()
     {
         var id = SelectedCard!.Id;
-        return Confirmed(id) ? ActAsync("remove it from the list", () => client.ChangeReferencesAsync(ProjectId, new ReferenceChange(ReferenceChangeKind.Remove, ReferenceId: id))) : Task.CompletedTask;
+        return Confirmed(id, all: true) ? ActAsync("remove it from the list", () => client.ChangeReferencesAsync(ProjectId, new ReferenceChange(ReferenceChangeKind.Remove, ReferenceId: id))) : Task.CompletedTask;
     }
 
     /// <summary>One of several images: e.g. one that came out with nothing on it. The last one stays.</summary>

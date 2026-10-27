@@ -104,7 +104,8 @@ internal sealed class ReferenceViews(
             storyboardApproved)
         {
             Shots = Timeline(shots, labels, sheet?.References ?? []),
-            StillsUsing = await staleness.StillsUsingAsync(projectId, cancellationToken),
+            StillsUsing = await staleness.StillsUsingAsync(projectId, wordsToo: false, cancellationToken),
+            StillsShowing = await staleness.StillsUsingAsync(projectId, wordsToo: true, cancellationToken),
         };
     }
 

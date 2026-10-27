@@ -56,7 +56,7 @@ public sealed class StaleTests
         Assert.Equal(["approved", "stale"], script.Rows.Select(r => r.Voice.StateText));
         Assert.Equal(["approved", "stale"], script.Rows.SelectMany(r => r.Shots).Select(s => s.StateText));
         Assert.Equal(["approved", "stale"], script.Rows.SelectMany(r => r.Shots).Select(s => s.Still.StateText));
-        Assert.Equal(StageState.Stale, script.Rows[1].Shots[0].Still.State);
+        Assert.Equal((StageState.Stale, StageState.Approved), (script.Rows[1].Shots[0].Still.DisplayState, script.Rows[1].Shots[0].Still.State));   // shown stale, approved all the same
         Assert.Equal("S02·1 still: stale, version 1", script.Rows[1].Shots[0].Still.AccessibleName);   // it keeps its old version
     }
 
@@ -76,6 +76,69 @@ public sealed class StaleTests
 
         script.Rows[0].Shots[0].Still.SelectCommand.Execute(null);
         Assert.Null(script.SelectedStale);
+    }
+
+    [Fact]
+    public async Task A_stale_still_that_is_approved_counts_as_approved_and_cannot_be_approved_again()
+    {
+        var (page, _) = await OpenAsync();
+        var script = page.Script!;
+
+        Assert.Equal("2 of 2 shots approved.", script.StillsApprovedSummary);
+        script.Rows[1].Shots[0].Still.SelectCommand.Execute(null);
+        Assert.False(script.ApproveSegmentCommand.CanExecute(null));
+        script.Rows[1].Shots[0].SelectCommand.Execute(null);   // the stale shot, approved
+        Assert.False(script.ApproveSegmentCommand.CanExecute(null));
+    }
+
+    [Fact]
+    public async Task The_panel_says_how_each_kind_of_stale_cell_comes_up_to_date()
+    {
+        var (page, _) = await OpenAsync();
+        var script = page.Script!;
+
+        script.Rows[1].Voice.SelectCommand.Execute(null);
+        Assert.Equal("Regenerate speaks it again from the script as it is now.", script.SelectedStaleHint);
+        script.Rows[1].Shots[0].SelectCommand.Execute(null);
+        Assert.StartsWith("Regenerate storyboard cuts the shots again", script.SelectedStaleHint);
+        script.Rows[1].Shots[0].Still.SelectCommand.Execute(null);
+        Assert.StartsWith("Bring its shot and references up to date first", script.SelectedStaleHint);
+    }
+
+    [Fact]
+    public async Task Back_on_the_matrix_it_shows_what_went_out_of_date_meanwhile()
+    {
+        var (page, project) = await OpenAsync();
+        await page.ShowReferencesCommand.ExecuteAsync(null);
+        _client.Stills[project.Id] = _client.Stills[project.Id] with
+        {
+            Stills = [.. _client.Stills[project.Id].Stills.Select(s => s with { Stale = "Karlach's image changed since the still was made." })],
+        };
+
+        page.ShowMatrixCommand.Execute(null);
+        await page.ScriptLoading;
+
+        Assert.All(page.Script!.Rows.SelectMany(r => r.Shots), s => Assert.Equal("stale", s.Still.StateText));
+    }
+
+    [Fact]
+    public async Task A_stale_image_with_no_usable_picture_still_says_it_has_none()
+    {
+        var (page, project) = await OpenAsync();
+        var image = new ReferenceImageView("R01/1", 1, StageState.NeedsReview, 1, null, [new ResultVersion(1, VersionOrigin.Generated, At, null)],
+            new ReferenceImage("R01", 1, null, [], 1, ImageMaking.NoPicture, "No picture was found on the sources."), null, null, [])
+        {
+            Stale = "Karlach's look or pictures changed since this image was made.",
+        };
+        _client.References[project.Id] = new ReferencesView(project.Id, StageState.NeedsReview, null, [], ReferencePhase.Images,
+            [new(new Reference("R01", "Karlach", CastKind.Character, "", "Red skin, horns.", ["S01/0001"], []), [image])],
+            [], [], false, new Dictionary<string, string>(), 2);
+
+        await page.OpenStageCommand.ExecuteAsync(page.Stages.Single(s => s.Stage == PipelineStage.References));
+
+        var card = page.References!.Characters[0];
+        Assert.Equal(("no usable picture", true), (card.StateText, card.IsMissing));
+        Assert.Equal("No picture was found on the sources.", card.Note);
     }
 
     [Fact]

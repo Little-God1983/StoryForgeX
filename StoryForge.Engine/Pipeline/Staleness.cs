@@ -36,14 +36,15 @@ internal sealed class Staleness(
         var setup = project.Setup;
         await using var db = await contextFactory.CreateDbContextAsync(cancellationToken);
         var all = await db.Cells.AsNoTracking().Where(c => c.ProjectId == projectId && c.Key != "" && c.CurrentVersion != null).ToListAsync(cancellationToken);
-        var versions = await db.CellVersions.AsNoTracking()
+        // Only the versions a cell points to (its current and its approved one), by stage, key and version.
+        var wanted = all.SelectMany(c => new[] { c.CurrentVersion, c.ApprovedVersion }.OfType<int>().Select(v => (c.Stage, c.Key, v))).ToHashSet();
+        var versions = (await db.CellVersions.AsNoTracking()
             .Where(v => v.ProjectId == projectId && v.Key != "")
-            .Select(v => new { v.Stage, v.Key, v.Version, v.InputHash, v.CreatedAt, v.OutputJson })
-            .ToListAsync(cancellationToken);
+            .ToListAsync(cancellationToken))
+            .Where(v => wanted.Contains((v.Stage, v.Key, v.Version)))
+            .ToDictionary(v => (v.Stage, v.Key, v.Version));
         CellVersionEntry? Current(CellEntry cell, Func<CellEntry, int?> pick) =>
-            versions.FirstOrDefault(v => v.Stage == cell.Stage && v.Key == cell.Key && v.Version == pick(cell)) is { } v
-                ? new CellVersionEntry { Stage = v.Stage, Key = v.Key, Version = v.Version, InputHash = v.InputHash, CreatedAt = v.CreatedAt, OutputJson = v.OutputJson }
-                : null;
+            pick(cell) is { } number && versions.TryGetValue((cell.Stage, cell.Key, number), out var v) ? v : null;
         IEnumerable<CellEntry> Of(PipelineStage stage) => all.Where(c => c.Stage == stage);
         var stale = new Dictionary<(PipelineStage, string), string>();
 
@@ -178,10 +179,44 @@ internal sealed class Staleness(
         }
     }
 
-    /// <summary>How many stills use each reference, by its id: what changing its images would put out of date.</summary>
-    public async Task<IReadOnlyDictionary<string, int>> StillsUsingAsync(Guid projectId, CancellationToken cancellationToken) =>
-        (await cells.CurrentStillsAsync(projectId, cancellationToken)).Values
-            .SelectMany(s => s.References.Select(k => ReferencesStage.Parse(k).ReferenceId).Distinct())
-            .GroupBy(id => id)
-            .ToDictionary(g => g.Key, g => g.Count());
+    /// <summary>
+    /// How many stills each reference reaches, by its id: those its picture went into (or with
+    /// <paramref name="wordsToo"/>, every still of a shot it is in), and those starting from one of them.
+    /// What changing its images (or its look) would put out of date.
+    /// </summary>
+    public async Task<IReadOnlyDictionary<string, int>> StillsUsingAsync(Guid projectId, bool wordsToo, CancellationToken cancellationToken)
+    {
+        var stills = await cells.CurrentStillsAsync(projectId, cancellationToken);
+        if (stills.Count == 0)
+        {
+            return new Dictionary<string, int>();
+        }
+        var shots = await cells.CurrentShotsAsync(projectId, cancellationToken);
+        var references = (await cells.CurrentReferencesAsync(projectId, cancellationToken))?.References ?? [];
+        var counts = new Dictionary<string, int>();
+        foreach (var reference in references)
+        {
+            var reached = new HashSet<string>();
+            // In shot order, so a still that starts from one reached is reached too.
+            foreach (var shot in shots)
+            {
+                if (stills.GetValueOrDefault(shot.Key) is not { } still)
+                {
+                    continue;
+                }
+                var direct = wordsToo
+                    ? shot.Cast.Any(n => ReferenceList.IsNamed(reference, n))
+                    : still.References.Any(k => k.StartsWith(reference.Id + "/", StringComparison.Ordinal));
+                if (direct || (still.ContinuesFrom is { } from && reached.Contains(from)))
+                {
+                    reached.Add(shot.Key);
+                }
+            }
+            if (reached.Count > 0)
+            {
+                counts[reference.Id] = reached.Count;
+            }
+        }
+        return counts;
+    }
 }

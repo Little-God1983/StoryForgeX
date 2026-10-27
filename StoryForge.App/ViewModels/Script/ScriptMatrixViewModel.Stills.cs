@@ -13,13 +13,13 @@ namespace StoryForge.App.ViewModels.Script;
 public sealed partial class StillCellViewModel(Action<StillCellViewModel> select, Func<string> label) : ObservableObject
 {
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(State), nameof(StateText), nameof(VersionText), nameof(HasStill), nameof(IsQueued), nameof(AccessibleName))]
+    [NotifyPropertyChangedFor(nameof(State), nameof(DisplayState), nameof(StateText), nameof(VersionText), nameof(HasStill), nameof(IsQueued), nameof(AccessibleName))]
     [NotifyCanExecuteChangedFor(nameof(SelectCommand))]
     private StillView? _still;
 
     /// <summary>The Stills stage as a whole.</summary>
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(State), nameof(StateText), nameof(AccessibleName))]
+    [NotifyPropertyChangedFor(nameof(State), nameof(DisplayState), nameof(StateText), nameof(AccessibleName))]
     private StageState _stageState;
 
     [ObservableProperty]
@@ -34,9 +34,12 @@ public sealed partial class StillCellViewModel(Action<StillCellViewModel> select
     public bool IsWaiting => Still is null || Still.Queued || Still.Still is null;
 
     // A shot the run never got to stays "—" when the run failed: the bar says where it failed.
-    public StageState State => ScriptMatrixViewModel.Shown(Still?.State ?? (StageState == StageState.Running ? StageState.Running : StageState.NotStarted), Still?.Stale);
+    public StageState State => Still?.State ?? (StageState == StageState.Running ? StageState.Running : StageState.NotStarted);
 
-    public string StateText => ScriptMatrixViewModel.Word(State);
+    /// <summary>What the cell shows: stale when it is out of date.</summary>
+    public StageState DisplayState => ScriptMatrixViewModel.Shown(State, Still?.Stale);
+
+    public string StateText => ScriptMatrixViewModel.Word(DisplayState);
 
     /// <summary>"v2", or "queued" while it waits in the batch.</summary>
     public string VersionText => IsQueued ? "queued" : Still is { Version: > 0 } still ? $"v{still.Version}" : "";

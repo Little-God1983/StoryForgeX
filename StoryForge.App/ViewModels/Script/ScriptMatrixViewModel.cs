@@ -29,13 +29,13 @@ public sealed record SegmentVersionChoice(int Version, bool IsShown, bool IsAppr
 public sealed partial class VoiceCellViewModel(string id, Action<VoiceCellViewModel> select) : ObservableObject
 {
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(State), nameof(StateText), nameof(LengthText), nameof(HasVoice), nameof(AccessibleName))]
+    [NotifyPropertyChangedFor(nameof(State), nameof(DisplayState), nameof(StateText), nameof(LengthText), nameof(HasVoice), nameof(AccessibleName))]
     [NotifyCanExecuteChangedFor(nameof(SelectCommand))]
     private VoiceSegmentView? _segment;
 
     /// <summary>The Voice stage as a whole.</summary>
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(State), nameof(StateText), nameof(AccessibleName))]
+    [NotifyPropertyChangedFor(nameof(State), nameof(DisplayState), nameof(StateText), nameof(AccessibleName))]
     private StageState _stageState;
 
     [ObservableProperty]
@@ -46,9 +46,12 @@ public sealed partial class VoiceCellViewModel(string id, Action<VoiceCellViewMo
     public bool HasVoice => Segment is not null;
 
     // A segment the run never got to stays "—" when the run failed: the bar says where it failed.
-    public StageState State => ScriptMatrixViewModel.Shown(Segment?.State ?? (StageState == StageState.Running ? StageState.Running : StageState.NotStarted), Segment?.Stale);
+    public StageState State => Segment?.State ?? (StageState == StageState.Running ? StageState.Running : StageState.NotStarted);
 
-    public string StateText => ScriptMatrixViewModel.Word(State);
+    /// <summary>What the cell shows: stale when it is out of date.</summary>
+    public StageState DisplayState => ScriptMatrixViewModel.Shown(State, Segment?.Stale);
+
+    public string StateText => ScriptMatrixViewModel.Word(DisplayState);
 
     /// <summary>"0:31": how long the audio is.</summary>
     public string LengthText => Segment is null ? "" : ScriptMatrixViewModel.Clock(Segment.Seconds);
@@ -66,7 +69,7 @@ public sealed partial class VoiceCellViewModel(string id, Action<VoiceCellViewMo
 public sealed partial class SegmentRowViewModel(SegmentView segment, Action<SegmentRowViewModel> select, Action<VoiceCellViewModel> selectVoice) : ObservableObject
 {
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(Id), nameof(Title), nameof(State), nameof(StateText), nameof(VersionText), nameof(AccessibleName),
+    [NotifyPropertyChangedFor(nameof(Id), nameof(Title), nameof(State), nameof(DisplayState), nameof(StateText), nameof(VersionText), nameof(AccessibleName),
         nameof(Narration), nameof(Words), nameof(Timing), nameof(Versions), nameof(NoteText), nameof(HasNote), nameof(Error))]
     private SegmentView _segment = segment;
 
@@ -132,20 +135,20 @@ public sealed partial class SegmentRowViewModel(SegmentView segment, Action<Segm
     ];
 
     /// <summary>Folded: what its shots need, e.g. "! 1  ✓ 1".</summary>
-    public string BoardSummary => string.Join("  ", Marks.Where(m => Shots.Any(s => s.State == m.State)).Select(m => $"{m.Mark} {Shots.Count(s => s.State == m.State)}"));
+    public string BoardSummary => string.Join("  ", Marks.Where(m => Shots.Any(s => s.DisplayState == m.State)).Select(m => $"{m.Mark} {Shots.Count(s => s.DisplayState == m.State)}"));
 
     /// <summary>What screen readers announce for the folded summary.</summary>
     public string BoardSummaryName =>
-        $"{Id} shots folded: {string.Join(", ", Marks.Where(m => Shots.Any(s => s.State == m.State)).Select(m => $"{Shots.Count(s => s.State == m.State)} {m.Word}"))}";
+        $"{Id} shots folded: {string.Join(", ", Marks.Where(m => Shots.Any(s => s.DisplayState == m.State)).Select(m => $"{Shots.Count(s => s.DisplayState == m.State)} {m.Word}"))}";
 
     /// <summary>Folded: what its stills need, e.g. "! 1  ✓ 1"; empty before any still is made.</summary>
     public string StillSummary => Shots.Any(s => s.Still.HasStill)
-        ? string.Join("  ", Marks.Where(m => Shots.Any(s => s.Still.State == m.State)).Select(m => $"{m.Mark} {Shots.Count(s => s.Still.State == m.State)}"))
+        ? string.Join("  ", Marks.Where(m => Shots.Any(s => s.Still.DisplayState == m.State)).Select(m => $"{m.Mark} {Shots.Count(s => s.Still.DisplayState == m.State)}"))
         : "";
 
     /// <summary>What screen readers announce for the folded stills.</summary>
     public string StillSummaryName =>
-        $"{Id} stills folded: {string.Join(", ", Marks.Where(m => Shots.Any(s => s.Still.State == m.State)).Select(m => $"{Shots.Count(s => s.Still.State == m.State)} {m.Word}"))}";
+        $"{Id} stills folded: {string.Join(", ", Marks.Where(m => Shots.Any(s => s.Still.DisplayState == m.State)).Select(m => $"{Shots.Count(s => s.Still.DisplayState == m.State)} {m.Word}"))}";
 
     [RelayCommand]
     private void Toggle() => IsOpen = !IsOpen;
@@ -163,10 +166,13 @@ public sealed partial class SegmentRowViewModel(SegmentView segment, Action<Segm
 
     public string Title => Segment.Title;
 
-    public StageState State => ScriptMatrixViewModel.Shown(Segment.State, Segment.Stale);
+    public StageState State => Segment.State;
+
+    /// <summary>What the cell shows: stale when it is out of date.</summary>
+    public StageState DisplayState => ScriptMatrixViewModel.Shown(Segment.State, Segment.Stale);
 
     /// <summary>"review", "approved", "stale", "running" …: the cell's word, as in the canvas legend.</summary>
-    public string StateText => ScriptMatrixViewModel.Word(State);
+    public string StateText => ScriptMatrixViewModel.Word(DisplayState);
 
     public string VersionText => $"v{Segment.Version}";
 
@@ -329,6 +335,13 @@ public sealed partial class ScriptMatrixViewModel(IStoryForgeClient client, Guid
     public string SelectedNarration => Selected?.Segment.Narration ?? "";
 
     public string? SelectedError => IsBoardPanel ? SelectedShot?.Shot.Error : IsStillPanel ? SelectedStill?.Error : IsVoicePanel ? SelectedVoice?.Error : Selected?.Segment.Error;
+
+    /// <summary>How the selected stale cell comes up to date; what Regenerate here does differs by cell.</summary>
+    public string SelectedStaleHint =>
+        IsVoicePanel ? "Regenerate speaks it again from the script as it is now."
+        : IsBoardPanel ? "Regenerate storyboard cuts the shots again from the voice as it is now. Regenerate here only plans this shot again in its old place."
+        : IsStillPanel ? "Bring its shot and references up to date first, if they are out of date too; then Regenerate makes it again from them."
+        : "Regenerate script writes it again from the fact sheet as it is now. Regenerate here keeps to the facts it was written from.";
 
     /// <summary>"Out of date: S04's script changed since it was spoken."; null while the selected cell is up to date.</summary>
     public string? SelectedStale =>
@@ -687,7 +700,7 @@ public sealed partial class ScriptMatrixViewModel(IStoryForgeClient client, Guid
 
     private void RefreshPanel()
     {
-        foreach (var name in new[] { nameof(SelectedHeading), nameof(SelectedStatus), nameof(SelectedNarration), nameof(SelectedNote), nameof(SelectedFacts), nameof(SelectedVersions), nameof(SelectedError), nameof(SelectedStale), nameof(SelectedIsRunning), nameof(SelectedShowsLog) })
+        foreach (var name in new[] { nameof(SelectedHeading), nameof(SelectedStatus), nameof(SelectedNarration), nameof(SelectedNote), nameof(SelectedFacts), nameof(SelectedVersions), nameof(SelectedError), nameof(SelectedStale), nameof(SelectedStaleHint), nameof(SelectedIsRunning), nameof(SelectedShowsLog) })
         {
             OnPropertyChanged(name);
         }

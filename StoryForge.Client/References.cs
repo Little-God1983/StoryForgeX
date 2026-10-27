@@ -144,8 +144,17 @@ public sealed record ReferencesView(
     /// <summary>Every shot of the storyboard in order, for the timeline.</summary>
     public IReadOnlyList<TimelineShot> Shots { get; init; } = [];
 
-    /// <summary>How many stills use each reference, by its id: changing its images puts them out of date.</summary>
+    /// <summary>
+    /// How many stills use each reference's images, by its id: those its picture went into, and those
+    /// starting from one of them. Changing its images puts them out of date.
+    /// </summary>
     public IReadOnlyDictionary<string, int> StillsUsing { get; init; } = new Dictionary<string, int>();
+
+    /// <summary>
+    /// How many stills show each reference, by its id, pictured or in words, and those starting from
+    /// one of them. Changing its look, merging or removing it puts them out of date.
+    /// </summary>
+    public IReadOnlyDictionary<string, int> StillsShowing { get; init; } = new Dictionary<string, int>();
 }
 
 /// <summary>What a change to the reference list does.</summary>

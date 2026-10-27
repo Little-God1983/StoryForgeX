@@ -178,12 +178,18 @@ public sealed partial class ResultMatrixPageViewModel : PageViewModel
     [RelayCommand]
     private void ShowMatrix()
     {
+        var away = FactSheet is not null || References is not null;
         FactSheet = null;
         References = null;
         ShowsWholeScript = false;
         if (Project is not null)
         {
             Breadcrumb = $"Projects / {Project.Setup.Name}";
+        }
+        if (away && Script is not null)
+        {
+            // What changed there (a fact sheet, an image approved) can put results here out of date.
+            ScriptLoading = Script.LoadAsync();
         }
     }
 

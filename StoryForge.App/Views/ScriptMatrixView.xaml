@@ -42,23 +42,23 @@
         </Setter.Value>
       </Setter>
       <Style.Triggers>
-        <DataTrigger Binding="{Binding State}" Value="{x:Static client:StageState.NeedsReview}">
+        <DataTrigger Binding="{Binding DisplayState}" Value="{x:Static client:StageState.NeedsReview}">
           <Setter Property="Background" Value="{StaticResource PillOffBackBrush}" />
           <Setter Property="Foreground" Value="{StaticResource PillOffTextBrush}" />
         </DataTrigger>
-        <DataTrigger Binding="{Binding State}" Value="{x:Static client:StageState.Approved}">
+        <DataTrigger Binding="{Binding DisplayState}" Value="{x:Static client:StageState.Approved}">
           <Setter Property="Background" Value="{StaticResource PillOkBackBrush}" />
           <Setter Property="Foreground" Value="{StaticResource PillOkTextBrush}" />
         </DataTrigger>
-        <DataTrigger Binding="{Binding State}" Value="{x:Static client:StageState.Running}">
+        <DataTrigger Binding="{Binding DisplayState}" Value="{x:Static client:StageState.Running}">
           <Setter Property="Background" Value="#172536" />
           <Setter Property="Foreground" Value="#6FB3EE" />
         </DataTrigger>
-        <DataTrigger Binding="{Binding State}" Value="{x:Static client:StageState.Failed}">
+        <DataTrigger Binding="{Binding DisplayState}" Value="{x:Static client:StageState.Failed}">
           <Setter Property="Background" Value="{StaticResource PillErrorBackBrush}" />
           <Setter Property="Foreground" Value="{StaticResource PillErrorTextBrush}" />
         </DataTrigger>
-        <DataTrigger Binding="{Binding State}" Value="{x:Static client:StageState.Stale}">
+        <DataTrigger Binding="{Binding DisplayState}" Value="{x:Static client:StageState.Stale}">
           <Setter Property="Background" Value="{StaticResource NoteBackBrush}" />
           <Setter Property="Foreground" Value="#B4A8F5" />
         </DataTrigger>
@@ -591,8 +591,8 @@
                         Visibility="{Binding SelectedStale, Converter={views:NullToCollapsedConverter}}">
                   <StackPanel>
                     <TextBlock Text="{Binding SelectedStale}" FontSize="13" Foreground="#D4CCFA" TextWrapping="Wrap" AutomationProperties.AutomationId="SelectedStale" />
-                    <TextBlock Text="It still shows what it was. Regenerate makes it again from what it is made from now." FontSize="12" Foreground="#B4A8F5"
-                               TextWrapping="Wrap" Margin="0,4,0,0" />
+                    <TextBlock Text="{Binding SelectedStaleHint}" FontSize="12" Foreground="#B4A8F5" TextWrapping="Wrap" Margin="0,4,0,0" />
+                    <TextBlock Text="It still shows what it was." FontSize="12" Foreground="#B4A8F5" TextWrapping="Wrap" Margin="0,2,0,0" />
                   </StackPanel>
                 </Border>
                 <Border Background="{StaticResource CardBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="8" Padding="12,8" Margin="0,0,0,12"

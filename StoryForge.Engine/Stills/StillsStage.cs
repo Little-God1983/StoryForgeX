@@ -233,6 +233,10 @@ internal sealed partial class StillsStage(
     internal static async Task<IReadOnlyDictionary<string, string>> CurrentHashesAsync(
         CellReader cells, ProjectFolders folders, ProfileStore profiles, Project project, IReadOnlyDictionary<string, Still> stills, CancellationToken cancellationToken)
     {
+        if (stills.Count == 0)
+        {
+            return new Dictionary<string, string>();   // nothing to compare: no plan, no profile read
+        }
         Plan plan;
         try
         {
