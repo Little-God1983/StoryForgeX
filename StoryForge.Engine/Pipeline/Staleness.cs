@@ -1,3 +1,5 @@
+using System.Collections.Concurrent;
+using System.Diagnostics;
 using Microsoft.EntityFrameworkCore;
 using StoryForge.Client;
 using StoryForge.Engine.Data;
@@ -11,12 +13,19 @@ using StoryForge.Engine.Voice;
 
 namespace StoryForge.Engine.Pipeline;
 
+/// <summary>How many stills a change to a reference reaches, for the question before it.</summary>
+/// <param name="Using">By reference id: the stills its images went into, and those starting from one of them.</param>
+/// <param name="Showing">By reference id: every still of a shot it is in, pictured or in words, and those starting from one.</param>
+/// <param name="UsingImage">By image key ("R01/2"): the stills that image went into, and those starting from one.</param>
+internal sealed record StillCounts(IReadOnlyDictionary<string, int> Using, IReadOnlyDictionary<string, int> Showing, IReadOnlyDictionary<string, int> UsingImage);
+
 /// <summary>
 /// Which results are out of date (stale), and why: a cell is stale when what it would be made from
 /// now differs from what it was made from (its version's input hash, or for a shot the voice it was
 /// cut from), or when something it was made from is stale itself. What each stage would use now is
-/// what it reads when it runs: a segment's approved version, else its current one. Nothing is
-/// stored: it is worked out when a screen asks, so a result made again is up to date at once.
+/// what it reads when it runs: a segment's approved version, else its current one; a still, the
+/// approved reference images. Nothing is stored: it is worked out when a screen asks (and kept until
+/// something of the project changes), so a result made again is up to date at once.
 /// </summary>
 /// <remarks>
 /// The chain: the fact sheet → script segments → their voices → their shots → their stills; and
@@ -29,8 +38,41 @@ internal sealed class Staleness(
     ProfileStore profiles,
     ProjectFolders folders)
 {
+    private sealed record Result(object Stamp, IReadOnlyDictionary<(PipelineStage Stage, string Key), string> Stale, StillCounts Counts);
+
+    // The last answer per project: one matrix load asks four times, and every live update loads again.
+    private readonly ConcurrentDictionary<Guid, Result> _last = new();
+
     /// <summary>Every stale cell of the project, by stage and key, with the reason its panel shows.</summary>
-    public async Task<IReadOnlyDictionary<(PipelineStage Stage, string Key), string>> GetAsync(Guid projectId, CancellationToken cancellationToken)
+    public async Task<IReadOnlyDictionary<(PipelineStage Stage, string Key), string>> GetAsync(Guid projectId, CancellationToken cancellationToken) =>
+        (await ResultAsync(projectId, cancellationToken)).Stale;
+
+    /// <summary>How many stills each reference (and each of its images) reaches: what a change to it would put out of date.</summary>
+    public async Task<StillCounts> CountsAsync(Guid projectId, CancellationToken cancellationToken) =>
+        (await ResultAsync(projectId, cancellationToken)).Counts;
+
+    private async Task<Result> ResultAsync(Guid projectId, CancellationToken cancellationToken)
+    {
+        // Every change to a cell touches its time, and every new version adds one.
+        object stamp;
+        await using (var db = await contextFactory.CreateDbContextAsync(cancellationToken))
+        {
+            // SQLite cannot take the latest of a date with its offset: the few cells come here.
+            var changed = (await db.Cells.AsNoTracking().Where(c => c.ProjectId == projectId).Select(c => c.UpdatedAt).ToListAsync(cancellationToken))
+                .DefaultIfEmpty().Max();
+            var count = await db.CellVersions.AsNoTracking().CountAsync(v => v.ProjectId == projectId, cancellationToken);
+            stamp = (changed, count);
+        }
+        if (_last.TryGetValue(projectId, out var last) && last.Stamp.Equals(stamp))
+        {
+            return last;
+        }
+        var result = await ComputeAsync(projectId, stamp, cancellationToken);
+        _last[projectId] = result;
+        return result;
+    }
+
+    private async Task<Result> ComputeAsync(Guid projectId, object stamp, CancellationToken cancellationToken)
     {
         var project = await projects.GetAsync(projectId, cancellationToken);
         var setup = project.Setup;
@@ -104,18 +146,29 @@ internal sealed class Staleness(
                 stale[(PipelineStage.Storyboard, cell.Key)] = $"{shot.SegmentId}'s voice is out of date.";
             }
         }
-        var labels = shots.ToDictionary(s => s.Key, s => ShotTiming.Label(shots.Values, s.Key));
+        var ordered = shots.Values.OrderBy(s => s.SegmentId, StringComparer.Ordinal).ThenBy(s => s.FirstWord).ToList();
+        var labels = shots.ToDictionary(s => s.Key, s => ShotTiming.Label(ordered, s.Key));
 
-        // A reference image, from its reference on the list.
+        // A reference image, from its reference on the list: the version shown on the card, and the
+        // approved one the stills are made from.
         var sheet = await cells.CurrentReferencesAsync(projectId, cancellationToken);
         var names = (sheet?.References ?? []).ToDictionary(r => r.Id, r => r.Name);
+        var staleForStills = new HashSet<string>();
         foreach (var cell in Of(PipelineStage.References))
         {
             var (referenceId, _) = ReferencesStage.Parse(cell.Key);
-            if (Current(cell, c => c.CurrentVersion) is { } version && sheet?.References.FirstOrDefault(r => r.Id == referenceId) is { } reference
-                && version.InputHash != ReferencesStage.Hash(setup, reference))
+            if (sheet?.References.FirstOrDefault(r => r.Id == referenceId) is not { } reference)
+            {
+                continue;
+            }
+            var hash = ReferencesStage.Hash(setup, reference);
+            if (Current(cell, c => c.CurrentVersion) is { } version && version.InputHash != hash)
             {
                 stale[(PipelineStage.References, cell.Key)] = $"{reference.Name}'s look or pictures changed since this image was made.";
+            }
+            if (Current(cell, c => c.ApprovedVersion) is { } approved && approved.InputHash != hash)
+            {
+                staleForStills.Add(cell.Key);
             }
         }
 
@@ -128,95 +181,89 @@ internal sealed class Staleness(
                 stills[cell.Key] = (StoredJson.Read<Still>(version.OutputJson), version);
             }
         }
-        var hashes = await StillsStage.CurrentHashesAsync(cells, folders, profiles, project, stills.ToDictionary(s => s.Key, s => s.Value.Still), cancellationToken);
+        IReadOnlyDictionary<string, string> hashes;
+        try
+        {
+            hashes = await StillsStage.CurrentHashesAsync(cells, folders, profiles, project, stills.ToDictionary(s => s.Key, s => s.Value.Still), cancellationToken);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // The marks are a help, not the screen: one that cannot be worked out is left off.
+            Debug.WriteLine($"Working out which stills of {projectId} are out of date failed: {ex}");
+            hashes = new Dictionary<string, string>();
+        }
         // In shot order, so a still that starts from the one before sees whether that one is stale.
-        foreach (var key in shots.Values.OrderBy(s => s.SegmentId, StringComparer.Ordinal).ThenBy(s => s.FirstWord).Select(s => s.Key))
+        foreach (var key in ordered.Select(s => s.Key))
         {
             if (!stills.TryGetValue(key, out var made))
             {
                 continue;
             }
             var label = labels[key];
-            var references = made.Still.References.Select(k => ReferencesStage.Parse(k).ReferenceId).Distinct().ToList();
             var why = stale.ContainsKey((PipelineStage.Storyboard, key)) ? $"Shot {label} is out of date."
-                : made.Still.References.FirstOrDefault(k => stale.ContainsKey((PipelineStage.References, k))) is { } image
+                : made.Still.References.FirstOrDefault(staleForStills.Contains) is { } image
                     ? $"{names.GetValueOrDefault(ReferencesStage.Parse(image).ReferenceId, image)}'s image is out of date."
                 : made.Still.ContinuesFrom is { } from && stale.ContainsKey((PipelineStage.Stills, from)) ? $"The still of {labels.GetValueOrDefault(from, from)} it starts from is out of date."
-                : hashes.TryGetValue(key, out var hash) && hash != made.Version.InputHash ? Changed(made, label, references, names)
+                : hashes.TryGetValue(key, out var hash) && hash != made.Version.InputHash ? Changed(made, label)
                 : null;
             if (why is not null)
             {
                 stale[(PipelineStage.Stills, key)] = why;
             }
         }
-        return stale;
+        return new Result(stamp, stale, Counts(ordered, stills.ToDictionary(s => s.Key, s => s.Value.Still), sheet?.References ?? []));
 
-        // What changed since, as far as the dates tell: the shot, an image of someone in it, or else something it was made from.
-        string Changed((Still Still, CellVersionEntry Version) made, string label, IReadOnlyList<string> references, IReadOnlyDictionary<string, string> names)
+        // What changed since, as far as the dates tell: the still before, the shot, an image in it, or else something it was made from.
+        string Changed((Still Still, CellVersionEntry Version) made, string label)
         {
             var still = made.Version;
-            var key = still.Key;
             if (made.Still.ContinuesFrom is { } from && stills.TryGetValue(from, out var before) && before.Version.CreatedAt > still.CreatedAt)
             {
                 return $"The still of {labels.GetValueOrDefault(from, from)} it starts from was made again since.";
             }
-            if (Of(PipelineStage.Storyboard).FirstOrDefault(c => c.Key == key) is { } shotCell && Current(shotCell, c => c.CurrentVersion) is { } shot && shot.CreatedAt > still.CreatedAt)
+            if (Of(PipelineStage.Storyboard).FirstOrDefault(c => c.Key == still.Key) is { } shotCell && Current(shotCell, c => c.CurrentVersion) is { } shot && shot.CreatedAt > still.CreatedAt)
             {
                 return $"Shot {label} changed since the still was made.";
             }
-            foreach (var id in references)
+            foreach (var key in made.Still.References)
             {
-                var newer = Of(PipelineStage.References)
-                    .Where(c => c.Key.StartsWith(id + "/", StringComparison.Ordinal))
-                    .Select(c => Current(c, i => i.ApprovedVersion))
-                    .Any(v => v is not null && v.CreatedAt > still.CreatedAt);
-                if (newer)
+                if (Of(PipelineStage.References).FirstOrDefault(c => c.Key == key) is { } imageCell && Current(imageCell, c => c.ApprovedVersion) is { } approved && approved.CreatedAt > still.CreatedAt)
                 {
-                    return $"{names.GetValueOrDefault(id, id)}'s image changed since the still was made.";
+                    return $"{names.GetValueOrDefault(ReferencesStage.Parse(key).ReferenceId, key)}'s image changed since the still was made.";
                 }
             }
             return "What it was made from changed since: the shot's words, a look, or the still before.";
         }
     }
 
-    /// <summary>
-    /// How many stills each reference reaches, by its id: those its picture went into (or with
-    /// <paramref name="wordsToo"/>, every still of a shot it is in), and those starting from one of them.
-    /// What changing its images (or its look) would put out of date.
-    /// </summary>
-    public async Task<IReadOnlyDictionary<string, int>> StillsUsingAsync(Guid projectId, bool wordsToo, CancellationToken cancellationToken)
+    /// <summary>The stills each reference and each image reaches, continuations of them too, in shot order.</summary>
+    private static StillCounts Counts(IReadOnlyList<Shot> shots, IReadOnlyDictionary<string, Still> stills, IReadOnlyList<Reference> references)
     {
-        var stills = await cells.CurrentStillsAsync(projectId, cancellationToken);
-        if (stills.Count == 0)
+        Dictionary<string, int> Reach(IEnumerable<string> ids, Func<string, Shot, Still, bool> direct)
         {
-            return new Dictionary<string, int>();
-        }
-        var shots = await cells.CurrentShotsAsync(projectId, cancellationToken);
-        var references = (await cells.CurrentReferencesAsync(projectId, cancellationToken))?.References ?? [];
-        var counts = new Dictionary<string, int>();
-        foreach (var reference in references)
-        {
-            var reached = new HashSet<string>();
-            // In shot order, so a still that starts from one reached is reached too.
-            foreach (var shot in shots)
+            var counts = new Dictionary<string, int>();
+            foreach (var id in ids)
             {
-                if (stills.GetValueOrDefault(shot.Key) is not { } still)
+                var reached = new HashSet<string>();
+                foreach (var shot in shots)
                 {
-                    continue;
+                    if (stills.GetValueOrDefault(shot.Key) is { } still
+                        && (direct(id, shot, still) || (still.ContinuesFrom is { } from && reached.Contains(from))))
+                    {
+                        reached.Add(shot.Key);
+                    }
                 }
-                var direct = wordsToo
-                    ? shot.Cast.Any(n => ReferenceList.IsNamed(reference, n))
-                    : still.References.Any(k => k.StartsWith(reference.Id + "/", StringComparison.Ordinal));
-                if (direct || (still.ContinuesFrom is { } from && reached.Contains(from)))
+                if (reached.Count > 0)
                 {
-                    reached.Add(shot.Key);
+                    counts[id] = reached.Count;
                 }
             }
-            if (reached.Count > 0)
-            {
-                counts[reference.Id] = reached.Count;
-            }
+            return counts;
         }
-        return counts;
+        var byId = references.ToDictionary(r => r.Id);
+        return new StillCounts(
+            Reach(byId.Keys, (id, _, still) => still.References.Any(k => k.StartsWith(id + "/", StringComparison.Ordinal))),
+            Reach(byId.Keys, (id, shot, _) => shot.Cast.Any(n => ReferenceList.IsNamed(byId[id], n))),
+            Reach(stills.Values.SelectMany(s => s.References).Distinct(), (key, _, still) => still.References.Contains(key)));
     }
 }

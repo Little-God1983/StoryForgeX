@@ -155,6 +155,9 @@ public sealed record ReferencesView(
     /// one of them. Changing its look, merging or removing it puts them out of date.
     /// </summary>
     public IReadOnlyDictionary<string, int> StillsShowing { get; init; } = new Dictionary<string, int>();
+
+    /// <summary>How many stills use each image, by its key ("R01/2"), continuations of them too: changing that image puts them out of date.</summary>
+    public IReadOnlyDictionary<string, int> StillsUsingImage { get; init; } = new Dictionary<string, int>();
 }
 
 /// <summary>What a change to the reference list does.</summary>

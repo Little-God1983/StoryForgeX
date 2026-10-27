@@ -163,6 +163,7 @@ public sealed class StaleTests
             [], [], false, new Dictionary<string, string>(), 2)
         {
             StillsUsing = new Dictionary<string, int> { ["R01"] = stillsUsingKarlach },
+            StillsUsingImage = new Dictionary<string, int> { ["R01/1"] = stillsUsingKarlach },
         };
         await page.OpenStageCommand.ExecuteAsync(page.Stages.Single(s => s.Stage == PipelineStage.References));
         page.References!.Characters[0].SelectCommand.Execute(null);

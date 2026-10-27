@@ -70,7 +70,7 @@ public sealed partial class ReferenceCardViewModel(ReferenceView view, IReadOnly
     public bool IsMissing => Shown is { Version: > 0, Image.Made: ImageMaking.NoPicture };
 
     /// <summary>The image the card stands for is out of date.</summary>
-    public bool IsStale => Shown is { Stale: not null } && !IsMissing;
+    public bool IsStale => Shown is { Stale: not null, State: StageState.Approved or StageState.NeedsReview } && !IsMissing;
 
     public bool IsPartial => Shown is { Image.Made: ImageMaking.PartlyMadeUp };
 
@@ -96,7 +96,7 @@ public sealed partial class ReferenceCardViewModel(ReferenceView view, IReadOnly
         { State: StageState.Failed } => "failed",
         { Version: 0 } => "not made yet",
         { Image.Made: ImageMaking.NoPicture } => "no usable picture",
-        { Stale: not null } => "stale",
+        { Stale: not null, State: StageState.Approved or StageState.NeedsReview } => "stale",
         { State: StageState.Approved } => "approved",
         { Image.Made: ImageMaking.PartlyMadeUp } => "partly made up",
         _ => ScriptMatrixViewModel.Word(image.State),

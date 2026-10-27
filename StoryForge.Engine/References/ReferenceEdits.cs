@@ -248,7 +248,10 @@ internal sealed class ReferenceEdits(
                 {
                     Pool = [.. sheet.Pool.Where(p => p.Id != picture.Id)],
                     Discarded = [.. sheet.Discarded ?? [], picture],
-                    References = [.. sheet.References.Select(r => r with { Sources = [.. r.Sources.Where(id => id != picture.Id)], Chosen = [.. (r.Chosen ?? []).Where(id => id != picture.Id)] })],
+                    // Only the references that had it change: the others stay as they are, and so do their images.
+                    References = [.. sheet.References.Select(r => r.Sources.Contains(picture.Id) || (r.Chosen ?? []).Contains(picture.Id)
+                        ? r with { Sources = [.. r.Sources.Where(id => id != picture.Id)], Chosen = r.Chosen is null ? null : [.. r.Chosen.Where(id => id != picture.Id)] }
+                        : r)],
                 };
                 thrownOut = Path.Combine(await folders.RootAsync(cancellationToken), picture.File);
                 break;

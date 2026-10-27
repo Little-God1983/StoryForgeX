@@ -56,6 +56,7 @@ internal sealed class ReferenceViews(
         }
 
         var stale = await staleness.GetAsync(projectId, cancellationToken);
+        var counts = await staleness.CountsAsync(projectId, cancellationToken);
         var images = stageCells.Where(c => c.Key != "").Select(cell =>
         {
             var own = versions[cell.Key].OrderBy(v => v.Version).ToList();
@@ -104,8 +105,9 @@ internal sealed class ReferenceViews(
             storyboardApproved)
         {
             Shots = Timeline(shots, labels, sheet?.References ?? []),
-            StillsUsing = await staleness.StillsUsingAsync(projectId, wordsToo: false, cancellationToken),
-            StillsShowing = await staleness.StillsUsingAsync(projectId, wordsToo: true, cancellationToken),
+            StillsUsing = counts.Using,
+            StillsShowing = counts.Showing,
+            StillsUsingImage = counts.UsingImage,
         };
     }
 

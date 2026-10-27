@@ -153,18 +153,34 @@ public sealed partial class ReferencesViewModel
     // ── The selected reference ──
 
     /// <summary>
-    /// Before a change to a reference that stills are made from: "6 stills use Karlach and would be
+    /// Before a change to references that stills are made from: "6 stills use Karlach and would be
     /// out of date. Go on?". True when none does, or you said yes.
     /// </summary>
-    /// <param name="all">The change reaches every still showing it (its look, merge, remove), not only the ones its images went into.</param>
-    private bool Confirmed(string referenceId, bool all = false)
+    /// <param name="all">The change reaches every still showing them (a look, a merge, a removal), not only the ones their images went into.</param>
+    private bool Confirmed(IReadOnlyList<string> referenceIds, bool all = false)
     {
-        if ((all ? _view?.StillsShowing : _view?.StillsUsing)?.GetValueOrDefault(referenceId) is not (> 0 and var count) || confirm is null)
+        var counts = all ? _view?.StillsShowing : _view?.StillsUsing;
+        return Ask([.. referenceIds.Select(id => (id, counts?.GetValueOrDefault(id) ?? 0))]);
+    }
+
+    private bool Confirmed(string referenceId, bool all = false) => Confirmed([referenceId], all);
+
+    /// <summary>Before a change to one image: only the stills that image went into count.</summary>
+    private bool ConfirmedImage(string imageKey) =>
+        Ask([(ReferencesStage(imageKey), _view?.StillsUsingImage.GetValueOrDefault(imageKey) ?? 0)]);
+
+    private static string ReferencesStage(string imageKey) => imageKey.Split('/')[0];
+
+    private bool Ask(IReadOnlyList<(string Id, int Count)> reached)
+    {
+        var count = reached.Sum(r => r.Count);
+        if (count == 0 || confirm is null || _view is null)
         {
             return true;
         }
-        var name = _view!.References.FirstOrDefault(r => r.Reference.Id == referenceId)?.Reference.Name ?? referenceId;
-        return confirm($"{count} {(count == 1 ? "still uses" : "stills use")} {name} and would be out of date. Go on?");
+        var names = string.Join(" and ", reached.Where(r => r.Count > 0)
+            .Select(r => _view.References.FirstOrDefault(v => v.Reference.Id == r.Id)?.Reference.Name ?? r.Id));
+        return confirm($"{count} {(count == 1 ? "still uses" : "stills use")} {names} and would be out of date. Go on?");
     }
 
     /// <summary>Changes to a reference wait while anything of the stage is made, or another change is on its way.</summary>
@@ -185,7 +201,7 @@ public sealed partial class ReferencesViewModel
     private Task RegenerateAsync()
     {
         var key = SelectedImage!.Key;
-        return Confirmed(SelectedCard!.Id) ? ActAsync("make the image again", () => client.RegenerateSegmentAsync(ProjectId, PipelineStage.References, key)) : Task.CompletedTask;
+        return ConfirmedImage(key) ? ActAsync("make the image again", () => client.RegenerateSegmentAsync(ProjectId, PipelineStage.References, key)) : Task.CompletedTask;
     }
 
     private bool CanShowVersion(int version) => CardIdle() && SelectedImage is not null;
@@ -194,7 +210,7 @@ public sealed partial class ReferencesViewModel
     private Task ShowVersionAsync(int version)
     {
         var key = SelectedImage!.Key;
-        return Confirmed(SelectedCard!.Id) ? ActAsync("switch the version", () => client.SelectSegmentVersionAsync(ProjectId, PipelineStage.References, key, version)) : Task.CompletedTask;
+        return ConfirmedImage(key) ? ActAsync("switch the version", () => client.SelectSegmentVersionAsync(ProjectId, PipelineStage.References, key, version)) : Task.CompletedTask;
     }
 
     private bool CanAddImage() => CardIdle() && !IsListPhase;
@@ -259,7 +275,7 @@ public sealed partial class ReferencesViewModel
     private Task MergeAsync()
     {
         var (id, into) = (SelectedCard!.Id, MergeTarget!.Id);
-        return Confirmed(id, all: true) ? ActAsync("merge the references", () => client.ChangeReferencesAsync(ProjectId, new ReferenceChange(ReferenceChangeKind.Merge, ReferenceId: id, OtherId: into))) : Task.CompletedTask;
+        return Confirmed([id, into], all: true) ? ActAsync("merge the references", () => client.ChangeReferencesAsync(ProjectId, new ReferenceChange(ReferenceChangeKind.Merge, ReferenceId: id, OtherId: into))) : Task.CompletedTask;
     }
 
     [RelayCommand(CanExecute = nameof(CardIdle))]
@@ -276,7 +292,7 @@ public sealed partial class ReferencesViewModel
     private Task RemoveImageAsync()
     {
         var key = SelectedImage!.Key;
-        return Confirmed(SelectedCard!.Id) ? ActAsync("remove the image", () => client.ChangeReferencesAsync(ProjectId, new ReferenceChange(ReferenceChangeKind.RemoveImage, ImageKey: key))) : Task.CompletedTask;
+        return ConfirmedImage(key) ? ActAsync("remove the image", () => client.ChangeReferencesAsync(ProjectId, new ReferenceChange(ReferenceChangeKind.RemoveImage, ImageKey: key))) : Task.CompletedTask;
     }
 
     // ── The selected pool picture ──
@@ -312,6 +328,8 @@ public sealed partial class ReferencesViewModel
     private Task DiscardPictureAsync()
     {
         var picture = SelectedPicture!.Id;
-        return ActAsync("discard the picture", () => client.ChangeReferencesAsync(ProjectId, new ReferenceChange(ReferenceChangeKind.DiscardFromPool, PoolImageId: picture)));
+        // The references made from it are made from the others then: their stills go out of date.
+        var made = _view?.References.Where(r => r.Reference.Sources.Contains(picture)).Select(r => r.Reference.Id).ToList() ?? [];
+        return !Confirmed(made) ? Task.CompletedTask : ActAsync("discard the picture", () => client.ChangeReferencesAsync(ProjectId, new ReferenceChange(ReferenceChangeKind.DiscardFromPool, PoolImageId: picture)));
     }
 }

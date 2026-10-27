@@ -843,6 +843,38 @@ public sealed class StillsRunTests : IDisposable
     }
 
     [Fact]
+    public async Task Discarding_a_picture_leaves_the_references_without_it_as_they_are()
+    {
+        _pictures.ByName["Karlach"] = [FakePictures.Picture("Karlach.png"), FakePictures.Picture("Karlach2.png")];
+        var client = await StartAsync();
+        var project = await ReferencesApprovedAsync(client);
+        await StillsAsync(client, project.Id);
+        var references = await client.GetReferencesAsync(project.Id);
+        var second = references.Pool.Single(p => p.Image.Url.EndsWith("Karlach2.png", StringComparison.Ordinal)).Image.Id;
+
+        await client.ChangeReferencesAsync(project.Id, new ReferenceChange(ReferenceChangeKind.DiscardFromPool, PoolImageId: second));
+
+        // The coin never had the picture: its image and the stills of its shots stay up to date.
+        Assert.Null((await client.GetReferencesAsync(project.Id)).References.Single(r => r.Reference.Name == "Soul coin").Images.Single().Stale);
+        var shots = (await client.GetStoryboardAsync(project.Id)).Shots;
+        var coinShots = shots.Where(s => s.Number == 1).Select(s => s.Key).ToHashSet();
+        Assert.All((await client.GetStillsAsync(project.Id)).Stills.Where(s => coinShots.Contains(s.Key)), s => Assert.Null(s.Stale));
+    }
+
+    [Fact]
+    public async Task The_warnings_count_per_image_too()
+    {
+        var client = await StartAsync();
+        var project = await ReferencesApprovedAsync(client);
+        await StillsAsync(client, project.Id);
+
+        var references = await client.GetReferencesAsync(project.Id);
+
+        Assert.Equal(references.StillsUsing["R01"], references.StillsUsingImage["R01/1"]);
+        Assert.False(references.StillsUsingImage.ContainsKey("R01/2"));
+    }
+
+    [Fact]
     public async Task A_still_made_again_is_up_to_date_and_the_one_continuing_it_is_not()
     {
         var client = await StartAsync();
