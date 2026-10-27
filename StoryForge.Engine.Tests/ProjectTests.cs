@@ -302,6 +302,29 @@ public sealed class ProjectTests : IDisposable
     }
 
     [Fact]
+    public async Task A_still_profile_that_cannot_take_the_reference_images_is_refused_at_the_start()
+    {
+        var client = await _engine.StartClientAsync();
+        var s = await ValidSetup(client);
+        var plain = await client.CreateProfileAsync(ProfileKind.Image, "Painted dark fantasy");
+        var starter = await client.GetProfileVersionAsync(plain.Id);
+        var saved = await client.SaveProfileVersionAsync(plain.Id, starter.Content with { Inputs = [new("prompt", "#6.text")] });
+        var plainStills = s with { Stills = s.Stills with { Profile = new ProfileRef(plain.Id, saved.Version) } };
+
+        var refused = await Assert.ThrowsAsync<ArgumentException>(() => client.CreateProjectAsync(plainStills));
+
+        Assert.Equal("\"Painted dark fantasy\" cannot make stills from the reference images: it does not say where they go. "
+            + "Map 'image' (or 'images') in the profile, pick another still profile, or make the stills from text only.", refused.Message);
+        // Stills from text only take no picture: a text-to-image workflow is right for them.
+        await client.CreateProjectAsync(plainStills with { References = plainStills.References with { Consistency = Consistency.TextToImageOnly } });
+        // The prompt has to go somewhere whatever the stills are made from.
+        var silent = await client.SaveProfileVersionAsync(plain.Id, starter.Content with { Inputs = [new("image", "#1.image")] });
+        refused = await Assert.ThrowsAsync<ArgumentException>(() =>
+            client.CreateProjectAsync(s with { Stills = s.Stills with { Profile = new ProfileRef(plain.Id, silent.Version) } }));
+        Assert.Contains("does not say where the prompt goes", refused.Message);
+    }
+
+    [Fact]
     public async Task Asking_for_a_project_that_does_not_exist_says_so()
     {
         var client = await _engine.StartClientAsync();

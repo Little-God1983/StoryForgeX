@@ -14,6 +14,7 @@ using StoryForge.Engine.Research;
 using StoryForge.Engine.Script;
 using StoryForge.Engine.Secrets;
 using StoryForge.Engine.Settings;
+using StoryForge.Engine.Stills;
 using StoryForge.Engine.Storyboard;
 using StoryForge.Engine.Voice;
 
@@ -88,6 +89,10 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IStageWorker, ReferencesStage>();
         services.AddSingleton<ReferenceViews>();
         services.AddSingleton<ReferenceEdits>();
+        services.AddSingleton<IStillPromptAgent, ClaudeCliStillPromptAgent>();
+        services.AddSingleton<IStageWorker, StillsStage>();
+        services.AddSingleton<StillCells>();
+        services.AddSingleton<TestRenders>();
         // After DatabaseInitializer: hosted services start in order, and the runner reads the database.
         services.AddSingleton<PipelineRunner>();
         services.AddHostedService(provider => provider.GetRequiredService<PipelineRunner>());

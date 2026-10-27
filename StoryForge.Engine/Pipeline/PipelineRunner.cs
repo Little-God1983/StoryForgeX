@@ -29,6 +29,9 @@ internal sealed class PipelineRunner(
     private readonly Dictionary<PipelineStage, IStageWorker> _workers = workers.ToDictionary(w => w.Stage);
     private readonly Channel<Job> _queue = Channel.CreateUnbounded<Job>(new UnboundedChannelOptions { SingleReader = true });
     private readonly Lock _lock = new();
+
+    // Jobs go into the queue under it, so a batch goes in whole: nothing queued meanwhile gets between its jobs.
+    private readonly Lock _writing = new();
     private readonly Dictionary<(Guid, PipelineStage, string), Job> _jobs = [];
     private readonly CancellationTokenSource _stopping = new();
 
@@ -181,6 +184,36 @@ internal sealed class PipelineRunner(
         }
     }
 
+    /// <summary>
+    /// Makes several segments again as one batch, in the order given: they run back to back, so the
+    /// model loads once for them all. One already running or waiting is left as it is.
+    /// </summary>
+    /// <param name="segments">Each segment's key, and your prompt for it (a still); null for none.</param>
+    public async Task EnqueueBatchAsync(Guid projectId, PipelineStage stage, IReadOnlyList<(string Key, string? Prompt)> segments, CancellationToken cancellationToken)
+    {
+        await projects.GetAsync(projectId, cancellationToken);
+        if (!_workers.TryGetValue(stage, out var worker) || worker is not ISegmentWorker)
+        {
+            throw new InvalidOperationException($"The {stage} stage has no segments to make one by one.");
+        }
+        var jobs = new List<Job>();
+        try
+        {
+            foreach (var (key, prompt) in segments)
+            {
+                if (await PrepareAsync(projectId, stage, key, cancellationToken, prompt: prompt) is { } job)
+                {
+                    jobs.Add(job);
+                }
+            }
+        }
+        finally
+        {
+            // The ones marked running go in even when a later one could not: they would wait forever.
+            Write(jobs);
+        }
+    }
+
     public async Task CancelAsync(Guid projectId, PipelineStage stage, string key = Whole)
     {
         Job? job;
@@ -320,7 +353,16 @@ internal sealed class PipelineRunner(
 
     private async Task EnqueueAsync(Guid projectId, PipelineStage stage, string key, CancellationToken cancellationToken, string? note = null)
     {
-        var job = new Job(projectId, stage, key, CancellationTokenSource.CreateLinkedTokenSource(_stopping.Token)) { Note = note };
+        if (await PrepareAsync(projectId, stage, key, cancellationToken, note) is { } job)
+        {
+            Write([job]);
+        }
+    }
+
+    /// <summary>Lists the job and marks its cell running; null when it is running or waiting already. <see cref="Write"/> queues it.</summary>
+    private async Task<Job?> PrepareAsync(Guid projectId, PipelineStage stage, string key, CancellationToken cancellationToken, string? note = null, string? prompt = null)
+    {
+        var job = new Job(projectId, stage, key, CancellationTokenSource.CreateLinkedTokenSource(_stopping.Token)) { Note = note, Prompt = prompt };
         lock (_lock)
         {
             // Checked with the adding, so neither can slip in beside the other: a whole run replaces
@@ -343,7 +385,7 @@ internal sealed class PipelineRunner(
                     // The run under way has its own note or none: this one would be lost without a word.
                     throw new InvalidOperationException($"{key} is being written already. Your note was not sent; try again when it is done.");
                 }
-                return;   // already running or waiting to run
+                return null;   // already running or waiting to run
             }
         }
         try
@@ -357,6 +399,9 @@ internal sealed class PipelineRunner(
                 cell.State = StageState.Running;
                 cell.Error = null;
                 cell.ActivityJson = "[]";
+                // Taken out of the batch: it is being made now.
+                cell.Queued = false;
+                cell.QueuedPrompt = null;
             }, cancellationToken);
         }
         catch
@@ -366,8 +411,22 @@ internal sealed class PipelineRunner(
             throw;
         }
         Publish(Update(job, StageState.Running));
-        _queue.Writer.TryWrite(job);
-        job.Queued.TrySetResult();
+        return job;
+    }
+
+    private void Write(IReadOnlyList<Job> jobs)
+    {
+        lock (_writing)
+        {
+            foreach (var job in jobs)
+            {
+                _queue.Writer.TryWrite(job);
+            }
+        }
+        foreach (var job in jobs)
+        {
+            job.Queued.TrySetResult();
+        }
     }
 
     private async Task LoopAsync(CancellationToken stoppingToken)
@@ -421,7 +480,7 @@ internal sealed class PipelineRunner(
             job.Cancel.Token.ThrowIfCancellationRequested();
             var project = await projects.GetAsync(job.ProjectId, job.Cancel.Token);
             var gated = IsGated(project.Setup, job.Stage);
-            var context = new StageContext(project, reporter, job.Key == Whole ? segment => StoreRunSegmentAsync(job, segment, gated) : null, job.Note);
+            var context = new StageContext(project, reporter, job.Key == Whole ? segment => StoreRunSegmentAsync(job, segment, gated) : null, job.Note, job.Prompt);
             if (job.Key == Whole)
             {
                 var result = await _workers[job.Stage].RunAsync(context, job.Cancel.Token);
@@ -525,6 +584,8 @@ internal sealed class PipelineRunner(
                 child.State = gated ? StageState.NeedsReview : StageState.Approved;
                 child.ApprovedVersion = gated ? null : child.CurrentVersion;
                 child.Error = null;
+                child.Queued = false;   // made anew with the rest
+                child.QueuedPrompt = null;
                 child.UpdatedAt = clock.GetUtcNow();
             }
         }
@@ -553,6 +614,8 @@ internal sealed class PipelineRunner(
             cell.ApprovedVersion = gated ? null : cell.CurrentVersion;
             cell.Error = null;
             cell.ActivityJson = "[]";
+            cell.Queued = false;   // made anew with the rest
+            cell.QueuedPrompt = null;
             await TouchAsync(db, cell, CancellationToken.None);
             await db.SaveChangesAsync(CancellationToken.None);
         }
@@ -834,6 +897,9 @@ internal sealed class PipelineRunner(
 
         /// <summary>Why one segment is made again, as you said on Regenerate; null without one.</summary>
         public string? Note { get; init; }
+
+        /// <summary>Your own prompt for one still (Edit prompt…); null for one the model writes.</summary>
+        public string? Prompt { get; init; }
 
         /// <summary>Done once EnqueueAsync has marked the cell Running and queued the job.</summary>
         public TaskCompletionSource Queued { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);

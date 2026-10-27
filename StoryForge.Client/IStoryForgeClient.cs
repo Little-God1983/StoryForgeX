@@ -212,4 +212,45 @@ public interface IStoryForgeClient
 
     /// <summary>Makes the reference's images from its look alone: the one case where text alone is allowed.</summary>
     Task MakeFromDescriptionAsync(Guid projectId, string referenceId, CancellationToken cancellationToken = default);
+
+    /// <summary>The Stills stage: its state, and each shot's still with its versions and whether it waits in the batch.</summary>
+    /// <exception cref="KeyNotFoundException">No such project.</exception>
+    Task<StillsView> GetStillsAsync(Guid projectId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Regenerate on a still (or Edit prompt…, with your prompt): it waits in the batch, and Continue
+    /// pipeline makes it again with the others, so the model loads once for them all.
+    /// </summary>
+    /// <param name="prompt">Your prompt, used as it is; null or blank for one Claude writes.</param>
+    /// <exception cref="KeyNotFoundException">No such project, or the shot has no still yet.</exception>
+    /// <exception cref="InvalidOperationException">The still or the Stills stage is being made.</exception>
+    Task QueueStillAsync(Guid projectId, string shotKey, string? prompt = null, CancellationToken cancellationToken = default);
+
+    /// <summary>Takes a still out of the batch: it stays as it is.</summary>
+    /// <exception cref="KeyNotFoundException">No such project, or the shot has no still yet.</exception>
+    /// <exception cref="InvalidOperationException">The still or the Stills stage is being made.</exception>
+    Task UnqueueStillAsync(Guid projectId, string shotKey, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Continue pipeline: the stills waiting in the batch are made again, one after another. When the
+    /// stills were never made (references approved before), they are all made.
+    /// </summary>
+    /// <exception cref="KeyNotFoundException">No such project.</exception>
+    /// <exception cref="InvalidOperationException">Nothing is waiting, the references are not approved, or the stills are being made.</exception>
+    Task ContinuePipelineAsync(Guid projectId, CancellationToken cancellationToken = default);
+
+    /// <summary>Your own picture as the still's next version (Replace with file…), to review like any other; nothing is made.</summary>
+    /// <exception cref="KeyNotFoundException">No such project or shot.</exception>
+    /// <exception cref="FileNotFoundException">No such file.</exception>
+    /// <exception cref="ArgumentException">The file is not a PNG, JPEG or WebP picture.</exception>
+    /// <exception cref="InvalidOperationException">The still or the Stills stage is being made.</exception>
+    Task ReplaceStillAsync(Guid projectId, string shotKey, string path, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Test render on the Profiles screen: one picture from an image profile (as it is in the editor,
+    /// saved or not) with <paramref name="line"/> in its prompt template. It goes into no project.
+    /// </summary>
+    /// <exception cref="ArgumentException">The line is empty.</exception>
+    /// <exception cref="InvalidOperationException">The profile cannot make a picture, or ComfyUI could not.</exception>
+    Task<TestRender> TestRenderAsync(ProfileContent profile, string line, CancellationToken cancellationToken = default);
 }

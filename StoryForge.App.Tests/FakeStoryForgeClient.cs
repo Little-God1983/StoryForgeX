@@ -444,6 +444,11 @@ internal sealed class FakeStoryForgeClient : IStoryForgeClient
             ShotActions.Add(("cancel", segmentId));
             return Task.CompletedTask;
         }
+        if (stage == PipelineStage.Stills)
+        {
+            StillActions.Add(("cancel", segmentId, null));
+            return Task.CompletedTask;
+        }
         CancelledSegments.Add((projectId, segmentId));
         return Task.CompletedTask;
     }
@@ -480,6 +485,12 @@ internal sealed class FakeStoryForgeClient : IStoryForgeClient
             ChangeShot(projectId, segmentId, s => s with { State = StageState.Approved, ApprovedVersion = version });
             return Task.CompletedTask;
         }
+        if (stage == PipelineStage.Stills)
+        {
+            StillActions.Add(($"approve v{version}", segmentId, null));
+            ChangeStill(projectId, segmentId, s => s with { State = StageState.Approved, ApprovedVersion = version });
+            return Task.CompletedTask;
+        }
         ApprovedSegments.Add((projectId, segmentId, version));
         ChangeSegment(projectId, segmentId, s => s with { State = StageState.Approved, ApprovedVersion = version });
         return Task.CompletedTask;
@@ -496,6 +507,11 @@ internal sealed class FakeStoryForgeClient : IStoryForgeClient
         if (stage is PipelineStage.Storyboard or PipelineStage.References)
         {
             ShotActions.Add(("approve all", ""));
+            return Task.CompletedTask;
+        }
+        if (stage == PipelineStage.Stills)
+        {
+            StillActions.Add(("approve all", "", null));
             return Task.CompletedTask;
         }
         ApprovedScripts.Add(projectId);
@@ -517,6 +533,11 @@ internal sealed class FakeStoryForgeClient : IStoryForgeClient
         if (stage is PipelineStage.Storyboard or PipelineStage.References)
         {
             ShotActions.Add(("regenerate", segmentId));
+            return Task.CompletedTask;
+        }
+        if (stage == PipelineStage.Stills)
+        {
+            StillActions.Add(("regenerate now", segmentId, null));
             return Task.CompletedTask;
         }
         RegeneratedSegments.Add((projectId, segmentId));
@@ -552,6 +573,12 @@ internal sealed class FakeStoryForgeClient : IStoryForgeClient
         {
             ShotActions.Add(($"select v{version}", segmentId));
             ChangeShot(projectId, segmentId, s => s with { Version = version });
+            return Task.CompletedTask;
+        }
+        if (stage == PipelineStage.Stills)
+        {
+            StillActions.Add(($"select v{version}", segmentId, null));
+            ChangeStill(projectId, segmentId, s => s with { Version = version });
             return Task.CompletedTask;
         }
         SelectedSegmentVersions.Add((projectId, segmentId, version));
@@ -678,6 +705,73 @@ internal sealed class FakeStoryForgeClient : IStoryForgeClient
         }
         ThrowIfFailing();
         ReferenceActions.Add((action, subject));
+    }
+
+    /// <summary>The stills per project; a project without them has stills not started.</summary>
+    public Dictionary<Guid, StillsView> Stills { get; } = [];
+
+    /// <summary>What was asked of stills: the action, the shot ("" for all) and your prompt or file, e.g. ("queue", "S01/a", null).</summary>
+    public List<(string Action, string ShotKey, string? Detail)> StillActions { get; } = [];
+
+    public Task<StillsView> GetStillsAsync(Guid projectId, CancellationToken cancellationToken = default) =>
+        Task.FromResult(Stills.GetValueOrDefault(projectId) ?? new StillsView(projectId, StageState.NotStarted, null, [], [], false));
+
+    public Task QueueStillAsync(Guid projectId, string shotKey, string? prompt = null, CancellationToken cancellationToken = default)
+    {
+        ThrowIfFailing();
+        StillActions.Add(("queue", shotKey, prompt));
+        ChangeStill(projectId, shotKey, s => s with { Queued = true, QueuedPrompt = string.IsNullOrWhiteSpace(prompt) ? null : prompt });
+        return Task.CompletedTask;
+    }
+
+    public Task UnqueueStillAsync(Guid projectId, string shotKey, CancellationToken cancellationToken = default)
+    {
+        ThrowIfFailing();
+        StillActions.Add(("unqueue", shotKey, null));
+        ChangeStill(projectId, shotKey, s => s with { Queued = false, QueuedPrompt = null });
+        return Task.CompletedTask;
+    }
+
+    public Task ContinuePipelineAsync(Guid projectId, CancellationToken cancellationToken = default)
+    {
+        ThrowIfFailing();
+        StillActions.Add(("continue", "", null));
+        return Task.CompletedTask;
+    }
+
+    public Task ReplaceStillAsync(Guid projectId, string shotKey, string path, CancellationToken cancellationToken = default)
+    {
+        ThrowIfFailing();
+        StillActions.Add(("replace", shotKey, path));
+        return Task.CompletedTask;
+    }
+
+    /// <summary>The test lines rendered, with the profile as it was.</summary>
+    public List<(ProfileContent Profile, string Line)> TestRenders { get; } = [];
+
+    /// <summary>What a test render gives; null makes one at a made-up path.</summary>
+    public TestRender? TestRenderResult { get; set; }
+
+    /// <summary>While set, a test render waits for it: the screen sees it in progress.</summary>
+    public Task? TestRenderGate { get; set; }
+
+    public async Task<TestRender> TestRenderAsync(ProfileContent profile, string line, CancellationToken cancellationToken = default)
+    {
+        if (TestRenderGate is { } gate)
+        {
+            await gate;
+        }
+        ThrowIfFailing();
+        TestRenders.Add((profile, line));
+        return TestRenderResult ?? new TestRender(@"C:\Data\test-renders\a.png", line, 184223, new GenerationSize("16:9", 1344, 768), TimeSpan.FromSeconds(41));
+    }
+
+    private void ChangeStill(Guid projectId, string key, Func<StillView, StillView> change)
+    {
+        if (Stills.TryGetValue(projectId, out var view))
+        {
+            Stills[projectId] = view with { Stills = [.. view.Stills.Select(s => s.Key == key ? change(s) : s)] };
+        }
     }
 
     private void ThrowIfFailing()

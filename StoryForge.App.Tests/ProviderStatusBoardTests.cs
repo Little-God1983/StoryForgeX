@@ -113,5 +113,11 @@ public sealed class ProviderStatusBoardTests
         public Task AddReferenceImageAsync(Guid projectId, string referenceId, CancellationToken cancellationToken = default) => _inner.AddReferenceImageAsync(projectId, referenceId, cancellationToken);
         public Task SearchSourcesAgainAsync(Guid projectId, string referenceId, CancellationToken cancellationToken = default) => _inner.SearchSourcesAgainAsync(projectId, referenceId, cancellationToken);
         public Task MakeFromDescriptionAsync(Guid projectId, string referenceId, CancellationToken cancellationToken = default) => _inner.MakeFromDescriptionAsync(projectId, referenceId, cancellationToken);
+        public Task<StillsView> GetStillsAsync(Guid projectId, CancellationToken cancellationToken = default) => _inner.GetStillsAsync(projectId, cancellationToken);
+        public Task QueueStillAsync(Guid projectId, string shotKey, string? prompt = null, CancellationToken cancellationToken = default) => _inner.QueueStillAsync(projectId, shotKey, prompt, cancellationToken);
+        public Task UnqueueStillAsync(Guid projectId, string shotKey, CancellationToken cancellationToken = default) => _inner.UnqueueStillAsync(projectId, shotKey, cancellationToken);
+        public Task ContinuePipelineAsync(Guid projectId, CancellationToken cancellationToken = default) => _inner.ContinuePipelineAsync(projectId, cancellationToken);
+        public Task ReplaceStillAsync(Guid projectId, string shotKey, string path, CancellationToken cancellationToken = default) => _inner.ReplaceStillAsync(projectId, shotKey, path, cancellationToken);
+        public Task<TestRender> TestRenderAsync(ProfileContent profile, string line, CancellationToken cancellationToken = default) => _inner.TestRenderAsync(profile, line, cancellationToken);
     }
 }
