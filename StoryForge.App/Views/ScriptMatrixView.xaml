@@ -664,7 +664,8 @@
                     <TextBlock FontSize="12" Foreground="{StaticResource TextMutedBrush}" TextWrapping="Wrap" Margin="0,8,0,8"
                                Text="Used as it is, not through the profile's template. The still waits in the batch: Continue pipeline makes it." />
                     <UniformGrid Columns="2">
-                      <Button Content="Make it with this prompt" Style="{StaticResource PrimaryButtonStyle}" Margin="0,0,4,0" Command="{Binding QueuePromptCommand}" />
+                      <Button Content="Use this prompt" Style="{StaticResource PrimaryButtonStyle}" Margin="0,0,4,0" Command="{Binding QueuePromptCommand}"
+                              AutomationProperties.Name="Use this prompt: it waits in the batch" />
                       <Button Content="Cancel" Style="{StaticResource SecondaryButtonStyle}" MinHeight="44" Margin="4,0,0,0" Command="{Binding CancelEditPromptCommand}"
                               AutomationProperties.Name="Cancel the prompt" />
                     </UniformGrid>

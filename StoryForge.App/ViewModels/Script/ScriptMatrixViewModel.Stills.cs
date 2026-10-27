@@ -289,7 +289,7 @@ public sealed partial class ScriptMatrixViewModel
 
     private bool CanQueuePrompt() => IsEditingPrompt && EditPrompt.Trim().Length > 0;
 
-    /// <summary>"Make it with this prompt": the still waits in the batch with your prompt.</summary>
+    /// <summary>"Use this prompt": the still waits in the batch with your prompt.</summary>
     [RelayCommand(CanExecute = nameof(CanQueuePrompt))]
     private async Task QueuePromptAsync()
     {
