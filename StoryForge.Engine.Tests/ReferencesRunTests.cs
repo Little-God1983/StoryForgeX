@@ -167,10 +167,12 @@ public sealed partial class ReferencesRunTests : IDisposable
         var client = await StartAsync();
         // A stills profile with no workflow at all: the references must not need it.
         var stills = await client.CreateProfileAsync(ProfileKind.Image, "Painted dark fantasy");
+        var starter = await client.GetProfileVersionAsync(stills.Id);
+        var saved = await client.SaveProfileVersionAsync(stills.Id, starter.Content with { Inputs = [new("prompt", "#6.text"), new("image", "#1.image")] });
         var project = await StoryboardApprovedAsync(client, s => s with
         {
             References = s.References with { ReviewList = false },
-            Stills = s.Stills with { Profile = new ProfileRef(stills.Id, stills.LatestVersion) },
+            Stills = s.Stills with { Profile = new ProfileRef(stills.Id, saved.Version) },
         });
 
         var view = await ReferencesAsync(client, project.Id, ImagesMade);

@@ -8,6 +8,7 @@ using StoryForge.Engine.Script;
 using StoryForge.Engine.Secrets;
 using StoryForge.Engine.Settings;
 using StoryForge.Engine.References;
+using StoryForge.Engine.Stills;
 using StoryForge.Engine.Storyboard;
 using StoryForge.Engine.Voice;
 
@@ -29,6 +30,8 @@ internal sealed class InProcessStoryForgeClient(
     StoryboardEdits shotEdits,
     ReferenceViews referenceViews,
     ReferenceEdits referenceEdits,
+    StillCells stills,
+    TestRenders testRenders,
     ProjectFolders folders) : IStoryForgeClient
 {
     public event EventHandler<StageUpdate>? StageUpdated
@@ -158,6 +161,21 @@ internal sealed class InProcessStoryForgeClient(
     public Task SearchSourcesAgainAsync(Guid projectId, string referenceId, CancellationToken cancellationToken = default) => referenceEdits.SearchAgainAsync(projectId, referenceId, cancellationToken);
 
     public Task MakeFromDescriptionAsync(Guid projectId, string referenceId, CancellationToken cancellationToken = default) => referenceEdits.FromDescriptionAsync(projectId, referenceId, cancellationToken);
+
+    public Task<StillsView> GetStillsAsync(Guid projectId, CancellationToken cancellationToken = default) => stills.GetAsync(projectId, cancellationToken);
+
+    public Task QueueStillAsync(Guid projectId, string shotKey, string? prompt = null, CancellationToken cancellationToken = default) =>
+        stills.QueueAsync(projectId, shotKey, prompt, cancellationToken);
+
+    public Task UnqueueStillAsync(Guid projectId, string shotKey, CancellationToken cancellationToken = default) => stills.UnqueueAsync(projectId, shotKey, cancellationToken);
+
+    public Task ContinuePipelineAsync(Guid projectId, CancellationToken cancellationToken = default) => stills.ContinueAsync(projectId, cancellationToken);
+
+    public Task ReplaceStillAsync(Guid projectId, string shotKey, string path, CancellationToken cancellationToken = default) =>
+        stills.ReplaceAsync(projectId, shotKey, path, cancellationToken);
+
+    public Task<TestRender> TestRenderAsync(ProfileContent profile, string line, CancellationToken cancellationToken = default) =>
+        testRenders.RenderAsync(profile, line, cancellationToken);
 
     internal static string SecretName(SecretKey key) => key switch
     {

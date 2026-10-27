@@ -138,13 +138,22 @@ public sealed partial class SegmentRowViewModel(SegmentView segment, Action<Segm
     public string BoardSummaryName =>
         $"{Id} shots folded: {string.Join(", ", Marks.Where(m => Shots.Any(s => s.State == m.State)).Select(m => $"{Shots.Count(s => s.State == m.State)} {m.Word}"))}";
 
+    /// <summary>Folded: what its stills need, e.g. "! 1  ✓ 1"; empty before any still is made.</summary>
+    public string StillSummary => Shots.Any(s => s.Still.HasStill)
+        ? string.Join("  ", Marks.Where(m => Shots.Any(s => s.Still.State == m.State)).Select(m => $"{m.Mark} {Shots.Count(s => s.Still.State == m.State)}"))
+        : "";
+
+    /// <summary>What screen readers announce for the folded stills.</summary>
+    public string StillSummaryName =>
+        $"{Id} stills folded: {string.Join(", ", Marks.Where(m => Shots.Any(s => s.Still.State == m.State)).Select(m => $"{Shots.Count(s => s.Still.State == m.State)} {m.Word}"))}";
+
     [RelayCommand]
     private void Toggle() => IsOpen = !IsOpen;
 
     /// <summary>The shots were brought in line with a new load.</summary>
     internal void ShotsChanged()
     {
-        foreach (var name in new[] { nameof(HasShots), nameof(ShowsShots), nameof(ShowsSummary), nameof(ShotsText), nameof(BoardSummary), nameof(BoardSummaryName) })
+        foreach (var name in new[] { nameof(HasShots), nameof(ShowsShots), nameof(ShowsSummary), nameof(ShotsText), nameof(BoardSummary), nameof(BoardSummaryName), nameof(StillSummary), nameof(StillSummaryName) })
         {
             OnPropertyChanged(name);
         }
@@ -172,12 +181,13 @@ public sealed partial class SegmentRowViewModel(SegmentView segment, Action<Segm
 
 /// <summary>
 /// The result matrix (board 2b): the script's segments as rows with their Script and Voice cells
-/// and their shots under them with Board cells (the storyboard half is in the .Board file), the selected
+/// and their shots under them with Board and Still cells (in the .Board and .Stills files), the selected
 /// cell in the panel (a segment's narration, facts and Edit text; a voice's audio, its words lit as
 /// they are heard), Approve / Regenerate / versions for either, the bars of both stages, and the log
 /// while a stage runs.
 /// </summary>
-public sealed partial class ScriptMatrixViewModel(IStoryForgeClient client, Guid projectId, IAudioPlayer? player = null) : ObservableObject
+/// <param name="pickPicture">Asks for a picture file (Replace with file…); null when none was picked.</param>
+public sealed partial class ScriptMatrixViewModel(IStoryForgeClient client, Guid projectId, IAudioPlayer? player = null, Func<string?>? pickPicture = null) : ObservableObject
 {
     // Counts loads and live updates; a load that finds the count moved on drops its view.
     private int _loads;
@@ -270,9 +280,9 @@ public sealed partial class ScriptMatrixViewModel(IStoryForgeClient client, Guid
     [NotifyPropertyChangedFor(nameof(HasSelection))]
     private SegmentRowViewModel? _selected;
 
-    /// <summary>Which of the selected row's cells the panel shows: Script, Voice, or a shot's Board.</summary>
+    /// <summary>Which of the selected row's cells the panel shows: Script, Voice, or a shot's Board or Still.</summary>
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(IsVoicePanel), nameof(IsScriptPanel), nameof(IsNotScriptPanel), nameof(IsBoardPanel))]
+    [NotifyPropertyChangedFor(nameof(IsVoicePanel), nameof(IsScriptPanel), nameof(IsNotScriptPanel), nameof(IsBoardPanel), nameof(IsStillPanel))]
     private PipelineStage _selectedStage = PipelineStage.Script;
 
     public bool IsVoicePanel => SelectedStage == PipelineStage.Voice;
@@ -283,26 +293,33 @@ public sealed partial class ScriptMatrixViewModel(IStoryForgeClient client, Guid
 
     public bool IsBoardPanel => SelectedStage == PipelineStage.Storyboard;
 
-    /// <summary>The shot whose Board cell the panel shows; null for a Script or Voice cell.</summary>
+    public bool IsStillPanel => SelectedStage == PipelineStage.Stills;
+
+    /// <summary>The shot whose Board or Still cell the panel shows; null for a Script or Voice cell.</summary>
     [ObservableProperty]
     private ShotRowViewModel? _selectedShot;
 
     /// <summary>The key the selected cell goes by: the shot's, else the segment's.</summary>
-    private string SelectedKey => IsBoardPanel ? SelectedShot!.Key : Selected!.Id;
+    private string SelectedKey => IsBoardPanel || IsStillPanel ? SelectedShot!.Key : Selected!.Id;
 
     public bool HasSelection => Selected is not null;
 
     /// <summary>The selected voice, when the panel shows a Voice cell that has one.</summary>
     private VoiceSegmentView? SelectedVoice => IsVoicePanel ? Selected?.Voice.Segment : null;
 
-    /// <summary>"S01 — Script", "S01 — Voice", "S01·2 — Board".</summary>
-    public string SelectedHeading => Selected is null ? "" : IsBoardPanel && SelectedShot is { } shot ? $"{shot.Label} — Board" : $"{Selected.Id} — {(IsVoicePanel ? "Voice" : "Script")}";
+    /// <summary>"S01 — Script", "S01 — Voice", "S01·2 — Board", "S01·2 — Still".</summary>
+    public string SelectedHeading => Selected is null ? ""
+        : IsBoardPanel && SelectedShot is { } shot ? $"{shot.Label} — Board"
+        : IsStillPanel && SelectedShot is { } stillShot ? $"{stillShot.Label} — Still"
+        : $"{Selected.Id} — {(IsVoicePanel ? "Voice" : "Script")}";
 
     /// <summary>"review · version 2 · about 0:48"; for a voice "approved · version 1 · 0:31 · 2 parts".</summary>
     public string SelectedStatus => Selected is null
         ? ""
         : IsBoardPanel && SelectedShot is { } shot
             ? $"{shot.StateText} · version {shot.Shot.Version} · {Seconds(shot.Shot.Shot.Seconds)} s"
+        : IsStillPanel && SelectedShot is { } stillShot
+            ? $"{stillShot.Still.StateText}{(SelectedStill is { Version: > 0 } still ? $" · version {still.Version}" : "")}{(stillShot.Still.IsQueued ? " · queued" : "")}"
         : IsVoicePanel
             ? SelectedVoice is { } voice
                 ? $"{Word(voice.State)} · version {voice.Version} · {Clock(voice.Seconds)}{(voice.Parts.Count > 1 ? $" · {voice.Parts.Count} parts" : "")}"
@@ -311,18 +328,18 @@ public sealed partial class ScriptMatrixViewModel(IStoryForgeClient client, Guid
 
     public string SelectedNarration => Selected?.Segment.Narration ?? "";
 
-    public string? SelectedError => IsBoardPanel ? SelectedShot?.Shot.Error : IsVoicePanel ? SelectedVoice?.Error : Selected?.Segment.Error;
+    public string? SelectedError => IsBoardPanel ? SelectedShot?.Shot.Error : IsStillPanel ? SelectedStill?.Error : IsVoicePanel ? SelectedVoice?.Error : Selected?.Segment.Error;
 
     /// <summary>
     /// The selected cell is being made again on its own (written or spoken). A Voice cell still to
     /// come while the whole voice is spoken is not: the stage's bar has the Cancel and the log.
     /// </summary>
-    public bool SelectedIsRunning => SelectedState == StageState.Running && !(IsVoicePanel && IsVoiceRunning) && !(IsBoardPanel && IsBoardRunning);
+    public bool SelectedIsRunning => SelectedState == StageState.Running && !(IsVoicePanel && IsVoiceRunning) && !(IsBoardPanel && IsBoardRunning) && !(IsStillPanel && IsStillsRunning);
 
     /// <summary>Its log shows while it is made again, and after that failed.</summary>
     public bool SelectedShowsLog => SelectedIsRunning || (SelectedState == StageState.Failed && SelectedActivity.Count > 0);
 
-    private StageState? SelectedState => IsBoardPanel ? SelectedShot?.State : IsVoicePanel ? SelectedVoice?.State : Selected?.State;
+    private StageState? SelectedState => IsBoardPanel ? SelectedShot?.State : IsStillPanel ? SelectedStill?.State : IsVoicePanel ? SelectedVoice?.State : Selected?.State;
 
     /// <summary>What making the selected cell again did.</summary>
     public ObservableCollection<ActivityLine> SelectedActivity { get; } = [];
@@ -334,6 +351,10 @@ public sealed partial class ScriptMatrixViewModel(IStoryForgeClient client, Guid
     public IReadOnlyList<SegmentVersionChoice> SelectedVersions => IsBoardPanel
         ? SelectedShot?.Shot is { } shot
             ? [.. shot.Versions.Select(v => new SegmentVersionChoice(v.Version, v.Version == shot.Version, v.Version == shot.ApprovedVersion, !shot.MovedVersions.Contains(v.Version)))]
+            : []
+        : IsStillPanel
+        ? SelectedStill is { } still
+            ? [.. still.Versions.Select(v => new SegmentVersionChoice(v.Version, v.Version == still.Version, v.Version == still.ApprovedVersion))]
             : []
         : IsVoicePanel
         ? SelectedVoice is { } voice
@@ -377,11 +398,12 @@ public sealed partial class ScriptMatrixViewModel(IStoryForgeClient client, Guid
             var view = await client.GetScriptAsync(ProjectId);
             var voice = await client.GetVoiceAsync(ProjectId);
             var board = await client.GetStoryboardAsync(ProjectId);
+            var stills = await client.GetStillsAsync(ProjectId);
             if (mine != _loads)
             {
                 return;   // a newer load or a live update came in meanwhile; this view is old
             }
-            Apply(view, voice, board);
+            Apply(view, voice, board, stills);
         }
         catch (Exception ex)
         {
@@ -393,8 +415,22 @@ public sealed partial class ScriptMatrixViewModel(IStoryForgeClient client, Guid
     /// <summary>A change from the engine for this project, already on the UI thread.</summary>
     public async Task ReceiveAsync(StageUpdate update)
     {
-        if (update.ProjectId != ProjectId || update.Stage is not (PipelineStage.Script or PipelineStage.Voice or PipelineStage.Storyboard))
+        if (update.ProjectId != ProjectId || update.Stage is not (PipelineStage.Script or PipelineStage.Voice or PipelineStage.Storyboard or PipelineStage.References or PipelineStage.Stills))
         {
+            return;
+        }
+        if (update.Stage == PipelineStage.Stills)
+        {
+            await ReceiveStillsAsync(update);
+            return;
+        }
+        if (update.Stage == PipelineStage.References)
+        {
+            // Approved references let the stills be made, and references proposed again take that back: the bar follows.
+            if (update.Key is null && update.Activity is null)
+            {
+                await LoadAsync();
+            }
             return;
         }
         if (update.Stage == PipelineStage.Storyboard)
@@ -482,7 +518,7 @@ public sealed partial class ScriptMatrixViewModel(IStoryForgeClient client, Guid
         await LoadAsync();
     }
 
-    private void Apply(ScriptView view, VoiceView voice, StoryboardView board)
+    private void Apply(ScriptView view, VoiceView voice, StoryboardView board, StillsView stills)
     {
         _facts = view.Facts.ToDictionary(f => f.Id);
         State = view.State;
@@ -541,7 +577,8 @@ public sealed partial class ScriptMatrixViewModel(IStoryForgeClient client, Guid
         }
         ApplyVoice(voice);
         ApplyBoard(board);
-        if (Selected is null || !Rows.Contains(Selected) || (IsBoardPanel && (SelectedShot is null || !Selected.Shots.Contains(SelectedShot))))
+        ApplyStills(stills);
+        if (Selected is null || !Rows.Contains(Selected) || ((IsBoardPanel || IsStillPanel) && (SelectedShot is null || !Selected.Shots.Contains(SelectedShot))))
         {
             Select(Rows.FirstOrDefault(), PipelineStage.Script);
         }
@@ -604,6 +641,7 @@ public sealed partial class ScriptMatrixViewModel(IStoryForgeClient client, Guid
         if (SelectedShot is not null)
         {
             SelectedShot.IsSelected = false;
+            SelectedShot.Still.IsSelected = false;
         }
         var sameRow = Selected == row;
         SelectedStage = stage;
@@ -616,10 +654,12 @@ public sealed partial class ScriptMatrixViewModel(IStoryForgeClient client, Guid
         }
         if (shot is not null)
         {
-            shot.IsSelected = true;
+            shot.IsSelected = stage == PipelineStage.Storyboard;
+            shot.Still.IsSelected = stage == PipelineStage.Stills;
         }
         IsEditing = false;
         IsEditingShot = false;
+        IsEditingPrompt = false;
         CloseNote();
         if (sameRow)
         {
@@ -652,6 +692,7 @@ public sealed partial class ScriptMatrixViewModel(IStoryForgeClient client, Guid
         CancelSegmentCommand.NotifyCanExecuteChanged();
         ShowVersionCommand.NotifyCanExecuteChanged();
         RefreshBoardPanel();
+        RefreshStillPanel();
         ShowClip();
     }
 
@@ -676,7 +717,7 @@ public sealed partial class ScriptMatrixViewModel(IStoryForgeClient client, Guid
     /// </param>
     private void ShowSelectedActivity(bool keepLive)
     {
-        var lines = (IsBoardPanel ? SelectedShot?.Shot.Activity : IsVoicePanel ? SelectedVoice?.Activity : Selected?.Segment.Activity) ?? [];
+        var lines = (IsBoardPanel ? SelectedShot?.Shot.Activity : IsStillPanel ? SelectedStill?.Activity : IsVoicePanel ? SelectedVoice?.Activity : Selected?.Segment.Activity) ?? [];
         if (keepLive && SelectedState == StageState.Running && lines.Count < SelectedActivity.Count)
         {
             return;
@@ -691,6 +732,8 @@ public sealed partial class ScriptMatrixViewModel(IStoryForgeClient client, Guid
     /// <summary>The selected cell can be acted on: it exists, and neither it nor its whole stage is running.</summary>
     private bool SegmentIdle() => IsBoardPanel
         ? SelectedShot is { State: not StageState.Running } && !IsBoardRunning && !IsEditingShot
+        : IsStillPanel
+        ? SelectedStill is { State: not StageState.Running } && !IsStillsRunning && !IsEditingPrompt
         : IsVoicePanel
             ? SelectedVoice is { State: not StageState.Running } && !IsVoiceRunning
             : Selected is not null && !IsRunning && Selected.State != StageState.Running;
@@ -698,11 +741,12 @@ public sealed partial class ScriptMatrixViewModel(IStoryForgeClient client, Guid
     private bool CanApproveSegment() => SegmentIdle() && SelectedState != StageState.Approved;
 
     /// <summary>The selected cell's version shown now.</summary>
-    private int SelectedVersion => IsBoardPanel ? SelectedShot!.Shot.Version : IsVoicePanel ? SelectedVoice!.Version : Selected!.Segment.Version;
+    private int SelectedVersion => IsBoardPanel ? SelectedShot!.Shot.Version : IsStillPanel ? SelectedStill!.Version : IsVoicePanel ? SelectedVoice!.Version : Selected!.Segment.Version;
 
     [RelayCommand(CanExecute = nameof(CanApproveSegment))]
     private Task ApproveSegmentAsync() =>
-        ActAsync(IsBoardPanel ? "approve the shot" : IsVoicePanel ? "approve the voice" : "approve the segment", () => client.ApproveSegmentAsync(ProjectId, SelectedStage, SelectedKey, SelectedVersion));
+        ActAsync(IsBoardPanel ? "approve the shot" : IsStillPanel ? "approve the still" : IsVoicePanel ? "approve the voice" : "approve the segment",
+            () => client.ApproveSegmentAsync(ProjectId, SelectedStage, SelectedKey, SelectedVersion));
 
     // With every segment approved and the stage still in review, it settles the stage.
     private bool CanApproveRemaining() => IsReview && Rows.Count > 0 && Rows.All(r => r.State != StageState.Running);
@@ -710,10 +754,19 @@ public sealed partial class ScriptMatrixViewModel(IStoryForgeClient client, Guid
     [RelayCommand(CanExecute = nameof(CanApproveRemaining))]
     private Task ApproveRemainingAsync() => ActAsync("approve the script", () => client.ApproveSegmentsAsync(ProjectId, PipelineStage.Script));
 
-    /// <summary>"Write it again" on the note line, or Regenerate on a voice or a shot. The note goes with a segment's line only.</summary>
+    /// <summary>
+    /// "Write it again" on the note line, or Regenerate on a voice or a shot; a still's waits in the
+    /// batch for Continue pipeline. The note goes with a segment's line only.
+    /// </summary>
     [RelayCommand(CanExecute = nameof(SegmentIdle))]
     private async Task RegenerateSegmentAsync()
     {
+        if (IsStillPanel)
+        {
+            var key = SelectedKey;
+            await ActAsync("queue the still", () => client.QueueStillAsync(ProjectId, key));
+            return;
+        }
         var what = IsBoardPanel ? "plan the shot again" : IsVoicePanel ? "speak the segment again" : "write the segment again";
         var (stage, row) = (SelectedStage, Selected);
         var version = row?.Segment.Version;
@@ -770,7 +823,8 @@ public sealed partial class ScriptMatrixViewModel(IStoryForgeClient client, Guid
     private Task CancelAsync() => ActAsync("cancel the script", () => client.CancelAsync(ProjectId, PipelineStage.Script));
 
     [RelayCommand(CanExecute = nameof(SelectedIsRunning))]
-    private Task CancelSegmentAsync() => ActAsync(IsBoardPanel ? "cancel the shot" : "cancel the segment", () => client.CancelSegmentAsync(ProjectId, SelectedStage, SelectedKey));
+    private Task CancelSegmentAsync() =>
+        ActAsync(IsBoardPanel ? "cancel the shot" : IsStillPanel ? "cancel the still" : "cancel the segment", () => client.CancelSegmentAsync(ProjectId, SelectedStage, SelectedKey));
 
     // A typed note is about the version on screen: switching first would send it against another.
     private bool CanShowVersion(int version) => (SelectedVersions.FirstOrDefault(v => v.Version == version)?.CanPick ?? true) && !HasUnsentNote;

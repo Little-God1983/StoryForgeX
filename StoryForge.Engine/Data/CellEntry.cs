@@ -28,6 +28,12 @@ public sealed class CellEntry
     /// <summary>What the last run did, as a JSON list of <see cref="ActivityLine"/>.</summary>
     public string ActivityJson { get; set; } = "[]";
 
+    /// <summary>Regenerate was clicked on a still: it is made again with the batch, on Continue pipeline.</summary>
+    public bool Queued { get; set; }
+
+    /// <summary>Your prompt a queued still is made again with (Edit prompt…); null for one the model writes.</summary>
+    public string? QueuedPrompt { get; set; }
+
     public DateTimeOffset UpdatedAt { get; set; }
 }
 

@@ -5,30 +5,32 @@ using System.Text;
 namespace StoryForge.Engine.References;
 
 /// <summary>
-/// A plain light square PNG. An image made from its look alone is painted on it, so an image-edit
-/// workflow does not edit the picture it was saved with instead.
+/// A plain light PNG. An image made from its look alone (a reference, or a still with nothing to
+/// start from) is painted on it, so an image-edit workflow does not edit the picture it was saved with instead.
 /// </summary>
 internal static class BlankCanvas
 {
     /// <summary>The light grey of "a plain light background".</summary>
     public const byte Shade = 236;
 
-    public static byte[] Png(int side)
+    public static byte[] Png(int side) => Png(side, side);
+
+    public static byte[] Png(int width, int height)
     {
         using var pixels = new MemoryStream();
         using (var packed = new ZLibStream(pixels, CompressionLevel.Optimal, leaveOpen: true))
         {
             // Each row: no filter, then red, green and blue of every pixel.
-            var row = new byte[1 + side * 3];
-            Array.Fill(row, Shade, 1, side * 3);
-            for (var y = 0; y < side; y++)
+            var row = new byte[1 + width * 3];
+            Array.Fill(row, Shade, 1, width * 3);
+            for (var y = 0; y < height; y++)
             {
                 packed.Write(row);
             }
         }
         var header = new byte[13];
-        BinaryPrimitives.WriteInt32BigEndian(header, side);
-        BinaryPrimitives.WriteInt32BigEndian(header.AsSpan(4), side);
+        BinaryPrimitives.WriteInt32BigEndian(header, width);
+        BinaryPrimitives.WriteInt32BigEndian(header.AsSpan(4), height);
         header[8] = 8;   // bits per channel
         header[9] = 2;   // red, green, blue
         using var png = new MemoryStream();

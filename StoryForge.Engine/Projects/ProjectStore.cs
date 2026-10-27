@@ -254,21 +254,34 @@ internal sealed class ProjectStore(IDbContextFactory<StoryForgeDbContext> contex
                 v => v.ProfileId == profileRef!.ProfileId && v.Version == profileRef.Version, cancellationToken);
             Require(versionExists, $"\"{profile.Name}\" has no version {profileRef!.Version}.");
         }
-        // The setup never changes once started: a reference profile whose workflow takes no picture
-        // would leave the references unmakeable, found out only after research, script and storyboard.
+        // The setup never changes once started: a reference (or still) profile whose workflow takes no
+        // picture would leave the references or the stills unmakeable, found out only after research,
+        // script and storyboard.
         if (s.References.Consistency == Consistency.ReferenceImages)
         {
-            var name = (await db.Profiles.AsNoTracking().FirstAsync(p => p.Id == s.References.Profile.ProfileId, cancellationToken)).Name;
-            var json = await db.ProfileVersions.AsNoTracking()
-                .Where(v => v.ProfileId == s.References.Profile.ProfileId && v.Version == s.References.Profile.Version)
-                .Select(v => v.Json)
-                .FirstAsync(cancellationToken);
-            var inputs = ProfileStore.Read(json).Inputs;
+            var (name, inputs) = await InputsAsync(db, s.References.Profile, cancellationToken);
             Require(WorkflowTemplate.Maps(inputs, ReferencesStage.PromptKey),
                 $"\"{name}\" cannot make reference images: it does not say where the prompt goes. Map '{ReferencesStage.PromptKey}' in the profile, or pick another reference profile.");
             Require(WorkflowTemplate.Maps(inputs, ReferencesStage.ImageKey) || WorkflowTemplate.Maps(inputs, ReferencesStage.ImagesKey),
                 $"\"{name}\" cannot make reference images: it does not say where the picture goes. Map '{ReferencesStage.ImageKey}' (or '{ReferencesStage.ImagesKey}') in the profile, or pick another reference profile.");
         }
+        var (still, stillInputs) = await InputsAsync(db, s.Stills.Profile, cancellationToken);
+        Require(WorkflowTemplate.Maps(stillInputs, ReferencesStage.PromptKey),
+            $"\"{still}\" cannot make stills: it does not say where the prompt goes. Map '{ReferencesStage.PromptKey}' in the profile, or pick another still profile.");
+        Require(s.References.Consistency != Consistency.ReferenceImages
+            || WorkflowTemplate.Maps(stillInputs, ReferencesStage.ImageKey) || WorkflowTemplate.Maps(stillInputs, ReferencesStage.ImagesKey),
+            $"\"{still}\" cannot make stills from the reference images: it does not say where they go. Map '{ReferencesStage.ImageKey}' (or '{ReferencesStage.ImagesKey}') in the profile, pick another still profile, or make the stills from text only.");
+    }
+
+    /// <summary>A profile version's name and workflow inputs.</summary>
+    private static async Task<(string Name, IReadOnlyList<WorkflowInput> Inputs)> InputsAsync(StoryForgeDbContext db, ProfileRef profile, CancellationToken cancellationToken)
+    {
+        var name = (await db.Profiles.AsNoTracking().FirstAsync(p => p.Id == profile.ProfileId, cancellationToken)).Name;
+        var json = await db.ProfileVersions.AsNoTracking()
+            .Where(v => v.ProfileId == profile.ProfileId && v.Version == profile.Version)
+            .Select(v => v.Json)
+            .FirstAsync(cancellationToken);
+        return (name, ProfileStore.Read(json).Inputs);
     }
 
     private static void Require(bool condition, string message)

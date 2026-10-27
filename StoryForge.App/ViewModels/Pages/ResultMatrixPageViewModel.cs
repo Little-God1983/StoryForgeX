@@ -22,8 +22,8 @@ public sealed record StageChip(PipelineStage Stage, string Name, StageState Stat
     /// <summary>"Research", "Research – review": the chip's text, as on the canvas.</summary>
     public string Label => State is StageState.NotStarted or StageState.Approved ? Name : $"{Name} – {StateText}";
 
-    /// <summary>Research opens the fact sheet; Script, Voice and Board the matrix; References its own screen; the others arrive with their issues.</summary>
-    public bool CanOpen => Stage is PipelineStage.Research or PipelineStage.Script or PipelineStage.Voice or PipelineStage.Storyboard or PipelineStage.References;
+    /// <summary>Research opens the fact sheet; Script, Voice, Board and Stills the matrix; References its own screen; the others arrive with their issues.</summary>
+    public bool CanOpen => Stage is PipelineStage.Research or PipelineStage.Script or PipelineStage.Voice or PipelineStage.Storyboard or PipelineStage.References or PipelineStage.Stills;
 
     // What screen readers announce.
     public override string ToString() => $"{Name}: {StateText}";
@@ -116,7 +116,7 @@ public sealed partial class ResultMatrixPageViewModel : PageViewModel
         ShowsWholeScript = false;
         Breadcrumb = $"Projects / {project.Setup.Name}";
         Script?.Playback.Stop();   // the project before keeps no file open
-        Script = new ScriptMatrixViewModel(_client, project.Id, _newPlayer?.Invoke());
+        Script = new ScriptMatrixViewModel(_client, project.Id, _newPlayer?.Invoke(), _pickPicture);
         ScriptLoading = Script.LoadAsync();
     }
 
@@ -161,7 +161,7 @@ public sealed partial class ResultMatrixPageViewModel : PageViewModel
         {
             await ShowFactSheetAsync();
         }
-        else if (chip.Stage is PipelineStage.Script or PipelineStage.Voice or PipelineStage.Storyboard)
+        else if (chip.Stage is PipelineStage.Script or PipelineStage.Voice or PipelineStage.Storyboard or PipelineStage.Stills)
         {
             ShowMatrix();
         }
@@ -235,10 +235,10 @@ public sealed partial class ResultMatrixPageViewModel : PageViewModel
         await screen.LoadAsync();
     }
 
-    /// <summary>The file picker "Add my own picture…" opens.</summary>
+    /// <summary>The file picker "Add my own picture…" (and a still's "Replace with file…") opens.</summary>
     private static string? PickPicture()
     {
-        var dialog = new Microsoft.Win32.OpenFileDialog { Title = "Add your own picture", Filter = "Pictures (*.png, *.jpg, *.webp)|*.png;*.jpg;*.jpeg;*.webp" };
+        var dialog = new Microsoft.Win32.OpenFileDialog { Title = "Pick a picture", Filter = "Pictures (*.png, *.jpg, *.webp)|*.png;*.jpg;*.jpeg;*.webp" };
         return dialog.ShowDialog() == true ? dialog.FileName : null;
     }
 

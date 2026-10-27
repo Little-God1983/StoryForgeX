@@ -155,7 +155,7 @@ public sealed partial class ScriptMatrixViewModel
                 var shown = row.Shots.FirstOrDefault(s => s.Key == shots[i].Key);
                 if (shown is null)
                 {
-                    row.Shots.Insert(i, new ShotRowViewModel(shots[i], SelectShot));
+                    row.Shots.Insert(i, new ShotRowViewModel(shots[i], SelectShot, SelectStill));
                 }
                 else
                 {
@@ -255,8 +255,8 @@ public sealed partial class ScriptMatrixViewModel
 
     public bool IsNotEditingShot => !IsEditingShot;
 
-    /// <summary>Neither the script's text nor a shot's description is being edited: the panel's own buttons show.</summary>
-    public bool IsNotEditingAny => !IsEditing && !IsEditingShot;
+    /// <summary>Neither the script's text, a shot's description nor a still's prompt is being edited: the panel's own buttons show.</summary>
+    public bool IsNotEditingAny => !IsEditing && !IsEditingShot && !IsEditingPrompt;
 
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(SaveShotDescriptionCommand))]

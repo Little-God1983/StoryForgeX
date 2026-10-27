@@ -152,6 +152,25 @@ internal sealed class CellReader(IDbContextFactory<StoryForgeDbContext> contextF
     public async Task<IReadOnlyList<ReferenceImage>> ReferenceImagesAsync(Guid projectId, CancellationToken cancellationToken) =>
         [.. (await ReadSegmentsAsync(projectId, PipelineStage.References, c => c.CurrentVersion, cancellationToken)).Select(v => StoredJson.Read<ReferenceImage>(v.OutputJson))];
 
+    /// <summary>Every reference image as approved, with its version: what the stills are made from.</summary>
+    public async Task<IReadOnlyList<(ReferenceImage Image, int Version)>> ApprovedReferenceImagesAsync(Guid projectId, CancellationToken cancellationToken) =>
+        [.. (await ReadSegmentsAsync(projectId, PipelineStage.References, c => c.ApprovedVersion, cancellationToken))
+            .Select(v => (StoredJson.Read<ReferenceImage>(v.OutputJson), v.Version))];
+
+    /// <summary>Every shot's still as it stands, each in its current version, by shot key.</summary>
+    public async Task<IReadOnlyDictionary<string, Still>> CurrentStillsAsync(Guid projectId, CancellationToken cancellationToken) =>
+        (await ReadSegmentsAsync(projectId, PipelineStage.Stills, c => c.CurrentVersion, cancellationToken))
+            .ToDictionary(v => v.Key, v => StoredJson.Read<Still>(v.OutputJson));
+
+    /// <summary>The stills waiting in the batch, by shot key, with your prompt for each (null: Claude writes it).</summary>
+    public async Task<IReadOnlyDictionary<string, string?>> QueuedStillsAsync(Guid projectId, CancellationToken cancellationToken)
+    {
+        await using var db = await contextFactory.CreateDbContextAsync(cancellationToken);
+        return await db.Cells.AsNoTracking()
+            .Where(c => c.ProjectId == projectId && c.Stage == PipelineStage.Stills && c.Key != "" && c.Queued)
+            .ToDictionaryAsync(c => c.Key, c => c.QueuedPrompt, cancellationToken);
+    }
+
     /// <summary>The shots as they stand, each in its current version: by segment, then where they start.</summary>
     public async Task<IReadOnlyList<Shot>> CurrentShotsAsync(Guid projectId, CancellationToken cancellationToken) =>
         [.. (await ReadSegmentsAsync(projectId, PipelineStage.Storyboard, c => c.CurrentVersion, cancellationToken))

@@ -222,6 +222,16 @@ internal sealed class PipelineRunner(
         {
             throw new InvalidOperationException($"The {stage} stage is running. Approve it when it is done.");
         }
+        if (stage == PipelineStage.Stills)
+        {
+            // As a whole only as its stills settle it, under the settle lock: every shot with its still, each approved.
+            await SettleAsync(projectId, stage, cancellationToken);
+            if ((await projects.GetAsync(projectId, cancellationToken)).Stages.FirstOrDefault(s => s.Stage == stage)?.State != StageState.Approved)
+            {
+                throw new InvalidOperationException("Approve every still first, and make the ones still missing: the clips are made from them.");
+            }
+            return;
+        }
         await using (var db = await contextFactory.CreateDbContextAsync(cancellationToken))
         {
             var cell = await db.Cells.FirstOrDefaultAsync(c => c.ProjectId == projectId && c.Stage == stage && c.Key == Whole, cancellationToken)
@@ -416,6 +426,7 @@ internal sealed class PipelineRunner(
             job.Started = true;
         }
         var goOn = false;
+        var settleStills = false;
         try
         {
             job.Cancel.Token.ThrowIfCancellationRequested();
@@ -428,7 +439,8 @@ internal sealed class PipelineRunner(
                 var state = await StoreAsync(job, result, gated, Snapshot(activity));
                 Forget(job);
                 Publish(Update(job, state));
-                goOn = !gated;
+                settleStills = job.Stage == PipelineStage.Storyboard;   // its shots changed: every one needs a still
+                goOn = state == StageState.Approved;
             }
             else
             {
@@ -474,8 +486,22 @@ internal sealed class PipelineRunner(
             job.Cancel.Dispose();
         }
 
-        // Outside the stage's own try: the stage is stored and approved, and a next stage that
-        // cannot be queued must not mark it failed.
+        // Outside the stage's own try: the stage is stored, and what follows from it must not mark it failed.
+        if (settleStills)
+        {
+            try
+            {
+                await SettleAsync(job.ProjectId, PipelineStage.Stills, _stopping.Token);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                Debug.WriteLine($"Settling the stills after the storyboard of {job.ProjectId} failed: {ex}");
+            }
+            catch (OperationCanceledException)
+            {
+                // Closing.
+            }
+        }
         if (goOn)
         {
             try
@@ -508,7 +534,12 @@ internal sealed class PipelineRunner(
             // A new whole result replaces the segments: each gets the new text as its next version
             // (to review again when the stage is gated); segments the new result lacks are gone.
             var existing = await db.Cells.Where(c => c.ProjectId == job.ProjectId && c.Stage == job.Stage && c.Key != Whole).ToListAsync();
-            db.Cells.RemoveRange(existing.Where(c => segments.All(s => s.Key != c.Key)));
+            var gone = existing.Where(c => segments.All(s => s.Key != c.Key)).ToList();
+            db.Cells.RemoveRange(gone);
+            if (job.Stage == PipelineStage.Storyboard)
+            {
+                await RemoveStillsAsync(db, job.ProjectId, [.. gone.Select(c => c.Key)], CancellationToken.None);
+            }
             foreach (var segment in segments)
             {
                 var child = existing.FirstOrDefault(c => c.Key == segment.Key);
@@ -527,6 +558,12 @@ internal sealed class PipelineRunner(
                 child.Error = null;
                 child.UpdatedAt = clock.GetUtcNow();
             }
+        }
+        if (job.Stage == PipelineStage.Stills)
+        {
+            // From the stills, not the gate alone: a run that made only some leaves the approved ones
+            // approved, and every shot needs a still.
+            await SettleAsync(db, job.ProjectId, job.Stage, CancellationToken.None);
         }
         await TouchAsync(db, cell, CancellationToken.None);
         await db.SaveChangesAsync(CancellationToken.None);
@@ -550,9 +587,14 @@ internal sealed class PipelineRunner(
             }
             AddVersion(db, cell, await NextVersionAsync(db, job.ProjectId, job.Stage, result.Key), result.OutputJson, result.SchemaVersion, result.InputHash);
             cell.State = state = gated ? StageState.NeedsReview : StageState.Approved;
-            cell.ApprovedVersion = gated ? null : cell.CurrentVersion;
+            // A still made again in the batch keeps the approval of the one before, to switch back to;
+            // a whole run of any other stage makes everything anew, to review again.
+            cell.ApprovedVersion = !gated ? cell.CurrentVersion : job.Stage == PipelineStage.Stills ? cell.ApprovedVersion : null;
             cell.Error = null;
             cell.ActivityJson = "[]";
+            // Made again: out of the batch. Only now, so one that fails or is cancelled stays in it, with your prompt.
+            cell.Queued = false;
+            cell.QueuedPrompt = null;
             await TouchAsync(db, cell, CancellationToken.None);
             await db.SaveChangesAsync(CancellationToken.None);
         }
@@ -610,6 +652,8 @@ internal sealed class PipelineRunner(
         cell.ApprovedVersion = gated ? cell.ApprovedVersion : cell.CurrentVersion;
         cell.Error = null;
         cell.ActivityJson = StoredJson.Write(activity);
+        cell.Queued = false;   // made again: out of the batch
+        cell.QueuedPrompt = null;
         await TouchAsync(db, cell, CancellationToken.None);
         var stage = await SettleAsync(db, job.ProjectId, job.Stage, CancellationToken.None);
         await db.SaveChangesAsync(CancellationToken.None);
@@ -636,6 +680,15 @@ internal sealed class PipelineRunner(
         {
             state = StageState.NeedsReview;   // every reference on the list needs an approved image, not just the ones that have one
         }
+        if (stage == PipelineStage.Stills && state == StageState.Approved)
+        {
+            // Every shot needs a still, not just the ones that have one: a shot split off later has none yet.
+            var shots = await db.Cells.AsNoTracking().Where(c => c.ProjectId == projectId && c.Stage == PipelineStage.Storyboard && c.Key != Whole).Select(c => c.Key).ToListAsync(cancellationToken);
+            if (shots.Any(k => segments.All(s => s.Key != k || s.CurrentVersion is null)))
+            {
+                state = StageState.NeedsReview;
+            }
+        }
         if (state == cell.State || (cell.State == StageState.Failed && (state != StageState.Approved || cell.CurrentVersion is null)))
         {
             return null;
@@ -645,6 +698,15 @@ internal sealed class PipelineRunner(
         cell.ApprovedVersion = state == StageState.Approved ? cell.CurrentVersion : cell.ApprovedVersion;
         cell.UpdatedAt = clock.GetUtcNow();
         return state;
+    }
+
+    /// <summary>The stills of shots that are gone (merged, or planned away): a still is the shot's, and its key may come back.</summary>
+    internal static async Task RemoveStillsAsync(StoryForgeDbContext db, Guid projectId, IReadOnlyList<string> shotKeys, CancellationToken cancellationToken)
+    {
+        if (shotKeys.Count > 0)
+        {
+            db.Cells.RemoveRange(await db.Cells.Where(c => c.ProjectId == projectId && c.Stage == PipelineStage.Stills && shotKeys.Contains(c.Key)).ToListAsync(cancellationToken));
+        }
     }
 
     /// <summary>The names of the references <paramref name="ids"/> on the current list, in its order.</summary>

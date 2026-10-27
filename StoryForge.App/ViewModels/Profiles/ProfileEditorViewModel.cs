@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using System.Diagnostics;
+using System.Globalization;
 using System.IO;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -10,7 +11,7 @@ namespace StoryForge.App.ViewModels.Profiles;
 /// <summary>
 /// One profile on the Profiles screen. Edits go into a draft of the latest version; "Save as vN"
 /// stores the draft as a new version. Older versions can be looked at (read only) and restored
-/// into the draft, never changed.
+/// into the draft, never changed. An image profile can make a test picture as it is on screen.
 /// </summary>
 public sealed partial class ProfileEditorViewModel : ObservableObject
 {
@@ -261,6 +262,58 @@ public sealed partial class ProfileEditorViewModel : ObservableObject
         finally
         {
             _choosingVersion = false;
+        }
+    }
+
+    /// <summary>Test render is offered: an image profile makes a test picture.</summary>
+    public bool CanTestRender => Kind == ProfileKind.Image;
+
+    /// <summary>What the test picture shows, through the profile's prompt template.</summary>
+    [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(TestRenderCommand))]
+    private string _testLine = "a lone knight on a cliff at dusk";
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(TestRenderText))]
+    [NotifyCanExecuteChangedFor(nameof(TestRenderCommand))]
+    private bool _isRendering;
+
+    public string TestRenderText => IsRendering ? "Rendering…" : "Test render";
+
+    /// <summary>The last test picture; null before one was made.</summary>
+    [ObservableProperty]
+    private string? _testPicture;
+
+    /// <summary>"seed 184223 · 1344×768 · 41 s".</summary>
+    [ObservableProperty]
+    private string _testDetails = "";
+
+    /// <summary>Why the last test render failed; null when it did not.</summary>
+    [ObservableProperty]
+    private string? _testError;
+
+    private bool CanRender() => CanTestRender && !IsRendering && TestLine.Trim().Length > 0;
+
+    /// <summary>One picture from the profile as it is on screen (saved or not), with the test line in its template.</summary>
+    [RelayCommand(CanExecute = nameof(CanRender))]
+    private async Task TestRenderAsync()
+    {
+        IsRendering = true;
+        TestError = null;
+        try
+        {
+            var render = await _client.TestRenderAsync(Shown.ToContent(), TestLine.Trim());
+            TestPicture = render.Path;
+            TestDetails = string.Create(CultureInfo.InvariantCulture, $"seed {render.Seed} · {render.Size.Width}×{render.Size.Height} · {render.Took.TotalSeconds:0} s");
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"Test render of profile {Id} failed: {ex}");
+            TestError = ex.Message;
+        }
+        finally
+        {
+            IsRendering = false;
         }
     }
 

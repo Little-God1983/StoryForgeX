@@ -8,7 +8,7 @@ namespace StoryForge.Engine.Pipeline;
 
 /// <summary>
 /// What you do to the segments of a stage with a cell per segment (the script, the voice, the
-/// storyboard's shots): approve
+/// storyboard's shots, the reference images, the stills): approve
 /// one or all, switch one back to an older version. Each change settles the stage: approved once
 /// every segment is, and then the run goes on.
 /// </summary>
@@ -19,7 +19,7 @@ internal sealed class SegmentCells(
     TimeProvider clock)
 {
     /// <summary>The stages whose segments are cells of their own.</summary>
-    public static bool HasSegments(PipelineStage stage) => stage is PipelineStage.Script or PipelineStage.Voice or PipelineStage.Storyboard or PipelineStage.References;
+    public static bool HasSegments(PipelineStage stage) => stage is PipelineStage.Script or PipelineStage.Voice or PipelineStage.Storyboard or PipelineStage.References or PipelineStage.Stills;
 
     public async Task ApproveAsync(Guid projectId, PipelineStage stage, string segmentId, int version, CancellationToken cancellationToken)
     {
@@ -223,6 +223,7 @@ internal sealed class SegmentCells(
         PipelineStage.Voice => "voice",
         PipelineStage.Storyboard => "storyboard",
         PipelineStage.References => "references",
+        PipelineStage.Stills => "stills",
         _ => "script",
     };
 
@@ -230,7 +231,7 @@ internal sealed class SegmentCells(
     {
         PipelineStage.Voice => "spoken",
         PipelineStage.Storyboard => "planned",
-        PipelineStage.References => "made",
+        PipelineStage.References or PipelineStage.Stills => "made",
         _ => "written",
     };
 }
