@@ -16,6 +16,9 @@ namespace StoryForge.Engine.Stills;
 /// </summary>
 internal sealed class TestRenders(IComfyUi comfy, SettingsStore settings, IOptions<StoryForgeEngineOptions> options, TimeProvider clock)
 {
+    /// <summary>How many test pictures are kept: the last ones, which editors may still show.</summary>
+    public const int Kept = 10;
+
     /// <summary>What a profile with no size of its own is tested at.</summary>
     private static readonly GenerationSize Square = new("1:1", 1024, 1024);
 
@@ -80,10 +83,14 @@ internal sealed class TestRenders(IComfyUi comfy, SettingsStore settings, IOptio
             var picture = files.FirstOrDefault(f => f.Kind == "images" && Path.GetExtension(f.Name).ToLowerInvariant() is ".png" or ".jpg" or ".jpeg" or ".webp")
                 ?? throw new StageFailedException("The workflow saved no image. It needs a node that saves it, e.g. Save Image.");
             Directory.CreateDirectory(folder);
-            // Only the last one is shown: the ones before go, so the folder does not fill up.
-            foreach (var old in Directory.EnumerateFiles(folder).Where(f => !Path.GetFileName(f).StartsWith("blank-", StringComparison.Ordinal)))
+            // Only the last few stay, so the folder does not fill up; an editor may still show one of them.
+            var older = new DirectoryInfo(folder).EnumerateFiles()
+                .Where(f => !f.Name.StartsWith("blank-", StringComparison.Ordinal))
+                .OrderByDescending(f => f.LastWriteTimeUtc)
+                .Skip(Kept - 1);
+            foreach (var old in older)
             {
-                VoiceStage.DeleteQuietly(old);
+                VoiceStage.DeleteQuietly(old.FullName);
             }
             var path = Path.Combine(folder, $"{Guid.NewGuid():N}{Path.GetExtension(picture.Name)}");
             await File.WriteAllBytesAsync(path, picture.Content, cancellationToken);

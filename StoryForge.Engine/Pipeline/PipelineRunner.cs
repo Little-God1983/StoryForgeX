@@ -428,7 +428,11 @@ internal sealed class PipelineRunner(
                 var state = await StoreAsync(job, result, gated, Snapshot(activity));
                 Forget(job);
                 Publish(Update(job, state));
-                goOn = !gated;
+                if (job.Stage == PipelineStage.Storyboard)
+                {
+                    await SettleAsync(job.ProjectId, PipelineStage.Stills, CancellationToken.None);   // its shots changed: every one needs a still
+                }
+                goOn = state == StageState.Approved;
             }
             else
             {
@@ -534,6 +538,12 @@ internal sealed class PipelineRunner(
                 child.QueuedPrompt = null;
                 child.UpdatedAt = clock.GetUtcNow();
             }
+        }
+        if (job.Stage == PipelineStage.Stills)
+        {
+            // From the stills, not the gate alone: a run that made only some leaves the approved ones
+            // approved, and every shot needs a still.
+            await SettleAsync(db, job.ProjectId, job.Stage, CancellationToken.None);
         }
         await TouchAsync(db, cell, CancellationToken.None);
         await db.SaveChangesAsync(CancellationToken.None);

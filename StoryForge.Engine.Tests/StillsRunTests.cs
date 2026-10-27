@@ -486,18 +486,98 @@ public sealed class StillsRunTests : IDisposable
     }
 
     [Fact]
-    public async Task A_new_test_render_takes_the_place_of_the_last()
+    public async Task Only_the_last_test_renders_are_kept()
     {
         var client = await StartAsync();
         var settings = await client.GetSettingsAsync();
         await client.SaveSettingsAsync(settings with { ComfyUi = settings.ComfyUi with { WorkflowTemplatesFolder = _templates } });
         var profile = ProfileContent.Empty with { Provider = "ComfyUI", WorkflowTemplate = "qwen.json", Inputs = [new("prompt", "#2.prompt")] };
 
-        var first = await client.TestRenderAsync(profile, "a knight");
-        var second = await client.TestRenderAsync(profile, "a dragon");
+        var renders = new List<TestRender>();
+        for (var i = 0; i <= TestRenders.Kept; i++)
+        {
+            renders.Add(await client.TestRenderAsync(profile, $"a knight {i}"));
+        }
 
-        Assert.False(File.Exists(first.Path));
-        Assert.True(File.Exists(second.Path));
+        Assert.False(File.Exists(renders[0].Path));
+        Assert.All(renders.Skip(1), r => Assert.True(File.Exists(r.Path)));
+    }
+
+    [Fact]
+    public async Task Splitting_a_shot_after_the_stills_are_approved_takes_the_approval_back()
+    {
+        var client = await StartAsync();
+        var project = await ReferencesApprovedAsync(client);
+        await StillsAsync(client, project.Id);
+        await client.ApproveSegmentsAsync(project.Id, PipelineStage.Stills);
+        await StillsAsync(client, project.Id, v => v.State == StageState.Approved);
+        var keys = await KeysAsync(client, project.Id);
+
+        await client.SplitShotAsync(project.Id, keys["S01·3"], 25);
+
+        Assert.Equal(StageState.NeedsReview, (await client.GetStillsAsync(project.Id)).State);
+    }
+
+    [Fact]
+    public async Task The_storyboard_cannot_be_cut_while_the_stills_are_made()
+    {
+        _comfy.Hold = new TaskCompletionSource();
+        _comfy.HoldFor = "still of";
+        var client = await StartAsync();
+        var project = await ReferencesApprovedAsync(client);
+        await StillsAsync(client, project.Id, v => v.State == StageState.Running);
+        var keys = await KeysAsync(client, project.Id);
+
+        var refused = await Assert.ThrowsAsync<InvalidOperationException>(() => client.MergeShotAsync(project.Id, keys["S01·3"]));
+
+        Assert.Equal("The stills are being made from the storyboard. Try again when they are done.", refused.Message);
+        _comfy.Hold.SetResult();
+        await StillsAsync(client, project.Id);
+    }
+
+    [Fact]
+    public async Task A_run_with_nothing_waiting_leaves_the_approved_stills_approved()
+    {
+        var client = await StartAsync();
+        var project = await ReferencesApprovedAsync(client);
+        await StillsAsync(client, project.Id);
+        await client.ApproveSegmentsAsync(project.Id, PipelineStage.Stills);
+        await StillsAsync(client, project.Id, v => v.State == StageState.Approved);
+
+        await client.RegenerateAsync(project.Id, PipelineStage.Stills);
+        await StillsAsync(client, project.Id, v => v.State != StageState.Running);
+
+        Assert.Equal(StageState.Approved, (await client.GetStillsAsync(project.Id)).State);
+    }
+
+    [Fact]
+    public async Task A_picture_of_another_shape_cannot_replace_a_still()
+    {
+        var client = await StartAsync();
+        var project = await ReferencesApprovedAsync(client);
+        await StillsAsync(client, project.Id);
+        var keys = await KeysAsync(client, project.Id);
+        var file = Path.Combine(_engine.DataDirectory, "portrait.png");
+        await File.WriteAllBytesAsync(file, BlankCanvas.Png(1080, 1920));
+
+        var refused = await Assert.ThrowsAsync<ArgumentException>(() => client.ReplaceStillAsync(project.Id, keys["S01·3"], file));
+
+        Assert.StartsWith("portrait.png is 1080×1920; the stills of this project are 16:9.", refused.Message);
+    }
+
+    [Fact]
+    public async Task A_test_render_leaves_the_last_ones_of_other_profiles_alone()
+    {
+        var client = await StartAsync();
+        var settings = await client.GetSettingsAsync();
+        await client.SaveSettingsAsync(settings with { ComfyUi = settings.ComfyUi with { WorkflowTemplatesFolder = _templates } });
+        var profile = ProfileContent.Empty with { Provider = "ComfyUI", WorkflowTemplate = "qwen.json", Inputs = [new("prompt", "#2.prompt")] };
+
+        var mine = await client.TestRenderAsync(profile, "a knight");
+        var other = await client.TestRenderAsync(profile with { PromptTemplate = "{shot.visual}, oil paint" }, "a dragon");
+
+        Assert.True(File.Exists(mine.Path));   // shown in another profile's editor
+        Assert.True(File.Exists(other.Path));
     }
 
     [Fact]

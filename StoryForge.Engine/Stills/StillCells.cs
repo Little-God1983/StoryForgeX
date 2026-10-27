@@ -139,6 +139,12 @@ internal sealed class StillCells(
             throw new ArgumentException($"{Path.GetFileName(path)} is not a PNG, JPEG or WebP picture.", nameof(path));
         }
         var project = await projects.GetAsync(projectId, cancellationToken);
+        var wanted = project.Setup.Stills.Size;
+        if (Math.Abs((double)size.Width / size.Height / ((double)wanted.Width / wanted.Height) - 1) > 0.02)
+        {
+            throw new ArgumentException(
+                $"{Path.GetFileName(path)} is {size.Width}×{size.Height}; the stills of this project are {wanted.Aspect}. Pick a {wanted.Aspect} picture.", nameof(path));
+        }
         if ((await cells.CurrentShotsAsync(projectId, cancellationToken)).All(s => s.Key != shotKey))
         {
             throw new KeyNotFoundException($"The storyboard has no shot {shotKey}.");
