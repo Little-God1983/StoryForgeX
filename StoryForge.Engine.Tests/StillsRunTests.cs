@@ -198,7 +198,8 @@ public sealed class StillsRunTests : IDisposable
     [Fact]
     public async Task A_continuation_starts_from_the_still_before_one_step_at_most()
     {
-        // S01·2, ·3 and ·4 each continue the shot before; ·5 does not.
+        // S01·2, ·3 and ·4 each continue the shot before; ·5 does not. The workflow takes a list of pictures.
+        _stillInputs = [.. FakeImageComfy.Inputs, new("images", "#1.files_json"), new("negative", "#6.text")];
         var client = await StartAsync();
         var project = await ReferencesApprovedAsync(client, board: Board(i => i is 1 or 2 or 3));
 
@@ -616,6 +617,63 @@ public sealed class StillsRunTests : IDisposable
         var view = await StillsAsync(client, project.Id, v => v.Stills.Single(s => s.Key == keys["S01·3"]) is { Version: 2, State: not StageState.Running });
 
         Assert.Equal(("Karlach by a campfire, still of mine", true), (view.Stills.Single(s => s.Key == keys["S01·3"]).Still!.Prompt, view.Stills.Single(s => s.Key == keys["S01·3"]).Still!.YourPrompt));
+    }
+
+    [Fact]
+    public async Task A_run_cut_off_after_its_last_still_is_brought_back_by_Continue_pipeline()
+    {
+        var client = await StartAsync();
+        var project = await ReferencesApprovedAsync(client);
+        await StillsAsync(client, project.Id);
+        // As when the app closed after the last still was stored, before the run was done.
+        await using (var db = await _engine.DbAsync())
+        {
+            var whole = await db.Cells.SingleAsync(c => c.ProjectId == project.Id && c.Stage == PipelineStage.Stills && c.Key == "");
+            whole.State = StageState.Failed;
+            whole.Error = "StoryForge was closed while this stage ran. Retry runs it again.";
+            whole.CurrentVersion = null;
+            await db.SaveChangesAsync();
+        }
+        var runs = StillRuns().Count;
+
+        await client.ContinuePipelineAsync(project.Id);
+        await client.ApproveSegmentsAsync(project.Id, PipelineStage.Stills);
+
+        Assert.Equal(StageState.Approved, (await StillsAsync(client, project.Id, v => v.State == StageState.Approved)).State);
+        Assert.Equal(runs, StillRuns().Count);   // nothing was missing: nothing was made
+    }
+
+    [Fact]
+    public async Task A_workflow_that_takes_one_picture_gets_one_and_the_prompt_names_only_that()
+    {
+        _stillInputs = [.. FakeImageComfy.Inputs, new("negative", "#6.text")];   // 'image', no 'images'
+        var client = await StartAsync();
+        var project = await ReferencesApprovedAsync(client, board: Board(i => i == 1));
+
+        var view = await StillsAsync(client, project.Id);
+
+        var keys = await KeysAsync(client, project.Id);
+        var asked = _prompts.Requests.Single().Shots;
+        Assert.Equal(["the shot before"], asked[1].Pictures.Select(p => p.Name));   // S01·2 continues S01·1
+        Assert.Empty(view.Stills.Single(s => s.Key == keys["S01·2"]).Still!.References);
+        Assert.Equal(["Karlach"], asked[2].Pictures.Select(p => p.Name));
+    }
+
+    [Fact]
+    public async Task A_shot_description_can_be_changed_while_the_stills_are_made()
+    {
+        _comfy.Hold = new TaskCompletionSource();
+        _comfy.HoldFor = "still of";
+        var client = await StartAsync();
+        var project = await ReferencesApprovedAsync(client);
+        await StillsAsync(client, project.Id, v => v.State == StageState.Running);
+        var keys = await KeysAsync(client, project.Id);
+
+        await client.EditShotAsync(project.Id, keys["S02·3"], new ShotChange(Description: "Karlach at the gate"));
+
+        Assert.Equal("Karlach at the gate", (await client.GetStoryboardAsync(project.Id)).Shots.Single(s => s.Key == keys["S02·3"]).Shot.Description);
+        _comfy.Hold.SetResult();
+        await StillsAsync(client, project.Id);
     }
 
     [Fact]

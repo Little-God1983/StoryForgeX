@@ -117,9 +117,33 @@ internal sealed class StillCells(
         var missing = (await cells.CurrentShotsAsync(projectId, cancellationToken)).Any(s => !made.ContainsKey(s.Key));
         if (!missing && (await cells.QueuedStillsAsync(projectId, cancellationToken)).Count == 0)
         {
+            if (await ReviewAgainAsync(projectId, cancellationToken))
+            {
+                return;   // a run cut off after its last still: every still is there, to review
+            }
             throw new InvalidOperationException("No still is waiting to be made again: click Regenerate on the ones you want first.");
         }
         await runner.RegenerateAsync(projectId, Stage, cancellationToken);
+    }
+
+    /// <summary>A failed stage with every still made goes back to review, and settles from its stills. True when it was failed.</summary>
+    private async Task<bool> ReviewAgainAsync(Guid projectId, CancellationToken cancellationToken)
+    {
+        await using (var db = await contextFactory.CreateDbContextAsync(cancellationToken))
+        {
+            var whole = await db.Cells.FirstOrDefaultAsync(c => c.ProjectId == projectId && c.Stage == Stage && c.Key == "", cancellationToken);
+            if (whole is not { State: StageState.Failed })
+            {
+                return false;
+            }
+            whole.State = StageState.NeedsReview;
+            whole.Error = null;
+            whole.UpdatedAt = clock.GetUtcNow();
+            await db.SaveChangesAsync(cancellationToken);
+        }
+        runner.Publish(new StageUpdate(projectId, Stage, StageState.NeedsReview));
+        await runner.SettleAsync(projectId, Stage, cancellationToken);
+        return true;
     }
 
     /// <summary>Your own picture as the still's next version, to review like any other; nothing is made.</summary>

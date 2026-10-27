@@ -109,7 +109,7 @@ public sealed partial class ScriptMatrixViewModel
 
     // The batch runs when nothing of the stills runs; a project whose stills were never made starts them.
     private bool CanContinuePipeline() =>
-        CanMakeStills || (_referencesApproved && !IsStillsRunning && HasWaitingStills && StillCells.All(c => c.State != StageState.Running));
+        CanMakeStills || (_referencesApproved && !IsStillsRunning && (HasWaitingStills || IsStillsFailed) && StillCells.All(c => c.State != StageState.Running));
 
     /// <summary>Continue pipeline: one run makes the stills in the batch and those of shots with none yet.</summary>
     [RelayCommand(CanExecute = nameof(CanContinuePipeline))]

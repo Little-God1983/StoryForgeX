@@ -75,9 +75,11 @@ internal sealed partial class StillsStage(
                 ? !fromBefore[i - 1]
                 : previous is { ContinuesFrom: null } && File.Exists(Path.Combine(painter.Root, previous.File)));
         }
+        // What each shot's workflow gets, so the prompt names only pictures the model sees.
+        var sent = shots.Select((s, i) => Sent(painter, Pictures(plan, s), fromBefore[i])).ToList();
         var asked = Enumerable.Range(0, shots.Count)
             .Where(i => todo[i] && queued.GetValueOrDefault(shots[i].Key) is null)
-            .Select(i => Describe(plan, shots[i], fromBefore[i]))
+            .Select(i => Describe(plan, shots[i], sent[i], fromBefore[i]))
             .ToList();
         var prompts = asked.Count > 0 ? await PromptsAsync(context, asked, cancellationToken) : new Dictionary<string, string>();
 
@@ -94,7 +96,7 @@ internal sealed partial class StillsStage(
             var label = plan.Labels[shot.Key];
             Report(context, ActivityKind.Model, $"{label} ({results.Count + 1} of {count})");
             var before = fromBefore[i] ? made.GetValueOrDefault(shots[i - 1].Key) ?? stored[shots[i - 1].Key] : null;
-            var pictures = Pictures(plan, shot);
+            var pictures = sent[i];
             var yours = queued.GetValueOrDefault(shot.Key);
             var prompt = yours ?? Compose(painter.Profile.PromptTemplate, prompts[label], pictures.Select(p => p.Look));
             var still = await PaintAsync(context, painter, plan, shot, prompt, pictures, before, yours is not null, cancellationToken);
@@ -144,11 +146,11 @@ internal sealed partial class StillsStage(
                 before = still;
             }
         }
-        var pictures = Pictures(plan, shot);
+        var pictures = Sent(painter, Pictures(plan, shot), before is not null);
         // Waiting in the batch with your prompt: made with it, as the batch would.
         var yours = (await cells.QueuedStillsAsync(context.Project.Id, cancellationToken)).GetValueOrDefault(key);
         var prompt = yours ?? Compose(
-            painter.Profile.PromptTemplate, (await PromptsAsync(context, [Describe(plan, shot, before is not null)], cancellationToken))[label], pictures.Select(p => p.Look));
+            painter.Profile.PromptTemplate, (await PromptsAsync(context, [Describe(plan, shot, pictures, before is not null)], cancellationToken))[label], pictures.Select(p => p.Look));
         var made = await PaintAsync(context, painter, plan, shot, prompt, pictures, before, yours is not null, cancellationToken);
         return new CellResult(key, StoredJson.Write(made), Still.SchemaVersion, Hash(context.Project.Setup, shot, pictures, before, yours));
     }
@@ -276,9 +278,16 @@ internal sealed partial class StillsStage(
         return pictures;
     }
 
-    private static StillShot Describe(Plan plan, Shot shot, bool fromBefore)
+    /// <summary>
+    /// The reference pictures the workflow gets: all of them when it takes a list ('images'); with one
+    /// picture only ('image'), the still before for a continuation, else the first reference.
+    /// </summary>
+    private static IReadOnlyList<ShotPicture> Sent(Painter painter, IReadOnlyList<ShotPicture> pictures, bool fromBefore) =>
+        painter.TakesMany ? pictures : fromBefore ? [] : [.. pictures.Take(1)];
+
+    private static StillShot Describe(Plan plan, Shot shot, IReadOnlyList<ShotPicture> sent, bool fromBefore)
     {
-        var pictures = Pictures(plan, shot).Select(p => new StillPicture(p.Name, p.Look)).ToList();
+        var pictures = sent.Select(p => new StillPicture(p.Name, p.Look)).ToList();
         if (fromBefore)
         {
             pictures.Insert(0, new StillPicture("the shot before", ""));
@@ -322,7 +331,8 @@ internal sealed partial class StillsStage(
     }
 
     /// <summary>What every still is made with: the still profile's workflow, and whether it takes pictures.</summary>
-    private sealed record Painter(JsonObject Workflow, ProfileContent Profile, bool TakesPictures, string Root, string Folder);
+    /// <param name="TakesMany">It takes a list of pictures ('images'), not only one ('image').</param>
+    private sealed record Painter(JsonObject Workflow, ProfileContent Profile, bool TakesPictures, bool TakesMany, string Root, string Folder);
 
     private async Task<Painter> PainterAsync(StageContext context, CancellationToken cancellationToken)
     {
@@ -344,7 +354,8 @@ internal sealed partial class StillsStage(
             throw new StageFailedException(
                 $"The still profile does not say where the reference pictures go. Map '{ReferencesStage.ImageKey}' (or '{ReferencesStage.ImagesKey}') to the node that loads them.");
         }
-        return new Painter(workflow, profile, takesPictures, await folders.RootAsync(cancellationToken), ProjectFolders.Of(context.Project));
+        return new Painter(
+            workflow, profile, takesPictures, WorkflowTemplate.Maps(profile.Inputs, ReferencesStage.ImagesKey), await folders.RootAsync(cancellationToken), ProjectFolders.Of(context.Project));
     }
 
     /// <summary>One ComfyUI run; the still is saved as stills/&lt;shot&gt;-&lt;take&gt;.png in the project folder.</summary>

@@ -165,11 +165,6 @@ internal sealed class StoryboardEdits(
         {
             throw new InvalidOperationException("The storyboard is being planned. Try again when it is done.");
         }
-        if (runner.IsAnyBusy(projectId, PipelineStage.Stills))
-        {
-            // A shot merged away meanwhile would get its still back from the run.
-            throw new InvalidOperationException("The stills are being made from the storyboard. Try again when they are done.");
-        }
         var setup = (await projects.GetAsync(projectId, cancellationToken)).Setup;
         var sheet = await cells.CurrentStoryboardAsync(projectId, cancellationToken)
             ?? throw new KeyNotFoundException($"Project {projectId} has no storyboard yet.");
@@ -187,6 +182,11 @@ internal sealed class StoryboardEdits(
         if (changes.Count == 0)
         {
             return;
+        }
+        if (changes.Any(c => c.Shot is null || c.IsNew) && runner.IsAnyBusy(projectId, PipelineStage.Stills))
+        {
+            // A shot merged away meanwhile would get its still back from the run, and one split off would be missed.
+            throw new InvalidOperationException("The stills are being made from the storyboard. Try again when they are done.");
         }
 
         var gated = await segments.GatedAsync(projectId, Stage, cancellationToken);
