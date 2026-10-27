@@ -239,6 +239,73 @@
         </DockPanel>
       </Border>
 
+      <!-- Where the stills stand, once the references are approved. -->
+      <Border Style="{StaticResource BarStyle}" Background="{StaticResource CardBrush}" BorderBrush="{StaticResource BorderBrush}"
+              Visibility="{Binding CanMakeStills, Converter={StaticResource Visible}}">
+        <DockPanel>
+          <Button DockPanel.Dock="Right" Content="Make the stills" Style="{StaticResource PrimaryButtonStyle}" MinHeight="36" FontSize="13"
+                  Command="{Binding ContinuePipelineCommand}" />
+          <TextBlock VerticalAlignment="Center" FontSize="13" Foreground="{StaticResource TextSoftBrush}" TextWrapping="Wrap"
+                     Text="The references are approved. Every shot gets one still, made from the reference images of who and what is in it." />
+        </DockPanel>
+      </Border>
+      <Border Style="{StaticResource BarStyle}" Background="#172536" BorderBrush="#2B4A6B"
+              Visibility="{Binding IsStillsRunning, Converter={StaticResource Visible}}">
+        <DockPanel>
+          <Button DockPanel.Dock="Right" Content="Cancel" Style="{StaticResource SecondaryButtonStyle}" Command="{Binding CancelStillsCommand}"
+                  AutomationProperties.Name="Cancel the stills" />
+          <TextBlock Text="Making the stills" FontSize="14" FontWeight="SemiBold" Foreground="#6FB3EE" VerticalAlignment="Center" Margin="0,0,14,0" />
+          <TextBlock Text="{Binding StillsProgress}" VerticalAlignment="Center" FontSize="13" Foreground="#BCD3EA" TextTrimming="CharacterEllipsis"
+                     FontFamily="{StaticResource MonoFont}" AutomationProperties.AutomationId="StillsProgress" />
+        </DockPanel>
+      </Border>
+
+      <Border Style="{StaticResource BarStyle}" Background="{StaticResource AccentSoftBrush}" BorderBrush="#5A4520"
+              Visibility="{Binding IsStillsReview, Converter={StaticResource Visible}}">
+        <DockPanel>
+          <Button DockPanel.Dock="Right" Content="Continue pipeline" Style="{StaticResource PrimaryButtonStyle}" MinHeight="36" FontSize="13"
+                  Margin="8,0,0,0" Command="{Binding ContinuePipelineCommand}" />
+          <Button DockPanel.Dock="Right" Content="Approve remaining" Style="{StaticResource SecondaryButtonStyle}" Command="{Binding ApproveRemainingStillsCommand}"
+                  AutomationProperties.Name="Approve remaining stills" />
+          <TextBlock Text="Gate: Stills" FontSize="14" FontWeight="SemiBold" Foreground="{StaticResource AccentTextBrush}" VerticalAlignment="Center" Margin="0,0,14,0" />
+          <StackPanel VerticalAlignment="Center">
+            <TextBlock FontSize="13" Foreground="#D9C9A8" TextWrapping="Wrap" AutomationProperties.AutomationId="StillsSummary">
+              <Run Text="{Binding StillsApprovedSummary, Mode=OneWay}" /> Clips start when every still is approved.
+            </TextBlock>
+            <TextBlock Text="{Binding QueuedSummary}" FontSize="12" Foreground="{StaticResource AccentTextBrush}" TextWrapping="Wrap" Margin="0,2,0,0"
+                       Visibility="{Binding HasQueuedStills, Converter={StaticResource Visible}}" />
+          </StackPanel>
+        </DockPanel>
+      </Border>
+
+      <Border Style="{StaticResource BarStyle}" Background="{StaticResource PillOkBackBrush}" BorderBrush="#2F5A50"
+              Visibility="{Binding IsStillsApproved, Converter={StaticResource Visible}}">
+        <DockPanel>
+          <Button DockPanel.Dock="Right" Content="Continue pipeline" Style="{StaticResource PrimaryButtonStyle}" MinHeight="36" FontSize="13"
+                  Command="{Binding ContinuePipelineCommand}" Visibility="{Binding HasQueuedStills, Converter={StaticResource Visible}}" />
+          <TextBlock Text="Stills approved" FontSize="14" FontWeight="SemiBold" Foreground="{StaticResource PillOkTextBrush}" VerticalAlignment="Center" Margin="0,0,14,0" />
+          <StackPanel VerticalAlignment="Center">
+            <TextBlock FontSize="13" Foreground="{StaticResource TextSoftBrush}" TextWrapping="Wrap"
+                       Text="Every still is approved. Select a Still cell to look at it; Regenerate there puts it in the batch." />
+            <TextBlock Text="{Binding QueuedSummary}" FontSize="12" Foreground="{StaticResource AccentTextBrush}" TextWrapping="Wrap" Margin="0,2,0,0"
+                       Visibility="{Binding HasQueuedStills, Converter={StaticResource Visible}}" />
+          </StackPanel>
+        </DockPanel>
+      </Border>
+
+      <Border Style="{StaticResource BarStyle}" Background="{StaticResource PillErrorBackBrush}" BorderBrush="#6B3A33"
+              Visibility="{Binding IsStillsFailed, Converter={StaticResource Visible}}">
+        <DockPanel>
+          <Button DockPanel.Dock="Right" Content="Retry" Style="{StaticResource PrimaryButtonStyle}" MinHeight="36" FontSize="13"
+                  Background="{StaticResource ErrorTextBrush}" Command="{Binding RegenerateStillsCommand}" AutomationProperties.Name="Retry the stills" />
+          <StackPanel VerticalAlignment="Center" Margin="0,0,14,0">
+            <TextBlock Text="Stills failed" FontSize="14" FontWeight="SemiBold" Foreground="{StaticResource PillErrorTextBrush}" />
+            <TextBlock Text="{Binding StillsError}" FontSize="13" Foreground="#E2C1BB" TextWrapping="Wrap" Margin="0,2,0,0"
+                       AutomationProperties.AutomationId="StillsError" />
+          </StackPanel>
+        </DockPanel>
+      </Border>
+
       <Border Background="{StaticResource PillErrorBackBrush}" CornerRadius="8" Padding="12,8" Margin="0,0,0,14"
               Visibility="{Binding ActionError, Converter={views:NullToCollapsedConverter}}">
         <TextBlock Text="{Binding ActionError}" Foreground="{StaticResource PillErrorTextBrush}" FontSize="13" TextWrapping="Wrap" />
@@ -376,11 +443,15 @@
                                  HorizontalAlignment="Center" VerticalAlignment="Center" AutomationProperties.Name="{Binding BoardSummaryName}"
                                  Visibility="{Binding ShowsSummary, Converter={StaticResource Visible}}" />
                     </Border>
-                    <Border Grid.Column="4" Style="{StaticResource LaterCellStyle}" />
+                    <Border Grid.Column="4" Style="{StaticResource LaterCellStyle}">
+                      <TextBlock Text="{Binding StillSummary}" FontFamily="{StaticResource MonoFont}" FontSize="12" Foreground="{StaticResource TextSoftBrush}"
+                                 HorizontalAlignment="Center" VerticalAlignment="Center" AutomationProperties.Name="{Binding StillSummaryName}"
+                                 Visibility="{Binding ShowsSummary, Converter={StaticResource Visible}}" />
+                    </Border>
                     <Border Grid.Column="5" Style="{StaticResource LaterCellStyle}" />
                   </Grid>
 
-                  <!-- Its shots, indented: each with its Board cell; Still and Clip arrive with #10 and #12. -->
+                  <!-- Its shots, indented: each with its Board and Still cells; Clip arrives with #12. -->
                   <ItemsControl ItemsSource="{Binding Shots}" Focusable="False" AutomationProperties.Name="{Binding Id, StringFormat='Shots of {0}'}"
                                 Visibility="{Binding ShowsShots, Converter={StaticResource Visible}}">
                     <ItemsControl.ItemTemplate>
@@ -404,7 +475,13 @@
                               <TextBlock Text="{Binding StateText}" FontWeight="SemiBold" />
                             </DockPanel>
                           </Button>
-                          <Border Grid.Column="4" Style="{StaticResource LaterCellStyle}" />
+                          <Button Grid.Column="4" DataContext="{Binding Still}" Style="{StaticResource CellStyle}" Margin="6,0,0,0"
+                                  Command="{Binding SelectCommand}" AutomationProperties.Name="{Binding AccessibleName}">
+                            <DockPanel>
+                              <TextBlock DockPanel.Dock="Right" Text="{Binding VersionText}" FontFamily="{StaticResource MonoFont}" />
+                              <TextBlock Text="{Binding StateText}" FontWeight="SemiBold" />
+                            </DockPanel>
+                          </Button>
                           <Border Grid.Column="5" Style="{StaticResource LaterCellStyle}" />
                         </Grid>
                       </DataTemplate>
@@ -457,6 +534,14 @@
                 <Button Content="Merge with next" Style="{StaticResource SecondaryButtonStyle}" MinHeight="44" Margin="4,0,0,0" Command="{Binding MergeWithNextCommand}"
                         AutomationProperties.Name="Merge with the next shot" />
               </UniformGrid>
+              <StackPanel Visibility="{Binding IsStillPanel, Converter={StaticResource Visible}}">
+                <UniformGrid Columns="2" Margin="0,8,0,0">
+                  <Button Content="Edit prompt…" Style="{StaticResource SecondaryButtonStyle}" MinHeight="44" Margin="0,0,4,0" Command="{Binding StartEditPromptCommand}" />
+                  <Button Content="Replace with file…" Style="{StaticResource SecondaryButtonStyle}" MinHeight="44" Margin="4,0,0,0" Command="{Binding ReplaceStillCommand}" />
+                </UniformGrid>
+                <Button Content="Take out of the batch" Style="{StaticResource SecondaryButtonStyle}" MinHeight="44" Margin="0,8,0,0" Command="{Binding UnqueueStillCommand}"
+                        Visibility="{Binding StillIsQueued, Converter={StaticResource Visible}}" />
+              </StackPanel>
               <Button Content="Cancel" Style="{StaticResource SecondaryButtonStyle}" MinHeight="44" Margin="0,8,0,0" Command="{Binding CancelSegmentCommand}"
                       AutomationProperties.Name="Cancel the segment"
                       Visibility="{Binding SelectedIsRunning, Converter={StaticResource Visible}}" />
@@ -476,6 +561,19 @@
                   <ItemsControl ItemsSource="{Binding SelectedActivity}" ItemTemplate="{StaticResource ActivityLineTemplate}"
                                 FontFamily="{StaticResource MonoFont}" FontSize="12" Focusable="False" AutomationProperties.Name="Segment activity" />
                 </Border>
+
+                <!-- A Still cell: the picture first, as board 2b draws it. -->
+                <StackPanel Visibility="{Binding IsStillPanel, Converter={StaticResource Visible}}">
+                  <Border CornerRadius="10" Background="{StaticResource CardBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" Margin="0,0,0,12"
+                          Visibility="{Binding StillPicture, Converter={views:NullToCollapsedConverter}}">
+                    <Image Source="{Binding StillPicture, Converter={views:ThumbnailConverter}, ConverterParameter=720}" Stretch="Uniform" MaxHeight="240"
+                           AutomationProperties.Name="The still" />
+                  </Border>
+                  <TextBlock Text="The picture is gone from the projects folder. Regenerate makes it again." FontSize="13" Foreground="{StaticResource ErrorTextBrush}"
+                             TextWrapping="Wrap" Margin="0,0,0,10" Visibility="{Binding StillIsMissing, Converter={StaticResource Visible}}" />
+                  <TextBlock Text="{Binding StillQueuedText}" FontSize="13" Foreground="{StaticResource AccentTextBrush}" TextWrapping="Wrap" Margin="0,0,0,10"
+                             Visibility="{Binding StillIsQueued, Converter={StaticResource Visible}}" AutomationProperties.AutomationId="StillQueued" />
+                </StackPanel>
 
                 <ItemsControl ItemsSource="{Binding SelectedVersions}" Focusable="False" Margin="0,0,0,12" AutomationProperties.Name="Versions">
                   <ItemsControl.ItemsPanel>
@@ -548,6 +646,30 @@
                   </Border>
                   <TextBlock FontSize="12" Foreground="{StaticResource TextMutedBrush}" TextWrapping="Wrap" Margin="0,8,0,0"
                              Text="When each word is heard is estimated from the text. Click a word to hear from there." />
+                </StackPanel>
+
+                <!-- A Still cell: its prompt and how it was made. -->
+                <StackPanel Visibility="{Binding IsStillPanel, Converter={StaticResource Visible}}">
+                  <TextBlock Text="{Binding StillPromptTitle}" Style="{StaticResource FieldLabelStyle}" />
+                  <Border Background="{StaticResource CardBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="8" Padding="12,10"
+                          Visibility="{Binding IsNotEditingAny, Converter={StaticResource Visible}}">
+                    <TextBlock Text="{Binding StillPrompt}" FontSize="13" TextWrapping="Wrap" LineHeight="20" AutomationProperties.AutomationId="StillPrompt" />
+                  </Border>
+                  <StackPanel Visibility="{Binding IsEditingPrompt, Converter={StaticResource Visible}}">
+                    <TextBox Text="{Binding EditPrompt, UpdateSourceTrigger=PropertyChanged}" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="110"
+                             VerticalContentAlignment="Top" FontSize="13" Padding="10,8" views:FocusWhenShown.IsEnabled="True" AutomationProperties.Name="Your prompt" />
+                    <TextBlock FontSize="12" Foreground="{StaticResource TextMutedBrush}" TextWrapping="Wrap" Margin="0,8,0,8"
+                               Text="Used as it is, not through the profile's template. The still waits in the batch: Continue pipeline makes it." />
+                    <UniformGrid Columns="2">
+                      <Button Content="Make it with this prompt" Style="{StaticResource PrimaryButtonStyle}" Margin="0,0,4,0" Command="{Binding QueuePromptCommand}" />
+                      <Button Content="Cancel" Style="{StaticResource SecondaryButtonStyle}" MinHeight="44" Margin="4,0,0,0" Command="{Binding CancelEditPromptCommand}"
+                              AutomationProperties.Name="Cancel the prompt" />
+                    </UniformGrid>
+                  </StackPanel>
+                  <TextBlock Text="{Binding StillDetails}" FontFamily="{StaticResource MonoFont}" FontSize="12" Foreground="{StaticResource TextSoftBrush}" TextWrapping="Wrap"
+                             Margin="0,10,0,0" AutomationProperties.AutomationId="StillDetails" />
+                  <TextBlock Text="{Binding StillMadeFrom}" FontSize="12" Foreground="{StaticResource TextMutedBrush}" TextWrapping="Wrap" Margin="0,4,0,0"
+                             Visibility="{Binding StillMadeFrom, Converter={views:NullToCollapsedConverter}}" />
                 </StackPanel>
 
                 <!-- A Board cell: what board 8 drew, as the panel. -->

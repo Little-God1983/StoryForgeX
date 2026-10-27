@@ -306,6 +306,10 @@ internal sealed class FakeStoryForgeClient : IStoryForgeClient
             {
                 Storyboards[update.ProjectId] = board with { State = StageState.Running, Error = null, Activity = [] };
             }
+            else if (update.Stage == PipelineStage.Stills && Stills.TryGetValue(update.ProjectId, out var stills))
+            {
+                Stills[update.ProjectId] = stills with { State = StageState.Running, Error = null, Activity = [], Stills = [.. stills.Stills.Select(s => s with { State = StageState.Running })] };
+            }
         }
         else if (update.Key is null && update.State != StageState.Running)
         {

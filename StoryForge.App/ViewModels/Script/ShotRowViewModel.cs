@@ -4,9 +4,14 @@ using StoryForge.Client;
 
 namespace StoryForge.App.ViewModels.Script;
 
-/// <summary>One shot under its segment, as board 2b draws it: "S01·2", what it shows, and its Board cell.</summary>
-public sealed partial class ShotRowViewModel(ShotView shot, Action<ShotRowViewModel> select) : ObservableObject
+/// <summary>One shot under its segment, as board 2b draws it: "S01·2", what it shows, its Board cell and its Still cell.</summary>
+public sealed partial class ShotRowViewModel(ShotView shot, Action<ShotRowViewModel> select, Action<StillCellViewModel>? selectStill = null) : ObservableObject
 {
+    private StillCellViewModel? _still;
+
+    /// <summary>The shot's still; it shows "—" before the stills are made.</summary>
+    public StillCellViewModel Still => _still ??= new(selectStill ?? (_ => { }), () => Label);
+
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(Label), nameof(Description), nameof(State), nameof(StateText), nameof(VersionText), nameof(AccessibleName))]
     private ShotView _shot = shot;
