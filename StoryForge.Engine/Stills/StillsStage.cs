@@ -103,7 +103,8 @@ internal sealed partial class StillsStage(
             var prompt = yours ?? Compose(painter.Profile.PromptTemplate, prompts[label], all[i].Select(p => p.Look));
             var still = await PaintAsync(context, painter, plan, shot, prompt, pictures, before, yours is not null, cancellationToken);
             made[shot.Key] = still;
-            var result = new CellResult(shot.Key, StoredJson.Write(still), Still.SchemaVersion, Hash(context.Project.Setup, shot, pictures, before, yours));
+            var result = new CellResult(
+                shot.Key, StoredJson.Write(still), Still.SchemaVersion, Hash(context.Project.Setup, shot, pictures, plan.Heard.GetValueOrDefault(shot.Key, ""), all[i], before, yours));
             // Stored at once: a still takes a while, and you look at it while the next is made.
             if (context.StoreSegment is { } store)
             {
@@ -157,11 +158,16 @@ internal sealed partial class StillsStage(
             (await PromptsAsync(context, [Describe(plan, shot, pictures, everyone, before is not null)], cancellationToken))[label],
             everyone.Select(p => p.Look));
         var made = await PaintAsync(context, painter, plan, shot, prompt, pictures, before, yours is not null, cancellationToken);
-        return new CellResult(key, StoredJson.Write(made), Still.SchemaVersion, Hash(context.Project.Setup, shot, pictures, before, yours));
+        return new CellResult(
+            key, StoredJson.Write(made), Still.SchemaVersion, Hash(context.Project.Setup, shot, pictures, plan.Heard.GetValueOrDefault(key, ""), everyone, before, yours));
     }
 
     /// <summary>Everything a still is made from; the same inputs give the same hash (#11 compares them).</summary>
-    internal static string Hash(ProjectSetup setup, Shot shot, IReadOnlyList<ShotPicture> pictures, Still? before, string? yourPrompt) => InputHash.Of(new
+    /// <param name="pictures">The pictures the workflow got.</param>
+    /// <param name="heard">What is heard during the shot: Claude writes the prompt from it.</param>
+    /// <param name="everyone">Everyone in the shot with a reference: their looks go into the prompt.</param>
+    internal static string Hash(
+        ProjectSetup setup, Shot shot, IReadOnlyList<ShotPicture> pictures, string heard, IReadOnlyList<ShotPicture> everyone, Still? before, string? yourPrompt) => InputHash.Of(new
     {
         stage = PipelineStage.Stills,
         schema = Still.SchemaVersion,
@@ -169,6 +175,8 @@ internal sealed partial class StillsStage(
         shot.Cast,
         shot.ContinuesPrevious,
         pictures = pictures.Select(p => new { p.Key, p.Version }),
+        heard,
+        looks = everyone.Select(p => new { p.Name, p.Look }),
         before = before?.File,
         yourPrompt,
         consistency = setup.References.Consistency,
@@ -202,7 +210,8 @@ internal sealed partial class StillsStage(
 
     /// <summary>A reference image a still is made from: "picture 2 shows Karlach".</summary>
     /// <param name="Key">The image's cell, "R01/1".</param>
-    internal sealed record ShotPicture(string Key, int Version, string Name, string Look, string File);
+    /// <param name="File">The picture; null for a reference whose image is gone (in words only).</param>
+    internal sealed record ShotPicture(string Key, int Version, string Name, string Look, string? File);
 
     /// <summary>What every still of a run is made from: the shots, their labels and words, the references.</summary>
     private sealed record Plan(
@@ -255,7 +264,8 @@ internal sealed partial class StillsStage(
 
     /// <summary>
     /// The pictures of who and what is in the shot: each reference's first image that was made, as
-    /// approved, in the order the shot names them. Someone with no reference is in the prompt only.
+    /// approved, in the order the shot names them. Someone with no reference is in the prompt only;
+    /// a reference whose image file is gone comes with no picture, to go in by its look.
     /// </summary>
     private static IReadOnlyList<ShotPicture> Pictures(Plan plan, Shot shot)
     {
@@ -267,7 +277,7 @@ internal sealed partial class StillsStage(
         foreach (var name in shot.Cast)
         {
             var reference = plan.References.FirstOrDefault(r => ReferenceList.IsNamed(r, name));
-            if (reference is null || pictures.Any(p => p.Key.StartsWith(reference.Id + "/", StringComparison.Ordinal)))
+            if (reference is null || pictures.Any(p => p.Key == reference.Id || p.Key.StartsWith(reference.Id + "/", StringComparison.Ordinal)))
             {
                 continue;
             }
@@ -275,10 +285,9 @@ internal sealed partial class StillsStage(
                 .Where(i => i.Image.ReferenceId == reference.Id && i.Image.File is not null && i.Image.Made != ImageMaking.NoPicture)
                 .OrderBy(i => i.Image.Number)
                 .FirstOrDefault(i => File.Exists(Path.Combine(plan.Root, i.Image.File!)));
-            if (image.Image is { } found)
-            {
-                pictures.Add(new ShotPicture(ReferenceImage.KeyOf(reference.Id, found.Number), image.Version, reference.Name, reference.Look, found.File!));
-            }
+            pictures.Add(image.Image is { } found
+                ? new ShotPicture(ReferenceImage.KeyOf(reference.Id, found.Number), image.Version, reference.Name, reference.Look, found.File!)
+                : new ShotPicture(reference.Id, 0, reference.Name, reference.Look, null));
         }
         return pictures;
     }
@@ -287,8 +296,11 @@ internal sealed partial class StillsStage(
     /// The reference pictures the workflow gets: all of them when it takes a list ('images'); with one
     /// picture only ('image'), the still before for a continuation, else the first reference.
     /// </summary>
-    private static IReadOnlyList<ShotPicture> Sent(Painter painter, IReadOnlyList<ShotPicture> pictures, bool fromBefore) =>
-        painter.TakesMany ? pictures : fromBefore ? [] : [.. pictures.Take(1)];
+    private static IReadOnlyList<ShotPicture> Sent(Painter painter, IReadOnlyList<ShotPicture> pictures, bool fromBefore)
+    {
+        var pictured = pictures.Where(p => p.File is not null).ToList();
+        return painter.TakesMany ? pictured : fromBefore ? [] : [.. pictured.Take(1)];
+    }
 
     /// <param name="everyone">The pictures of everyone in the shot with a reference; those not sent are described in words.</param>
     private static StillShot Describe(Plan plan, Shot shot, IReadOnlyList<ShotPicture> sent, IReadOnlyList<ShotPicture> everyone, bool fromBefore)
@@ -339,7 +351,8 @@ internal sealed partial class StillsStage(
 
     /// <summary>What every still is made with: the still profile's workflow, and whether it takes pictures.</summary>
     /// <param name="TakesMany">It takes a list of pictures ('images'), not only one ('image').</param>
-    private sealed record Painter(JsonObject Workflow, ProfileContent Profile, bool TakesPictures, bool TakesMany, string Root, string Folder);
+    /// <param name="Uploaded">The files uploaded to ComfyUI in this run, with the name it gave each: every one goes once.</param>
+    private sealed record Painter(JsonObject Workflow, ProfileContent Profile, bool TakesPictures, bool TakesMany, string Root, string Folder, Dictionary<string, string> Uploaded);
 
     private async Task<Painter> PainterAsync(StageContext context, CancellationToken cancellationToken)
     {
@@ -362,7 +375,7 @@ internal sealed partial class StillsStage(
                 $"The still profile does not say where the reference pictures go. Map '{ReferencesStage.ImageKey}' (or '{ReferencesStage.ImagesKey}') to the node that loads them.");
         }
         return new Painter(
-            workflow, profile, takesPictures, WorkflowTemplate.Maps(profile.Inputs, ReferencesStage.ImagesKey), await folders.RootAsync(cancellationToken), ProjectFolders.Of(context.Project));
+            workflow, profile, takesPictures, WorkflowTemplate.Maps(profile.Inputs, ReferencesStage.ImagesKey), await folders.RootAsync(cancellationToken), ProjectFolders.Of(context.Project), []);
     }
 
     /// <summary>One ComfyUI run; the still is saved as stills/&lt;shot&gt;-&lt;take&gt;.png in the project folder.</summary>
@@ -381,7 +394,7 @@ internal sealed partial class StillsStage(
             {
                 files.Add(before.File);
             }
-            files.AddRange(pictures.Select(p => p.File));
+            files.AddRange(pictures.Select(p => p.File!));
             if (files.Count == 0 && painter.TakesPictures)
             {
                 // Nothing to start from: an edit workflow paints on a blank canvas, not on the picture it was saved with.
@@ -390,7 +403,11 @@ internal sealed partial class StillsStage(
             var uploaded = new List<string>();
             foreach (var file in files)
             {
-                uploaded.Add(await comfy.UploadAsync(Path.Combine(painter.Root, file), cancellationToken));
+                if (!painter.Uploaded.TryGetValue(file, out var name))
+                {
+                    painter.Uploaded[file] = name = await comfy.UploadAsync(Path.Combine(painter.Root, file), cancellationToken);
+                }
+                uploaded.Add(name);
             }
             var values = new Dictionary<string, JsonNode>
             {

@@ -239,6 +239,11 @@ internal sealed class PipelineRunner(
                     throw new InvalidOperationException("Approve every reference image first: the stills are made from them.");
                 }
             }
+            if (stage == PipelineStage.Stills && await SettleAsync(db, projectId, stage, cancellationToken) is not StageState.Approved && cell.State != StageState.Approved)
+            {
+                // As a whole only as the stills settle it: every shot with its still, each approved.
+                throw new InvalidOperationException("Approve every still first, and make the ones still missing: the clips are made from them.");
+            }
             cell.CurrentVersion = version;
             cell.ApprovedVersion = version;
             cell.State = StageState.Approved;

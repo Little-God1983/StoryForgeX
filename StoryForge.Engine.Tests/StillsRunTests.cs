@@ -676,6 +676,68 @@ public sealed class StillsRunTests : IDisposable
     }
 
     [Fact]
+    public async Task A_reference_whose_picture_is_gone_still_goes_in_by_its_look()
+    {
+        _template = "{shot.visual}, {characters.sheet}";
+        var client = await StartAsync();
+        var project = await ReferencesApprovedAsync(client, beforeApproval: async p =>
+        {
+            // Karlach's image file deleted from the project folder by hand.
+            var karlach = (await client.GetReferencesAsync(p.Id)).References.Single(r => r.Reference.Name == "Karlach").Images.Single();
+            File.Delete(karlach.Path!);
+        });
+
+        var view = await StillsAsync(client, project.Id);
+
+        var keys = await KeysAsync(client, project.Id);
+        var third = _prompts.Requests.Single().Shots[2];
+        Assert.Empty(third.Pictures);
+        Assert.Equal(["Karlach"], third.Described.Select(p => p.Name));
+        Assert.Equal("the still of S01-3, Karlach as the picture shows.", view.Stills.Single(s => s.Key == keys["S01·3"]).Still!.Prompt);
+    }
+
+    [Fact]
+    public async Task Each_reference_picture_is_uploaded_once_a_run()
+    {
+        var client = await StartAsync();
+        var project = await ReferencesApprovedAsync(client);
+        var uploadedBefore = _comfy.Uploaded.Count;
+
+        await StillsAsync(client, project.Id);
+
+        // 60 shots, two references and the stills before for 28 continuations.
+        var stills = _comfy.Uploaded.Skip(uploadedBefore).ToList();
+        Assert.Equal(stills.Distinct().Count(), stills.Count);
+    }
+
+    [Fact]
+    public async Task The_stills_cannot_be_approved_as_a_whole_while_some_wait_for_review()
+    {
+        var client = await StartAsync();
+        var project = await ReferencesApprovedAsync(client);
+        await StillsAsync(client, project.Id);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => client.ApproveAsync(project.Id, PipelineStage.Stills, 1));
+    }
+
+    [Fact]
+    public void A_still_is_out_of_date_when_the_words_heard_or_a_look_change()
+    {
+        var profile = new ProfileRef(Guid.NewGuid(), 1);
+        var setup = new ProjectSetup("Soul Coins", "brief", [], new ResearchSetup("Claude CLI", "", profile), new ScriptSetup("Claude CLI", "", profile, profile),
+            new VoiceSetup("ComfyUI", "Breeze TTS", profile), new ReferencesSetup("ComfyUI", "Qwen Image 2.1 edit", profile, Consistency.ReferenceImages),
+            new StillsSetup("ComfyUI", "Qwen Image 2.1", profile, new GenerationSize("16:9", 1344, 768)),
+            new ClipsSetup("ComfyUI", "Minimax H3", profile, 20, new GenerationSize("16:9", 1280, 720)),
+            new OutputSetup("16:9", 1920, 1080, 60, "English", AssemblyTarget.FfmpegWithFcpxml), [], RunMode.StopAtGates);
+        var shot = new Shot("S01/a", "S01", 0, 10, 0, 5, "Karlach in the crypt", ["Karlach"], false);
+        IReadOnlyList<StillsStage.ShotPicture> karlach = [new("R01/1", 1, "Karlach", "Red skin, horns.", "k.png")];
+        var hash = StillsStage.Hash(setup, shot, karlach, "word word", karlach, null, null);
+
+        Assert.NotEqual(hash, StillsStage.Hash(setup, shot, karlach, "other words", karlach, null, null));
+        Assert.NotEqual(hash, StillsStage.Hash(setup, shot, karlach, "word word", [karlach[0] with { Look = "Red skin, one horn." }], null, null));
+    }
+
+    [Fact]
     public async Task A_shot_description_can_be_changed_while_the_stills_are_made()
     {
         _comfy.Hold = new TaskCompletionSource();
