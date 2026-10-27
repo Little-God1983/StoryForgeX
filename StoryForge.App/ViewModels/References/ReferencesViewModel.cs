@@ -11,7 +11,8 @@ namespace StoryForge.App.ViewModels.References;
 /// characters, places and objects; the image pool; the rest of the cast; the panel of the selected
 /// card or pool picture (in the .Panel file); the timeline (in the .Timeline file); the stage's bars.
 /// </summary>
-public sealed partial class ReferencesViewModel(IStoryForgeClient client, Guid projectId, Action<string> openUrl, Func<string?> pickPicture) : ObservableObject
+/// <param name="confirm">Asks yes or no, e.g. "6 stills use Karlach and would be out of date. Go on?"; tests pass their own. None goes on.</param>
+public sealed partial class ReferencesViewModel(IStoryForgeClient client, Guid projectId, Action<string> openUrl, Func<string?> pickPicture, Func<string, bool>? confirm = null) : ObservableObject
 {
     // Counts loads and live updates; a load that finds the count moved on drops its view.
     private int _loads;

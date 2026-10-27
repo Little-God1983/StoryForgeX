@@ -13,7 +13,7 @@ public sealed partial class ShotRowViewModel(ShotView shot, Action<ShotRowViewMo
     public StillCellViewModel Still => _still ??= new(selectStill ?? (_ => { }), () => Label);
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(Label), nameof(Description), nameof(State), nameof(StateText), nameof(VersionText), nameof(AccessibleName))]
+    [NotifyPropertyChangedFor(nameof(Label), nameof(Description), nameof(State), nameof(DisplayState), nameof(StateText), nameof(VersionText), nameof(AccessibleName))]
     private ShotView _shot = shot;
 
     /// <summary>The Board cell is the one selected.</summary>
@@ -29,7 +29,10 @@ public sealed partial class ShotRowViewModel(ShotView shot, Action<ShotRowViewMo
 
     public StageState State => Shot.State;
 
-    public string StateText => ScriptMatrixViewModel.Word(State);
+    /// <summary>What the cell shows: stale when it is out of date.</summary>
+    public StageState DisplayState => ScriptMatrixViewModel.Shown(Shot.State, Shot.Stale);
+
+    public string StateText => ScriptMatrixViewModel.Word(DisplayState);
 
     public string VersionText => $"v{Shot.Version}";
 

@@ -103,7 +103,11 @@ public sealed record ReferenceImageView(
     ReferenceImage Image,
     string? Path,
     string? Error,
-    IReadOnlyList<ActivityLine> Activity);
+    IReadOnlyList<ActivityLine> Activity)
+{
+    /// <summary>Why it is out of date (stale), e.g. "S04's script changed since it was spoken"; null while it is up to date.</summary>
+    public string? Stale { get; init; }
+}
 
 /// <summary>A reference with its images, as a card shows it.</summary>
 public sealed record ReferenceView(Reference Reference, IReadOnlyList<ReferenceImageView> Images);
@@ -139,6 +143,21 @@ public sealed record ReferencesView(
 {
     /// <summary>Every shot of the storyboard in order, for the timeline.</summary>
     public IReadOnlyList<TimelineShot> Shots { get; init; } = [];
+
+    /// <summary>
+    /// How many stills use each reference's images, by its id: those its picture went into, and those
+    /// starting from one of them. Changing its images puts them out of date.
+    /// </summary>
+    public IReadOnlyDictionary<string, int> StillsUsing { get; init; } = new Dictionary<string, int>();
+
+    /// <summary>
+    /// How many stills show each reference, by its id, pictured or in words, and those starting from
+    /// one of them. Changing its look, merging or removing it puts them out of date.
+    /// </summary>
+    public IReadOnlyDictionary<string, int> StillsShowing { get; init; } = new Dictionary<string, int>();
+
+    /// <summary>How many stills use each image, by its key ("R01/2"), continuations of them too: changing that image puts them out of date.</summary>
+    public IReadOnlyDictionary<string, int> StillsUsingImage { get; init; } = new Dictionary<string, int>();
 }
 
 /// <summary>What a change to the reference list does.</summary>

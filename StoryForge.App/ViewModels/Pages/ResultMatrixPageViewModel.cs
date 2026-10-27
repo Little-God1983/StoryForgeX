@@ -40,17 +40,21 @@ public sealed partial class ResultMatrixPageViewModel : PageViewModel
     private readonly Action<string> _openUrl;
     private readonly Func<IAudioPlayer>? _newPlayer;
     private readonly Func<string?> _pickPicture;
+    private readonly Func<string, bool> _confirm;
 
     /// <param name="openUrl">Opens a source page in the browser; tests pass their own.</param>
     /// <param name="newPlayer">Makes the player a project's voice is played with; tests pass their own or none.</param>
     /// <param name="pickPicture">Asks for a picture file ("Add my own picture…"); null when none was picked. Tests pass their own.</param>
-    public ResultMatrixPageViewModel(IStoryForgeClient client, Action<string>? openUrl = null, Func<IAudioPlayer>? newPlayer = null, Func<string?>? pickPicture = null)
+    /// <param name="confirm">Asks yes or no before a change that puts results out of date; tests pass their own.</param>
+    public ResultMatrixPageViewModel(
+        IStoryForgeClient client, Action<string>? openUrl = null, Func<IAudioPlayer>? newPlayer = null, Func<string?>? pickPicture = null, Func<string, bool>? confirm = null)
         : base("Result matrix", "Projects / Result matrix", "No project open. Start one from New project.")
     {
         _client = client;
         _openUrl = openUrl ?? (url => Process.Start(new ProcessStartInfo(url) { UseShellExecute = true }));
         _newPlayer = newPlayer;
         _pickPicture = pickPicture ?? PickPicture;
+        _confirm = confirm ?? Confirm;
         client.StageUpdated += (_, update) => UiThread.Run(() => Updating = ReceiveAsync(update));
     }
 
@@ -174,12 +178,18 @@ public sealed partial class ResultMatrixPageViewModel : PageViewModel
     [RelayCommand]
     private void ShowMatrix()
     {
+        var away = FactSheet is not null || References is not null;
         FactSheet = null;
         References = null;
         ShowsWholeScript = false;
         if (Project is not null)
         {
             Breadcrumb = $"Projects / {Project.Setup.Name}";
+        }
+        if (away && Script is not null)
+        {
+            // What changed there (a fact sheet, an image approved) can put results here out of date.
+            ScriptLoading = Script.LoadAsync();
         }
     }
 
@@ -229,11 +239,15 @@ public sealed partial class ResultMatrixPageViewModel : PageViewModel
         StopPlayback();
         FactSheet = null;
         ShowsWholeScript = false;
-        var screen = new ReferencesViewModel(_client, Project.Id, _openUrl, _pickPicture);
+        var screen = new ReferencesViewModel(_client, Project.Id, _openUrl, _pickPicture, _confirm);
         References = screen;
         Breadcrumb = $"Projects / {Project.Setup.Name} / References";
         await screen.LoadAsync();
     }
+
+    /// <summary>A yes-or-no question in a message box.</summary>
+    private static bool Confirm(string question) =>
+        System.Windows.MessageBox.Show(question, "StoryForge X", System.Windows.MessageBoxButton.YesNo, System.Windows.MessageBoxImage.Question) == System.Windows.MessageBoxResult.Yes;
 
     /// <summary>The file picker "Add my own picture…" (and a still's "Replace with file…") opens.</summary>
     private static string? PickPicture()

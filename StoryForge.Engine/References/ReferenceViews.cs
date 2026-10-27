@@ -17,7 +17,8 @@ internal sealed class ReferenceViews(
     PipelineRunner runner,
     CellReader cells,
     ProjectStore projects,
-    ProjectFolders folders)
+    ProjectFolders folders,
+    Staleness staleness)
 {
     private const PipelineStage Stage = PipelineStage.References;
 
@@ -54,6 +55,8 @@ internal sealed class ReferenceViews(
             return new ReferencesView(projectId, StageState.NotStarted, null, [], ReferencePhase.List, [], [], [], textOnly, labels, 0, storyboardApproved);
         }
 
+        var stale = await staleness.GetAsync(projectId, cancellationToken);
+        var counts = await staleness.CountsAsync(projectId, cancellationToken);
         var images = stageCells.Where(c => c.Key != "").Select(cell =>
         {
             var own = versions[cell.Key].OrderBy(v => v.Version).ToList();
@@ -72,7 +75,10 @@ internal sealed class ReferenceViews(
                 image,
                 Existing(root, image.File),
                 cell.State == StageState.Failed ? cell.Error : null,
-                runner.LiveActivity(projectId, Stage, cell.Key) ?? StoredJson.Read<List<ActivityLine>>(cell.ActivityJson));
+                runner.LiveActivity(projectId, Stage, cell.Key) ?? StoredJson.Read<List<ActivityLine>>(cell.ActivityJson))
+            {
+                Stale = stale.GetValueOrDefault((Stage, cell.Key)),
+            };
         }).ToList();
 
         // Who and what is in a shot is the shot's: the timeline and the Board panel change the same.
@@ -96,7 +102,13 @@ internal sealed class ReferenceViews(
             textOnly,
             labels,
             whole.CurrentVersion ?? 0,
-            storyboardApproved) { Shots = Timeline(shots, labels, sheet?.References ?? []) };
+            storyboardApproved)
+        {
+            Shots = Timeline(shots, labels, sheet?.References ?? []),
+            StillsUsing = counts.Using,
+            StillsShowing = counts.Showing,
+            StillsUsingImage = counts.UsingImage,
+        };
     }
 
     /// <summary>The shots one after another, as the video plays them: each segment's shots add up to its audio.</summary>

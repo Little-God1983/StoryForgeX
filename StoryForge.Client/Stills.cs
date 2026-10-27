@@ -42,7 +42,11 @@ public sealed record StillView(
     bool Queued,
     string? QueuedPrompt,
     string? Error,
-    IReadOnlyList<ActivityLine> Activity);
+    IReadOnlyList<ActivityLine> Activity)
+{
+    /// <summary>Why it is out of date (stale), e.g. "S04's script changed since it was spoken"; null while it is up to date.</summary>
+    public string? Stale { get; init; }
+}
 
 /// <summary>Everything the matrix shows of the Stills stage.</summary>
 /// <param name="Stills">One per shot that has a Still cell, by shot key; a shot without one has no still yet.</param>

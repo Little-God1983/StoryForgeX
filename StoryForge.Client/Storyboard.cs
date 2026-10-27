@@ -100,6 +100,9 @@ public sealed record ShotView(
     /// would overlap the shot next to it, or leave words no shot covers.
     /// </summary>
     public IReadOnlyList<int> MovedVersions { get; init; } = [];
+
+    /// <summary>Why it is out of date (stale), e.g. "S04's voice changed since the shot was cut"; null while it is up to date.</summary>
+    public string? Stale { get; init; }
 }
 
 /// <summary>Everything the matrix shows of the Storyboard stage.</summary>

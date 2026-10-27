@@ -16,6 +16,7 @@ internal sealed class ScriptSegments(
     SegmentCells segments,
     CellReader cells,
     ProjectStore projects,
+    Staleness staleness,
     TimeProvider clock)
 {
     private const PipelineStage Stage = PipelineStage.Script;
@@ -41,6 +42,7 @@ internal sealed class ScriptSegments(
             return new ScriptView(projectId, StageState.NotStarted, null, [], [], "", 0, setup.Output.TargetSeconds, facts);
         }
 
+        var stale = await staleness.GetAsync(projectId, cancellationToken);
         var shownSegments = stageCells.Where(c => c.Key != "").OrderBy(c => c.Key, StringComparer.Ordinal).Select(cell =>
         {
             var own = versions.Where(v => v.Key == cell.Key).OrderBy(v => v.Version).ToList();
@@ -60,7 +62,10 @@ internal sealed class ScriptSegments(
                 shown.FactIds,
                 ScriptSheet.Seconds(shown.Narration, setup.Output.Language),
                 cell.State == StageState.Failed ? cell.Error : null,
-                runner.LiveActivity(projectId, Stage, cell.Key) ?? StoredJson.Read<List<ActivityLine>>(cell.ActivityJson));
+                runner.LiveActivity(projectId, Stage, cell.Key) ?? StoredJson.Read<List<ActivityLine>>(cell.ActivityJson))
+            {
+                Stale = stale.GetValueOrDefault((Stage, cell.Key)),
+            };
         }).OfType<SegmentView>().ToList();
         var activity = runner.LiveActivity(projectId, Stage) ?? StoredJson.Read<List<ActivityLine>>(whole.ActivityJson);
         var seconds = shownSegments.Sum(s => s.Seconds);
