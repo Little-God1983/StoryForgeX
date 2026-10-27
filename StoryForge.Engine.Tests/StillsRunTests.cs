@@ -761,6 +761,102 @@ public sealed class StillsRunTests : IDisposable
     }
 
     [Fact]
+    public async Task Nothing_is_stale_in_a_project_just_made()
+    {
+        var client = await StartAsync();
+        var project = await ReferencesApprovedAsync(client);
+        await StillsAsync(client, project.Id);
+
+        Assert.All((await client.GetScriptAsync(project.Id)).Segments, s => Assert.Null(s.Stale));
+        Assert.All((await client.GetVoiceAsync(project.Id)).Segments, s => Assert.Null(s.Stale));
+        Assert.All((await client.GetStoryboardAsync(project.Id)).Shots, s => Assert.Null(s.Stale));
+        Assert.All((await client.GetReferencesAsync(project.Id)).References.SelectMany(r => r.Images), i => Assert.Null(i.Stale));
+        Assert.All((await client.GetStillsAsync(project.Id)).Stills, s => Assert.Null(s.Stale));
+    }
+
+    [Fact]
+    public async Task Editing_a_segment_puts_its_voice_shots_and_stills_out_of_date_and_nothing_else()
+    {
+        var client = await StartAsync();
+        var project = await ReferencesApprovedAsync(client);
+        await StillsAsync(client, project.Id);
+        var script = await client.GetScriptAsync(project.Id);
+        var s02 = script.Segments.Single(s => s.Id == "S02");
+
+        await client.EditSegmentAsync(project.Id, "S02", s02.Title, s02.Narration + " And one more sentence.");
+        if ((await client.GetScriptAsync(project.Id)).Segments.Single(s => s.Id == "S02") is { State: StageState.NeedsReview } edited)
+        {
+            await client.ApproveSegmentAsync(project.Id, PipelineStage.Script, "S02", edited.Version);
+        }
+
+        Assert.Null((await client.GetScriptAsync(project.Id)).Segments.Single(s => s.Id == "S02").Stale);   // what you changed is up to date
+        var voice = (await client.GetVoiceAsync(project.Id)).Segments;
+        Assert.Equal("S02's script changed since it was spoken.", voice.Single(s => s.Id == "S02").Stale);
+        Assert.All(voice.Where(s => s.Id != "S02"), s => Assert.Null(s.Stale));
+        var shots = (await client.GetStoryboardAsync(project.Id)).Shots;
+        Assert.All(shots, s => Assert.Equal(s.SegmentId == "S02" ? "S02's voice is out of date." : null, s.Stale));
+        var stills = (await client.GetStillsAsync(project.Id)).Stills;
+        var labels = shots.ToDictionary(s => s.Key, s => s.Label);
+        Assert.All(stills, s => Assert.Equal(labels[s.Key].StartsWith("S02", StringComparison.Ordinal) ? $"Shot {labels[s.Key]} is out of date." : null, s.Stale));
+        Assert.Equal(StageState.NeedsReview, stills[0].State);   // a stale cell keeps its state and its version
+    }
+
+    [Fact]
+    public async Task A_segment_spoken_again_puts_its_shots_out_of_date()
+    {
+        var client = await StartAsync();
+        var project = await ReferencesApprovedAsync(client);
+        await StillsAsync(client, project.Id);
+
+        await client.RegenerateSegmentAsync(project.Id, PipelineStage.Voice, "S03");
+        await ScriptRunTests.WaitForAsync(() => client.GetVoiceAsync(project.Id), v => v.Segments.Single(s => s.Id == "S03") is { Version: 2, State: not StageState.Running });
+
+        var shots = (await client.GetStoryboardAsync(project.Id)).Shots;
+        Assert.All(shots, s => Assert.Equal(s.SegmentId == "S03" ? "S03's voice changed since the shot was cut." : null, s.Stale));
+        Assert.Null((await client.GetVoiceAsync(project.Id)).Segments.Single(s => s.Id == "S03").Stale);
+    }
+
+    [Fact]
+    public async Task A_changed_look_puts_the_reference_image_and_only_the_stills_using_it_out_of_date()
+    {
+        var client = await StartAsync();
+        var project = await ReferencesApprovedAsync(client);
+        await StillsAsync(client, project.Id);
+        var references = await client.GetReferencesAsync(project.Id);
+        // Karlach's picture goes into the stills that do not continue the one before (the workflow takes one picture).
+        Assert.Equal(28, references.StillsUsing["R01"]);
+        Assert.Equal(4, references.StillsUsing["R02"]);
+
+        await client.ChangeReferencesAsync(project.Id, new ReferenceChange(ReferenceChangeKind.EditLook, ReferenceId: "R02", Look: "A coin of black iron with a screaming face."));
+
+        var image = (await client.GetReferencesAsync(project.Id)).References.Single(r => r.Reference.Id == "R02").Images.Single();
+        Assert.Equal("Soul coin's look or pictures changed since this image was made.", image.Stale);
+        var stills = (await client.GetStillsAsync(project.Id)).Stills;
+        Assert.Equal(4, stills.Count(s => s.Stale == "Soul coin's image is out of date."));
+        // Each segment's second shot starts from the coin's still: out of date with it.
+        Assert.Equal(4, stills.Count(s => s.Stale is { } why && why.StartsWith("The still of S0", StringComparison.Ordinal) && why.EndsWith("·1 it starts from is out of date.", StringComparison.Ordinal)));
+        Assert.Equal(52, stills.Count(s => s.Stale is null));
+    }
+
+    [Fact]
+    public async Task A_still_made_again_is_up_to_date_and_the_one_continuing_it_is_not()
+    {
+        var client = await StartAsync();
+        var project = await ReferencesApprovedAsync(client);
+        await StillsAsync(client, project.Id);
+        var keys = await KeysAsync(client, project.Id);
+
+        // S01·2 continues S01·1.
+        await client.QueueStillAsync(project.Id, keys["S01·1"]);
+        await client.ContinuePipelineAsync(project.Id);
+        var view = await StillsAsync(client, project.Id, v => v.Stills.Single(s => s.Key == keys["S01·1"]) is { Version: 2, State: not StageState.Running });
+
+        Assert.Null(view.Stills.Single(s => s.Key == keys["S01·1"]).Stale);
+        Assert.Equal("The still of S01·1 it starts from was made again since.", view.Stills.Single(s => s.Key == keys["S01·2"]).Stale);
+        Assert.Null(view.Stills.Single(s => s.Key == keys["S01·3"]).Stale);
+    }
+
+    [Fact]
     public async Task Approving_every_still_approves_the_stage()
     {
         var client = await StartAsync();

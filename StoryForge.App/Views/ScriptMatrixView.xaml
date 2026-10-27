@@ -369,6 +369,33 @@
             <TextBlock Grid.Column="4" Text="STILL" Style="{StaticResource SectionLabelStyle}" Margin="6,0,0,0" />
             <TextBlock Grid.Column="5" Text="CLIP" Style="{StaticResource SectionLabelStyle}" Margin="6,0,0,0" />
           </Grid>
+          <!-- The colours of the cells, as the canvas legend has them. -->
+          <WrapPanel DockPanel.Dock="Bottom" Margin="4,10,4,0" AutomationProperties.Name="Legend">
+              <StackPanel Orientation="Horizontal" Margin="0,0,16,4">
+                <Border Width="10" Height="10" CornerRadius="2" Background="#7FD1C2" VerticalAlignment="Center" Margin="0,0,6,0" />
+                <TextBlock Text="approved" FontSize="12" Foreground="{StaticResource TextSoftBrush}" />
+              </StackPanel>
+              <StackPanel Orientation="Horizontal" Margin="0,0,16,4">
+                <Border Width="10" Height="10" CornerRadius="2" Background="#F0BD66" VerticalAlignment="Center" Margin="0,0,6,0" />
+                <TextBlock Text="needs review" FontSize="12" Foreground="{StaticResource TextSoftBrush}" />
+              </StackPanel>
+              <StackPanel Orientation="Horizontal" Margin="0,0,16,4">
+                <Border Width="10" Height="10" CornerRadius="2" Background="#B4A8F5" VerticalAlignment="Center" Margin="0,0,6,0" />
+                <TextBlock Text="stale (made from something that changed since)" FontSize="12" Foreground="{StaticResource TextSoftBrush}" />
+              </StackPanel>
+              <StackPanel Orientation="Horizontal" Margin="0,0,16,4">
+                <Border Width="10" Height="10" CornerRadius="2" Background="#6FB3EE" VerticalAlignment="Center" Margin="0,0,6,0" />
+                <TextBlock Text="running" FontSize="12" Foreground="{StaticResource TextSoftBrush}" />
+              </StackPanel>
+              <StackPanel Orientation="Horizontal" Margin="0,0,16,4">
+                <Border Width="10" Height="10" CornerRadius="2" Background="#F08B7E" VerticalAlignment="Center" Margin="0,0,6,0" />
+                <TextBlock Text="failed" FontSize="12" Foreground="{StaticResource TextSoftBrush}" />
+              </StackPanel>
+              <StackPanel Orientation="Horizontal" Margin="0,0,16,4">
+                <Border Width="10" Height="10" CornerRadius="2" Background="#8C9098" VerticalAlignment="Center" Margin="0,0,6,0" />
+                <TextBlock Text="not started" FontSize="12" Foreground="{StaticResource TextSoftBrush}" />
+              </StackPanel>
+          </WrapPanel>
           <ScrollViewer VerticalScrollBarVisibility="Auto">
             <ItemsControl ItemsSource="{Binding Rows}" Focusable="False" AutomationProperties.Name="Segments">
               <ItemsControl.ItemTemplate>
@@ -559,6 +586,15 @@
                            Visibility="{Binding SelectedNote, Converter={views:NullToCollapsedConverter}}" />
                 <TextBlock Text="{Binding SelectedError}" FontSize="13" Foreground="{StaticResource ErrorTextBrush}" TextWrapping="Wrap" Margin="0,0,0,10"
                            Visibility="{Binding SelectedError, Converter={views:NullToCollapsedConverter}}" />
+                <!-- Out of date: why, and how it comes up to date. -->
+                <Border Background="{StaticResource NoteBackBrush}" BorderBrush="#3D3663" BorderThickness="1" CornerRadius="8" Padding="12,8" Margin="0,0,0,12"
+                        Visibility="{Binding SelectedStale, Converter={views:NullToCollapsedConverter}}">
+                  <StackPanel>
+                    <TextBlock Text="{Binding SelectedStale}" FontSize="13" Foreground="#D4CCFA" TextWrapping="Wrap" AutomationProperties.AutomationId="SelectedStale" />
+                    <TextBlock Text="It still shows what it was. Regenerate makes it again from what it is made from now." FontSize="12" Foreground="#B4A8F5"
+                               TextWrapping="Wrap" Margin="0,4,0,0" />
+                  </StackPanel>
+                </Border>
                 <Border Background="{StaticResource CardBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="8" Padding="12,8" Margin="0,0,0,12"
                         Visibility="{Binding SelectedShowsLog, Converter={StaticResource Visible}}">
                   <ItemsControl ItemsSource="{Binding SelectedActivity}" ItemTemplate="{StaticResource ActivityLineTemplate}"

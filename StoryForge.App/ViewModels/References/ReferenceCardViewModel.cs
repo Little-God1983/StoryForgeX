@@ -58,7 +58,7 @@ public sealed partial class ReferenceCardViewModel(ReferenceView view, IReadOnly
         };
 
     /// <summary>What Qwen made up, why nothing was made, or that it is your picture as it is; empty otherwise.</summary>
-    public string Note => Shown?.Image switch
+    public string Note => Shown is { Stale: { } why } ? $"Out of date: {why}" : Shown?.Image switch
     {
         { Made: ImageMaking.PartlyMadeUp } image => $"Partly made up: {image.Missing}",
         { Made: ImageMaking.NoPicture } image when Shown.Version > 0 => image.Missing,
@@ -67,6 +67,9 @@ public sealed partial class ReferenceCardViewModel(ReferenceView view, IReadOnly
     };
 
     public bool IsMissing => Shown is { Version: > 0, Image.Made: ImageMaking.NoPicture };
+
+    /// <summary>The image the card stands for is out of date.</summary>
+    public bool IsStale => Shown is { Stale: not null };
 
     public bool IsPartial => Shown is { Image.Made: ImageMaking.PartlyMadeUp };
 
@@ -91,6 +94,7 @@ public sealed partial class ReferenceCardViewModel(ReferenceView view, IReadOnly
         { State: StageState.Running } => "running",
         { State: StageState.Failed } => "failed",
         { Version: 0 } => "not made yet",
+        { Stale: not null } => "stale",
         { Image.Made: ImageMaking.NoPicture } => "no usable picture",
         { State: StageState.Approved } => "approved",
         { Image.Made: ImageMaking.PartlyMadeUp } => "partly made up",

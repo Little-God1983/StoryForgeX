@@ -27,7 +27,7 @@ public sealed partial class ShotRowViewModel(ShotView shot, Action<ShotRowViewMo
 
     public string Description => Shot.Shot.Description;
 
-    public StageState State => Shot.State;
+    public StageState State => ScriptMatrixViewModel.Shown(Shot.State, Shot.Stale);
 
     public string StateText => ScriptMatrixViewModel.Word(State);
 

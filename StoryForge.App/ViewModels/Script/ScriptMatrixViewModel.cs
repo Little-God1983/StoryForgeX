@@ -46,7 +46,7 @@ public sealed partial class VoiceCellViewModel(string id, Action<VoiceCellViewMo
     public bool HasVoice => Segment is not null;
 
     // A segment the run never got to stays "—" when the run failed: the bar says where it failed.
-    public StageState State => Segment?.State ?? (StageState == StageState.Running ? StageState.Running : StageState.NotStarted);
+    public StageState State => ScriptMatrixViewModel.Shown(Segment?.State ?? (StageState == StageState.Running ? StageState.Running : StageState.NotStarted), Segment?.Stale);
 
     public string StateText => ScriptMatrixViewModel.Word(State);
 
@@ -163,10 +163,10 @@ public sealed partial class SegmentRowViewModel(SegmentView segment, Action<Segm
 
     public string Title => Segment.Title;
 
-    public StageState State => Segment.State;
+    public StageState State => ScriptMatrixViewModel.Shown(Segment.State, Segment.Stale);
 
-    /// <summary>"review", "approved", "running" …: the cell's word, as in the canvas legend.</summary>
-    public string StateText => ScriptMatrixViewModel.Word(Segment.State);
+    /// <summary>"review", "approved", "stale", "running" …: the cell's word, as in the canvas legend.</summary>
+    public string StateText => ScriptMatrixViewModel.Word(State);
 
     public string VersionText => $"v{Segment.Version}";
 
@@ -322,13 +322,19 @@ public sealed partial class ScriptMatrixViewModel(IStoryForgeClient client, Guid
             ? $"{stillShot.Still.StateText}{(SelectedStill is { Version: > 0 } still ? $" · version {still.Version}" : "")}{(stillShot.Still.IsQueued ? " · queued" : "")}"
         : IsVoicePanel
             ? SelectedVoice is { } voice
-                ? $"{Word(voice.State)} · version {voice.Version} · {Clock(voice.Seconds)}{(voice.Parts.Count > 1 ? $" · {voice.Parts.Count} parts" : "")}"
+                ? $"{Selected.Voice.StateText} · version {voice.Version} · {Clock(voice.Seconds)}{(voice.Parts.Count > 1 ? $" · {voice.Parts.Count} parts" : "")}"
                 : Selected.Voice.StateText
             : $"{Selected.StateText} · version {Selected.Segment.Version} · about {Clock(Selected.Segment.Seconds)}";
 
     public string SelectedNarration => Selected?.Segment.Narration ?? "";
 
     public string? SelectedError => IsBoardPanel ? SelectedShot?.Shot.Error : IsStillPanel ? SelectedStill?.Error : IsVoicePanel ? SelectedVoice?.Error : Selected?.Segment.Error;
+
+    /// <summary>"Out of date: S04's script changed since it was spoken."; null while the selected cell is up to date.</summary>
+    public string? SelectedStale =>
+        (IsBoardPanel ? SelectedShot?.Shot.Stale : IsStillPanel ? SelectedStill?.Stale : IsVoicePanel ? SelectedVoice?.Stale : Selected?.Segment.Stale) is { } why
+            ? $"Out of date: {why}"
+            : null;
 
     /// <summary>
     /// The selected cell is being made again on its own (written or spoken). A Voice cell still to
@@ -681,7 +687,7 @@ public sealed partial class ScriptMatrixViewModel(IStoryForgeClient client, Guid
 
     private void RefreshPanel()
     {
-        foreach (var name in new[] { nameof(SelectedHeading), nameof(SelectedStatus), nameof(SelectedNarration), nameof(SelectedNote), nameof(SelectedFacts), nameof(SelectedVersions), nameof(SelectedError), nameof(SelectedIsRunning), nameof(SelectedShowsLog) })
+        foreach (var name in new[] { nameof(SelectedHeading), nameof(SelectedStatus), nameof(SelectedNarration), nameof(SelectedNote), nameof(SelectedFacts), nameof(SelectedVersions), nameof(SelectedError), nameof(SelectedStale), nameof(SelectedIsRunning), nameof(SelectedShowsLog) })
         {
             OnPropertyChanged(name);
         }
@@ -900,6 +906,13 @@ public sealed partial class ScriptMatrixViewModel(IStoryForgeClient client, Guid
         var whole = (int)Math.Round(seconds);
         return string.Create(CultureInfo.InvariantCulture, $"{whole / 60}:{whole % 60:00}");
     }
+
+    /// <summary>
+    /// The state a cell shows: stale (purple) when it is out of date, while it waits for review or is
+    /// approved; running and failed show as they are. What can be done with it goes by its own state.
+    /// </summary>
+    internal static StageState Shown(StageState state, string? stale) =>
+        stale is not null && state is StageState.Approved or StageState.NeedsReview ? StageState.Stale : state;
 
     /// <summary>"review", "approved", "running" …: a cell's word, as in the canvas legend.</summary>
     internal static string Word(StageState state) => state switch

@@ -45,7 +45,11 @@ public sealed record SegmentView(
     IReadOnlyList<string> FactIds,
     int Seconds,
     string? Error,
-    IReadOnlyList<ActivityLine> Activity);
+    IReadOnlyList<ActivityLine> Activity)
+{
+    /// <summary>Why it is out of date (stale), e.g. "S04's script changed since it was spoken"; null while it is up to date.</summary>
+    public string? Stale { get; init; }
+}
 
 /// <summary>Everything the result matrix shows of the Script stage.</summary>
 /// <param name="Error">Why the last run of the whole script failed; null unless the state is Failed.</param>

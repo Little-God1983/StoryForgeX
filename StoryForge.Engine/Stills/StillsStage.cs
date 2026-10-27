@@ -223,9 +223,45 @@ internal sealed partial class StillsStage(
         bool TextOnly,
         string Root);
 
-    private async Task<Plan> PlanAsync(StageContext context, CancellationToken cancellationToken)
+    private Task<Plan> PlanAsync(StageContext context, CancellationToken cancellationToken) => PlanAsync(cells, folders, context.Project, cancellationToken);
+
+    /// <summary>
+    /// The input hash each still made by the stage would have if it were made now, by shot key: #11
+    /// compares it with the one stored. Your own file is left out (nothing made it), and so is a
+    /// shot that is gone; with the references not approved, there is nothing to compare with.
+    /// </summary>
+    internal static async Task<IReadOnlyDictionary<string, string>> CurrentHashesAsync(
+        CellReader cells, ProjectFolders folders, ProfileStore profiles, Project project, IReadOnlyDictionary<string, Still> stills, CancellationToken cancellationToken)
     {
-        var project = context.Project;
+        Plan plan;
+        try
+        {
+            plan = await PlanAsync(cells, folders, project, cancellationToken);
+        }
+        catch (StageFailedException)
+        {
+            return new Dictionary<string, string>();
+        }
+        var setup = project.Setup;
+        var inputs = (await profiles.GetVersionAsync(setup.Stills.Profile.ProfileId, setup.Stills.Profile.Version, cancellationToken)).Content.Inputs;
+        var takesMany = WorkflowTemplate.Maps(inputs, ReferencesStage.ImagesKey);
+        var hashes = new Dictionary<string, string>();
+        foreach (var shot in plan.Shots)
+        {
+            if (stills.GetValueOrDefault(shot.Key) is not { YourFile: false } still)
+            {
+                continue;
+            }
+            var before = still.ContinuesFrom is { } from ? stills.GetValueOrDefault(from) : null;
+            var everyone = Pictures(plan, shot);
+            hashes[shot.Key] = Hash(
+                setup, shot, Sent(takesMany, everyone, still.ContinuesFrom is not null), plan.Heard.GetValueOrDefault(shot.Key, ""), everyone, before, still.YourPrompt ? still.Prompt : null);
+        }
+        return hashes;
+    }
+
+    private static async Task<Plan> PlanAsync(CellReader cells, ProjectFolders folders, Project project, CancellationToken cancellationToken)
+    {
         if (await cells.StateAsync(project.Id, PipelineStage.References, cancellationToken) != StageState.Approved)
         {
             throw new StageFailedException("Approve the references first: the stills are made from them.");
@@ -296,10 +332,12 @@ internal sealed partial class StillsStage(
     /// The reference pictures the workflow gets: all of them when it takes a list ('images'); with one
     /// picture only ('image'), the still before for a continuation, else the first reference.
     /// </summary>
-    private static IReadOnlyList<ShotPicture> Sent(Painter painter, IReadOnlyList<ShotPicture> pictures, bool fromBefore)
+    private static IReadOnlyList<ShotPicture> Sent(Painter painter, IReadOnlyList<ShotPicture> pictures, bool fromBefore) => Sent(painter.TakesMany, pictures, fromBefore);
+
+    private static IReadOnlyList<ShotPicture> Sent(bool takesMany, IReadOnlyList<ShotPicture> pictures, bool fromBefore)
     {
         var pictured = pictures.Where(p => p.File is not null).ToList();
-        return painter.TakesMany ? pictured : fromBefore ? [] : [.. pictured.Take(1)];
+        return takesMany ? pictured : fromBefore ? [] : [.. pictured.Take(1)];
     }
 
     /// <param name="everyone">The pictures of everyone in the shot with a reference; those not sent are described in words.</param>

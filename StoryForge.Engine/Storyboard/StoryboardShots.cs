@@ -17,7 +17,8 @@ internal sealed class StoryboardShots(
     PipelineRunner runner,
     CellReader cells,
     ProjectStore projects,
-    ProfileStore profiles)
+    ProfileStore profiles,
+    Staleness staleness)
 {
     private const PipelineStage Stage = PipelineStage.Storyboard;
 
@@ -45,6 +46,7 @@ internal sealed class StoryboardShots(
         }
 
         versions.RemoveAll(v => v.Key == "");
+        var stale = await staleness.GetAsync(projectId, cancellationToken);
         var shown = stageCells.Where(c => c.Key != "").Select(cell =>
         {
             var own = versions.Where(v => v.Key == cell.Key).OrderBy(v => v.Version).ToList();
@@ -67,6 +69,7 @@ internal sealed class StoryboardShots(
             MovedVersions = [.. s.Own.Select(v => (v.Version, Shot: StoredJson.Read<Shot>(v.OutputJson)))
                 .Where(v => v.Shot.FirstWord != s.Shot.FirstWord || v.Shot.WordCount != s.Shot.WordCount)
                 .Select(v => v.Version)],
+            Stale = stale.GetValueOrDefault((Stage, s.Cell.Key)),
         }).ToList();
         return new StoryboardView(
             projectId,

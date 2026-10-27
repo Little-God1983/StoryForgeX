@@ -7,6 +7,7 @@ using StoryForge.Engine.Pipeline;
 using StoryForge.Engine.Research;
 using StoryForge.Engine.Script;
 using StoryForge.Engine.Storyboard;
+using StoryForge.Engine.Voice;
 
 namespace StoryForge.Engine.Tests;
 
@@ -230,11 +231,12 @@ public sealed class StoryboardRunTests : IDisposable
         {
             var segments = await cells.ApprovedSegmentsAsync(context.Project.Id, cancellationToken);
             var clips = segments.Select(s => Clip(s.Segment, s.Version)).ToList();
+            // With the real stage's hash: what the voice is spoken from is what tells it out of date.
             return new StageResult(
                 StoredJson.Write(new VoiceSheet([.. clips.Select(c => c.SegmentId)], clips.Sum(c => c.Seconds))),
                 VoiceClip.SchemaVersion,
                 "h",
-                [.. clips.Select(c => new CellResult(c.SegmentId, StoredJson.Write(c), VoiceClip.SchemaVersion, "h"))]);
+                [.. segments.Zip(clips, (s, c) => new CellResult(c.SegmentId, StoredJson.Write(c), VoiceClip.SchemaVersion, VoiceStage.Hash(context.Project.Setup, s.Segment, s.Version)))]);
         }
 
         public async Task<CellResult> RunSegmentAsync(StageContext context, string key, CancellationToken cancellationToken)
@@ -242,7 +244,7 @@ public sealed class StoryboardRunTests : IDisposable
             var (segment, version) = (await cells.ApprovedSegmentsAsync(context.Project.Id, cancellationToken)).Single(s => s.Segment.Id == key);
             // Spoken again a little slower, so its words fall elsewhere.
             var clip = Clip(segment, version, 0.6);
-            return new CellResult(key, StoredJson.Write(clip), VoiceClip.SchemaVersion, "h2");
+            return new CellResult(key, StoredJson.Write(clip), VoiceClip.SchemaVersion, VoiceStage.Hash(context.Project.Setup, segment, version));
         }
 
         internal static VoiceClip Clip(Segment segment, int version, double every = 0.5)

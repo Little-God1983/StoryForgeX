@@ -103,7 +103,11 @@ public sealed record ReferenceImageView(
     ReferenceImage Image,
     string? Path,
     string? Error,
-    IReadOnlyList<ActivityLine> Activity);
+    IReadOnlyList<ActivityLine> Activity)
+{
+    /// <summary>Why it is out of date (stale), e.g. "S04's script changed since it was spoken"; null while it is up to date.</summary>
+    public string? Stale { get; init; }
+}
 
 /// <summary>A reference with its images, as a card shows it.</summary>
 public sealed record ReferenceView(Reference Reference, IReadOnlyList<ReferenceImageView> Images);
@@ -139,6 +143,9 @@ public sealed record ReferencesView(
 {
     /// <summary>Every shot of the storyboard in order, for the timeline.</summary>
     public IReadOnlyList<TimelineShot> Shots { get; init; } = [];
+
+    /// <summary>How many stills use each reference, by its id: changing its images puts them out of date.</summary>
+    public IReadOnlyDictionary<string, int> StillsUsing { get; init; } = new Dictionary<string, int>();
 }
 
 /// <summary>What a change to the reference list does.</summary>

@@ -34,7 +34,7 @@ public sealed partial class StillCellViewModel(Action<StillCellViewModel> select
     public bool IsWaiting => Still is null || Still.Queued || Still.Still is null;
 
     // A shot the run never got to stays "—" when the run failed: the bar says where it failed.
-    public StageState State => Still?.State ?? (StageState == StageState.Running ? StageState.Running : StageState.NotStarted);
+    public StageState State => ScriptMatrixViewModel.Shown(Still?.State ?? (StageState == StageState.Running ? StageState.Running : StageState.NotStarted), Still?.Stale);
 
     public string StateText => ScriptMatrixViewModel.Word(State);
 

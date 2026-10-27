@@ -20,6 +20,7 @@ internal sealed class StillCells(
     CellReader cells,
     ProjectStore projects,
     ProjectFolders folders,
+    Staleness staleness,
     TimeProvider clock)
 {
     private const PipelineStage Stage = PipelineStage.Stills;
@@ -40,6 +41,7 @@ internal sealed class StillCells(
         }
         // While the stills are made, one this run is to make (in the batch, or never made) and has not reached yet is still to come.
         var stored = runner.StoredInRun(projectId, Stage);
+        var stale = await staleness.GetAsync(projectId, cancellationToken);
         var stills = stageCells.Where(c => c.Key != "").Select(cell =>
         {
             var own = versions.Where(v => v.Key == cell.Key).OrderBy(v => v.Version).ToList();
@@ -58,7 +60,10 @@ internal sealed class StillCells(
                 cell.Queued,
                 cell.QueuedPrompt,
                 cell.State == StageState.Failed ? cell.Error : null,
-                runner.LiveActivity(projectId, Stage, cell.Key) ?? StoredJson.Read<List<ActivityLine>>(cell.ActivityJson));
+                runner.LiveActivity(projectId, Stage, cell.Key) ?? StoredJson.Read<List<ActivityLine>>(cell.ActivityJson))
+            {
+                Stale = stale.GetValueOrDefault((Stage, cell.Key)),
+            };
         }).OrderBy(s => s.Key, StringComparer.Ordinal).ToList();
         return new StillsView(
             projectId,

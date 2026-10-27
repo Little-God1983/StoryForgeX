@@ -48,6 +48,9 @@
               <DataTrigger Binding="{Binding IsMissing}" Value="True">
                 <Setter TargetName="Card" Property="Background" Value="{StaticResource PillErrorBackBrush}" />
               </DataTrigger>
+              <DataTrigger Binding="{Binding IsStale}" Value="True">
+                <Setter TargetName="Card" Property="Background" Value="{StaticResource NoteBackBrush}" />
+              </DataTrigger>
             </ControlTemplate.Triggers>
           </ControlTemplate>
         </Button.Template>
@@ -69,6 +72,9 @@
                     </DataTrigger>
                     <DataTrigger Binding="{Binding IsMissing}" Value="True">
                       <Setter Property="Foreground" Value="{StaticResource PillErrorTextBrush}" />
+                    </DataTrigger>
+                    <DataTrigger Binding="{Binding IsStale}" Value="True">
+                      <Setter Property="Foreground" Value="#B4A8F5" />
                     </DataTrigger>
                   </Style.Triggers>
                 </Style>

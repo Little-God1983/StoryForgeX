@@ -14,7 +14,8 @@ internal sealed class VoiceSegments(
     IDbContextFactory<StoryForgeDbContext> contextFactory,
     PipelineRunner runner,
     ProjectStore projects,
-    ProjectFolders folders)
+    ProjectFolders folders,
+    Staleness staleness)
 {
     private const PipelineStage Stage = PipelineStage.Voice;
 
@@ -33,6 +34,7 @@ internal sealed class VoiceSegments(
 
         // While the whole voice is spoken, a segment this run has not reached yet is still to come.
         var stored = runner.StoredInRun(projectId, Stage);
+        var stale = await staleness.GetAsync(projectId, cancellationToken);
         var segments = stageCells.Where(c => c.Key != "").OrderBy(c => c.Key, StringComparer.Ordinal).Select(cell =>
         {
             var own = versions.Where(v => v.Key == cell.Key).OrderBy(v => v.Version).ToList();
@@ -53,7 +55,10 @@ internal sealed class VoiceSegments(
                 clip.Parts,
                 clip.Words,
                 cell.State == StageState.Failed ? cell.Error : null,
-                runner.LiveActivity(projectId, Stage, cell.Key) ?? StoredJson.Read<List<ActivityLine>>(cell.ActivityJson));
+                runner.LiveActivity(projectId, Stage, cell.Key) ?? StoredJson.Read<List<ActivityLine>>(cell.ActivityJson))
+            {
+                Stale = stale.GetValueOrDefault((Stage, cell.Key)),
+            };
         }).OfType<VoiceSegmentView>().ToList();
         return new VoiceView(
             projectId,

@@ -68,6 +68,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IStageWorker, ResearchStage>();
         services.AddSingleton<FactSheets>();
         services.AddSingleton<CellReader>();
+        services.AddSingleton<Staleness>();
         services.AddSingleton<IScriptAgent, ClaudeCliScriptAgent>();
         services.AddSingleton<IStageWorker, ScriptStage>();
         services.AddSingleton<ScriptSegments>();
