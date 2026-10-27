@@ -718,6 +718,12 @@ public sealed class StillsRunTests : IDisposable
         await StillsAsync(client, project.Id);
 
         await Assert.ThrowsAsync<InvalidOperationException>(() => client.ApproveAsync(project.Id, PipelineStage.Stills, 1));
+        foreach (var still in (await client.GetStillsAsync(project.Id)).Stills)
+        {
+            await client.ApproveSegmentAsync(project.Id, PipelineStage.Stills, still.Key, still.Version);
+        }
+        await client.ApproveAsync(project.Id, PipelineStage.Stills, 1);
+        Assert.Equal(StageState.Approved, (await client.GetStillsAsync(project.Id)).State);
     }
 
     [Fact]
