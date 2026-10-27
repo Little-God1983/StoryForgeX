@@ -17,7 +17,9 @@ internal sealed record StillPicture(string Name, string Look);
 /// <param name="Label">"S01·2".</param>
 /// <param name="Pictures">The pictures the image model gets with the prompt, in order; empty for text only.</param>
 /// <param name="FromShotBefore">The first picture is the still of the shot before: the camera moves on in the same scene.</param>
-internal sealed record StillShot(string Label, string Description, IReadOnlyList<string> Cast, string Heard, IReadOnlyList<StillPicture> Pictures, bool FromShotBefore);
+/// <param name="Described">Who is in it with a reference but no picture (the workflow takes one): in words only.</param>
+internal sealed record StillShot(
+    string Label, string Description, IReadOnlyList<string> Cast, string Heard, IReadOnlyList<StillPicture> Pictures, bool FromShotBefore, IReadOnlyList<StillPicture> Described);
 
 /// <summary>What the still prompts are written from: the brief, the shots, and the image profile's instructions.</summary>
 /// <param name="Model">The model to use; empty means the provider's default.</param>
@@ -159,6 +161,10 @@ internal sealed class ClaudeCliStillPromptAgent(ClaudeCli claude, IOptions<Story
                 var picture = shot.Pictures[i];
                 var shows = i == 0 && shot.FromShotBefore ? "the still of the shot before (same scene)" : picture.Name;
                 prompt.AppendLine(CultureInfo.InvariantCulture, $"Picture {i + 1} shows {shows}{(picture.Look.Length > 0 ? $": {picture.Look}" : "")}");
+            }
+            foreach (var described in shot.Described)
+            {
+                prompt.AppendLine(CultureInfo.InvariantCulture, $"In no picture, so describe how they look: {described.Name}{(described.Look.Length > 0 ? $": {described.Look}" : "")}");
             }
         }
         prompt.AppendLine();

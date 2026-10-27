@@ -76,10 +76,11 @@ internal sealed partial class StillsStage(
                 : previous is { ContinuesFrom: null } && File.Exists(Path.Combine(painter.Root, previous.File)));
         }
         // What each shot's workflow gets, so the prompt names only pictures the model sees.
-        var sent = shots.Select((s, i) => Sent(painter, Pictures(plan, s), fromBefore[i])).ToList();
+        var all = shots.Select(s => Pictures(plan, s)).ToList();
+        var sent = shots.Select((s, i) => Sent(painter, all[i], fromBefore[i])).ToList();
         var asked = Enumerable.Range(0, shots.Count)
             .Where(i => todo[i] && queued.GetValueOrDefault(shots[i].Key) is null)
-            .Select(i => Describe(plan, shots[i], sent[i], fromBefore[i]))
+            .Select(i => Describe(plan, shots[i], sent[i], all[i], fromBefore[i]))
             .ToList();
         var prompts = asked.Count > 0 ? await PromptsAsync(context, asked, cancellationToken) : new Dictionary<string, string>();
 
@@ -98,7 +99,8 @@ internal sealed partial class StillsStage(
             var before = fromBefore[i] ? made.GetValueOrDefault(shots[i - 1].Key) ?? stored[shots[i - 1].Key] : null;
             var pictures = sent[i];
             var yours = queued.GetValueOrDefault(shot.Key);
-            var prompt = yours ?? Compose(painter.Profile.PromptTemplate, prompts[label], pictures.Select(p => p.Look));
+            // Everyone's look, pictured or not: one the workflow gets no picture of is in words only.
+            var prompt = yours ?? Compose(painter.Profile.PromptTemplate, prompts[label], all[i].Select(p => p.Look));
             var still = await PaintAsync(context, painter, plan, shot, prompt, pictures, before, yours is not null, cancellationToken);
             made[shot.Key] = still;
             var result = new CellResult(shot.Key, StoredJson.Write(still), Still.SchemaVersion, Hash(context.Project.Setup, shot, pictures, before, yours));
@@ -146,11 +148,14 @@ internal sealed partial class StillsStage(
                 before = still;
             }
         }
-        var pictures = Sent(painter, Pictures(plan, shot), before is not null);
+        var everyone = Pictures(plan, shot);
+        var pictures = Sent(painter, everyone, before is not null);
         // Waiting in the batch with your prompt: made with it, as the batch would.
         var yours = (await cells.QueuedStillsAsync(context.Project.Id, cancellationToken)).GetValueOrDefault(key);
         var prompt = yours ?? Compose(
-            painter.Profile.PromptTemplate, (await PromptsAsync(context, [Describe(plan, shot, pictures, before is not null)], cancellationToken))[label], pictures.Select(p => p.Look));
+            painter.Profile.PromptTemplate,
+            (await PromptsAsync(context, [Describe(plan, shot, pictures, everyone, before is not null)], cancellationToken))[label],
+            everyone.Select(p => p.Look));
         var made = await PaintAsync(context, painter, plan, shot, prompt, pictures, before, yours is not null, cancellationToken);
         return new CellResult(key, StoredJson.Write(made), Still.SchemaVersion, Hash(context.Project.Setup, shot, pictures, before, yours));
     }
@@ -285,14 +290,16 @@ internal sealed partial class StillsStage(
     private static IReadOnlyList<ShotPicture> Sent(Painter painter, IReadOnlyList<ShotPicture> pictures, bool fromBefore) =>
         painter.TakesMany ? pictures : fromBefore ? [] : [.. pictures.Take(1)];
 
-    private static StillShot Describe(Plan plan, Shot shot, IReadOnlyList<ShotPicture> sent, bool fromBefore)
+    /// <param name="everyone">The pictures of everyone in the shot with a reference; those not sent are described in words.</param>
+    private static StillShot Describe(Plan plan, Shot shot, IReadOnlyList<ShotPicture> sent, IReadOnlyList<ShotPicture> everyone, bool fromBefore)
     {
         var pictures = sent.Select(p => new StillPicture(p.Name, p.Look)).ToList();
+        var described = everyone.Where(p => !sent.Contains(p)).Select(p => new StillPicture(p.Name, p.Look)).ToList();
         if (fromBefore)
         {
             pictures.Insert(0, new StillPicture("the shot before", ""));
         }
-        return new StillShot(plan.Labels[shot.Key], shot.Description, shot.Cast, plan.Heard.GetValueOrDefault(shot.Key, ""), pictures, fromBefore);
+        return new StillShot(plan.Labels[shot.Key], shot.Description, shot.Cast, plan.Heard.GetValueOrDefault(shot.Key, ""), pictures, fromBefore, described);
     }
 
     /// <summary>Claude's prompt for each shot, by label; a failed check goes back to it, twice.</summary>

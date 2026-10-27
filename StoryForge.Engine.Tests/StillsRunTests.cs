@@ -660,6 +660,22 @@ public sealed class StillsRunTests : IDisposable
     }
 
     [Fact]
+    public async Task Who_gets_no_picture_still_goes_into_the_prompt_by_their_look()
+    {
+        // One picture only, and S01·2 continues S01·1: the still before is the picture, Karlach is in words.
+        _template = "{shot.visual}, {characters.sheet}";
+        var client = await StartAsync();
+        var project = await ReferencesApprovedAsync(client, board: Board(i => i == 1));
+
+        var view = await StillsAsync(client, project.Id);
+
+        var keys = await KeysAsync(client, project.Id);
+        var asked = _prompts.Requests.Single().Shots[1];
+        Assert.Equal(["Karlach"], asked.Described.Select(p => p.Name));
+        Assert.Equal("the still of S01-2, Karlach as the picture shows.", view.Stills.Single(s => s.Key == keys["S01·2"]).Still!.Prompt);
+    }
+
+    [Fact]
     public async Task A_shot_description_can_be_changed_while_the_stills_are_made()
     {
         _comfy.Hold = new TaskCompletionSource();

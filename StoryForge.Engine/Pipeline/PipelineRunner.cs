@@ -546,8 +546,6 @@ internal sealed class PipelineRunner(
                 child.State = gated ? StageState.NeedsReview : StageState.Approved;
                 child.ApprovedVersion = gated ? null : child.CurrentVersion;
                 child.Error = null;
-                child.Queued = false;   // made again: out of the batch
-                child.QueuedPrompt = null;
                 child.UpdatedAt = clock.GetUtcNow();
             }
         }
