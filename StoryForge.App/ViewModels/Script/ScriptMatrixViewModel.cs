@@ -345,7 +345,8 @@ public sealed partial class ScriptMatrixViewModel(IStoryForgeClient client, Guid
 
     /// <summary>"Out of date: S04's script changed since it was spoken."; null while the selected cell is up to date.</summary>
     public string? SelectedStale =>
-        (IsBoardPanel ? SelectedShot?.Shot.Stale : IsStillPanel ? SelectedStill?.Stale : IsVoicePanel ? SelectedVoice?.Stale : Selected?.Segment.Stale) is { } why
+        (IsBoardPanel ? SelectedShot?.DisplayState : IsStillPanel ? SelectedShot?.Still.DisplayState : IsVoicePanel ? Selected?.Voice.DisplayState : Selected?.DisplayState) == StageState.Stale
+        && (IsBoardPanel ? SelectedShot?.Shot.Stale : IsStillPanel ? SelectedStill?.Stale : IsVoicePanel ? SelectedVoice?.Stale : Selected?.Segment.Stale) is { } why
             ? $"Out of date: {why}"
             : null;
 

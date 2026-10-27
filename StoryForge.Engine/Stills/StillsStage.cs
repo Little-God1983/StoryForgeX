@@ -240,7 +240,8 @@ internal sealed partial class StillsStage(
         Plan plan;
         try
         {
-            plan = await PlanAsync(cells, folders, project, cancellationToken);
+            // While the references wait for review, the stills are still compared with the approved images.
+            plan = await PlanAsync(cells, folders, project, cancellationToken, requireApproved: false);
         }
         catch (StageFailedException)
         {
@@ -264,9 +265,9 @@ internal sealed partial class StillsStage(
         return hashes;
     }
 
-    private static async Task<Plan> PlanAsync(CellReader cells, ProjectFolders folders, Project project, CancellationToken cancellationToken)
+    private static async Task<Plan> PlanAsync(CellReader cells, ProjectFolders folders, Project project, CancellationToken cancellationToken, bool requireApproved = true)
     {
-        if (await cells.StateAsync(project.Id, PipelineStage.References, cancellationToken) != StageState.Approved)
+        if (requireApproved && await cells.StateAsync(project.Id, PipelineStage.References, cancellationToken) != StageState.Approved)
         {
             throw new StageFailedException("Approve the references first: the stills are made from them.");
         }

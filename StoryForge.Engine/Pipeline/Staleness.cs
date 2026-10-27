@@ -67,7 +67,18 @@ internal sealed class Staleness(
         {
             return last;
         }
-        var result = await ComputeAsync(projectId, stamp, cancellationToken);
+        Result result;
+        try
+        {
+            result = await ComputeAsync(projectId, stamp, cancellationToken);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // The marks are a help, not the screen: what cannot be worked out is left off.
+            Debug.WriteLine($"Working out what of {projectId} is out of date failed: {ex}");
+            return new Result(stamp, new Dictionary<(PipelineStage, string), string>(),
+                new StillCounts(new Dictionary<string, int>(), new Dictionary<string, int>(), new Dictionary<string, int>()));
+        }
         _last[projectId] = result;
         return result;
     }
@@ -80,15 +91,22 @@ internal sealed class Staleness(
         var all = await db.Cells.AsNoTracking().Where(c => c.ProjectId == projectId && c.Key != "" && c.CurrentVersion != null).ToListAsync(cancellationToken);
         // Only the versions a cell points to (its current and its approved one), by stage, key and version.
         var wanted = all.SelectMany(c => new[] { c.CurrentVersion, c.ApprovedVersion }.OfType<int>().Select(v => (c.Stage, c.Key, v))).ToHashSet();
-        var versions = (await db.CellVersions.AsNoTracking()
-            .Where(v => v.ProjectId == projectId && v.Key != "")
-            .ToListAsync(cancellationToken))
+        var versions = (await (
+                from v in db.CellVersions.AsNoTracking()
+                join c in db.Cells.AsNoTracking() on new { v.ProjectId, v.Stage, v.Key } equals new { c.ProjectId, c.Stage, c.Key }
+                where v.ProjectId == projectId && v.Key != "" && (v.Version == c.CurrentVersion || v.Version == c.ApprovedVersion)
+                select v).ToListAsync(cancellationToken))
             .Where(v => wanted.Contains((v.Stage, v.Key, v.Version)))
             .ToDictionary(v => (v.Stage, v.Key, v.Version));
         CellVersionEntry? Current(CellEntry cell, Func<CellEntry, int?> pick) =>
             pick(cell) is { } number && versions.TryGetValue((cell.Stage, cell.Key, number), out var v) ? v : null;
         IEnumerable<CellEntry> Of(PipelineStage stage) => all.Where(c => c.Stage == stage);
         var stale = new Dictionary<(PipelineStage, string), string>();
+
+        // What a cell shows is its current version; what the next stage was made from is the one it
+        // reads, its approved version else its current one. Out of date is passed down from that one.
+        static int? Read(CellEntry cell) => cell.ApprovedVersion ?? cell.CurrentVersion;
+        var readStale = new HashSet<(PipelineStage, string)>();
 
         // The script, from the approved fact sheet.
         if ((await cells.ApprovedFactSheetAsync(projectId, cancellationToken))?.Version is { } facts)
@@ -100,24 +118,37 @@ internal sealed class Staleness(
                 {
                     stale[(PipelineStage.Script, cell.Key)] = "The fact sheet changed since it was written.";
                 }
+                if (Current(cell, Read) is { } read && read.InputHash != hash)
+                {
+                    readStale.Add((PipelineStage.Script, cell.Key));
+                }
             }
         }
 
         // A segment's voice, from the segment as the voice reads it.
-        var script = Of(PipelineStage.Script).ToDictionary(c => c.Key, c => Current(c, s => s.ApprovedVersion ?? s.CurrentVersion));
+        var script = Of(PipelineStage.Script).ToDictionary(c => c.Key, c => Current(c, Read));
         foreach (var cell in Of(PipelineStage.Voice))
         {
-            if (Current(cell, c => c.CurrentVersion) is not { } version || script.GetValueOrDefault(cell.Key) is not { } segment)
+            if (script.GetValueOrDefault(cell.Key) is not { } segment)
             {
                 continue;
             }
-            if (version.InputHash != VoiceStage.Hash(setup, StoredJson.Read<Segment>(segment.OutputJson), segment.Version))
+            var hash = VoiceStage.Hash(setup, StoredJson.Read<Segment>(segment.OutputJson), segment.Version);
+            var scriptStale = readStale.Contains((PipelineStage.Script, cell.Key));
+            if (Current(cell, c => c.CurrentVersion) is { } version)
             {
-                stale[(PipelineStage.Voice, cell.Key)] = $"{cell.Key}'s script changed since it was spoken.";
+                if (version.InputHash != hash)
+                {
+                    stale[(PipelineStage.Voice, cell.Key)] = $"{cell.Key}'s script changed since it was spoken.";
+                }
+                else if (scriptStale)
+                {
+                    stale[(PipelineStage.Voice, cell.Key)] = $"{cell.Key}'s script is out of date.";
+                }
             }
-            else if (stale.ContainsKey((PipelineStage.Script, cell.Key)))
+            if (Current(cell, Read) is { } read && (read.InputHash != hash || scriptStale))
             {
-                stale[(PipelineStage.Voice, cell.Key)] = $"{cell.Key}'s script is out of date.";
+                readStale.Add((PipelineStage.Voice, cell.Key));
             }
         }
 
@@ -141,7 +172,7 @@ internal sealed class Staleness(
             {
                 stale[(PipelineStage.Storyboard, cell.Key)] = $"{shot.SegmentId}'s voice changed since the shot was cut.";
             }
-            else if (stale.ContainsKey((PipelineStage.Voice, shot.SegmentId)))
+            else if (readStale.Contains((PipelineStage.Voice, shot.SegmentId)))
             {
                 stale[(PipelineStage.Storyboard, cell.Key)] = $"{shot.SegmentId}'s voice is out of date.";
             }
@@ -247,7 +278,8 @@ internal sealed class Staleness(
                 var reached = new HashSet<string>();
                 foreach (var shot in shots)
                 {
-                    if (stills.GetValueOrDefault(shot.Key) is { } still
+                    // Your own picture is made of nothing: a reference change leaves it as it is.
+                    if (stills.GetValueOrDefault(shot.Key) is { YourFile: false } still
                         && (direct(id, shot, still) || (still.ContinuesFrom is { } from && reached.Contains(from))))
                     {
                         reached.Add(shot.Key);

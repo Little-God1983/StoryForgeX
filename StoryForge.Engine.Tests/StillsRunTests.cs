@@ -862,6 +862,23 @@ public sealed class StillsRunTests : IDisposable
     }
 
     [Fact]
+    public async Task A_stale_still_stays_stale_while_the_references_wait_for_review()
+    {
+        var client = await StartAsync();
+        var project = await ReferencesApprovedAsync(client);
+        await StillsAsync(client, project.Id);
+        var keys = await KeysAsync(client, project.Id);
+        await client.EditShotAsync(project.Id, keys["S01·3"], new ShotChange(Description: "Karlach at the gate"));
+        Assert.Equal("Shot S01·3 changed since the still was made.", (await client.GetStillsAsync(project.Id)).Stills.Single(s => s.Key == keys["S01·3"]).Stale);
+
+        // A reference image made again: the references wait for review once more.
+        await client.RegenerateSegmentAsync(project.Id, PipelineStage.References, "R02/1");
+        await ScriptRunTests.WaitForAsync(() => client.GetReferencesAsync(project.Id), v => v.State == StageState.NeedsReview);
+
+        Assert.Equal("Shot S01·3 changed since the still was made.", (await client.GetStillsAsync(project.Id)).Stills.Single(s => s.Key == keys["S01·3"]).Stale);
+    }
+
+    [Fact]
     public async Task The_warnings_count_per_image_too()
     {
         var client = await StartAsync();

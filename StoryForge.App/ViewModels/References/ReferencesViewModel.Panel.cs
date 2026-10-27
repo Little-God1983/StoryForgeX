@@ -210,7 +210,8 @@ public sealed partial class ReferencesViewModel
     private Task ShowVersionAsync(int version)
     {
         var key = SelectedImage!.Key;
-        return ConfirmedImage(key) ? ActAsync("switch the version", () => client.SelectSegmentVersionAsync(ProjectId, PipelineStage.References, key, version)) : Task.CompletedTask;
+        // The stills are made from the approved version, which stays: nothing to ask.
+        return ActAsync("switch the version", () => client.SelectSegmentVersionAsync(ProjectId, PipelineStage.References, key, version));
     }
 
     private bool CanAddImage() => CardIdle() && !IsListPhase;

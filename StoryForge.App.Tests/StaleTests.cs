@@ -187,6 +187,31 @@ public sealed class StaleTests
     }
 
     [Fact]
+    public async Task Looking_at_another_version_of_an_image_asks_nothing()
+    {
+        var (page, _) = await ReferencesAsync(6);
+
+        await page.References!.ShowVersionCommand.ExecuteAsync(1);
+
+        Assert.Empty(_asked);   // the stills are made from the approved one, which stays
+    }
+
+    [Fact]
+    public async Task A_stale_cell_being_made_again_shows_no_out_of_date_box()
+    {
+        var (page, project) = await OpenAsync();
+        _client.Voices[project.Id] = _client.Voices[project.Id] with
+        {
+            Segments = [.. _client.Voices[project.Id].Segments.Select(s => s.Id == "S02" ? s with { State = StageState.Running } : s)],
+        };
+        await page.Script!.LoadAsync();
+
+        page.Script.Rows[1].Voice.SelectCommand.Execute(null);
+
+        Assert.Null(page.Script.SelectedStale);
+    }
+
+    [Fact]
     public async Task A_reference_no_still_uses_changes_without_a_question()
     {
         var (page, _) = await ReferencesAsync(0);
