@@ -125,7 +125,7 @@ public sealed class StillsMatrixTests
         Assert.Equal("queued", script.Rows[1].Shots[0].Still.VersionText);
         Assert.Equal("review · version 1 · queued", script.SelectedStatus);
         Assert.Equal("Waits in the batch: Continue pipeline makes it again.", script.StillQueuedText);
-        Assert.Equal("1 still waits in the batch: Continue pipeline makes it again.", script.QueuedSummary);
+        Assert.Equal("1 still waits in the batch: Continue pipeline makes it.", script.QueuedSummary);
         Assert.True(script.ContinuePipelineCommand.CanExecute(null));
 
         await script.ContinuePipelineCommand.ExecuteAsync(null);
@@ -222,9 +222,10 @@ public sealed class StillsMatrixTests
     }
 
     [Fact]
-    public async Task While_every_still_is_made_each_cell_shows_running_until_it_is_done()
+    public async Task While_the_first_stills_are_made_each_cell_shows_running_until_it_is_done()
     {
-        var (matrix, project) = await OpenAsync();
+        var (matrix, project) = await OpenAsync(new StillsView(Guid.Empty, StageState.NotStarted, null, [], [], ReferencesApproved: true));
+        _client.Stills[project.Id] = _client.Stills[project.Id] with { ProjectId = project.Id };
         var script = matrix.Script!;
 
         _client.Raise(new StageUpdate(project.Id, PipelineStage.Stills, StageState.Running, new ActivityLine(At, ActivityKind.Model, "S01·1 (1 of 3)")));
@@ -234,6 +235,36 @@ public sealed class StillsMatrixTests
         Assert.Equal("S01·1 (1 of 3)", script.StillsProgress);
         Assert.All(script.Rows.SelectMany(r => r.Shots), s => Assert.Equal(StageState.Running, s.Still.State));
         Assert.False(script.ContinuePipelineCommand.CanExecute(null));
+    }
+
+    [Fact]
+    public async Task After_a_failed_run_Continue_pipeline_makes_the_shots_with_no_still_yet()
+    {
+        // The run made S01·1 and S01·2, then failed: S02·1 has no still.
+        var (matrix, _) = await OpenAsync(new StillsView(Guid.Empty, StageState.Failed, "S02·1: CUDA out of memory", [],
+            [Made("S01/0001"), Made("S01/0002")], true));
+        var script = matrix.Script!;
+
+        Assert.True(script.IsStillsFailed);
+        Assert.Equal("1 shot has no still yet: Continue pipeline makes it.", script.QueuedSummary);
+        await script.ContinuePipelineCommand.ExecuteAsync(null);
+
+        Assert.Equal(("continue", "", (string?)null), _client.StillActions.Single());
+    }
+
+    [Fact]
+    public async Task While_the_batch_is_made_only_its_stills_show_running()
+    {
+        var (matrix, project) = await OpenAsync();
+        var script = matrix.Script!;
+        _client.Stills[project.Id] = _client.Stills[project.Id] with { Stills = [.. _client.Stills[project.Id].Stills.Select(s => s.Key == "S02/0001" ? s with { Queued = true } : s)] };
+        await script.LoadAsync();
+
+        _client.Raise(new StageUpdate(project.Id, PipelineStage.Stills, StageState.Running));
+        await matrix.Updating;
+
+        Assert.Equal(["approved", "review", "running"], script.Rows.SelectMany(r => r.Shots).Select(s => s.Still.StateText));
+        Assert.Equal("v1", script.Rows[1].Shots[0].Still.VersionText);   // running: no longer "queued"
     }
 
     [Fact]

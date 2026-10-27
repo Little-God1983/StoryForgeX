@@ -296,12 +296,15 @@
       <Border Style="{StaticResource BarStyle}" Background="{StaticResource PillErrorBackBrush}" BorderBrush="#6B3A33"
               Visibility="{Binding IsStillsFailed, Converter={StaticResource Visible}}">
         <DockPanel>
-          <Button DockPanel.Dock="Right" Content="Retry" Style="{StaticResource PrimaryButtonStyle}" MinHeight="36" FontSize="13"
-                  Background="{StaticResource ErrorTextBrush}" Command="{Binding RegenerateStillsCommand}" AutomationProperties.Name="Retry the stills" />
+          <!-- Continue pipeline makes what is waiting: the stills the run did not get to, and the batch; those made stay. -->
+          <Button DockPanel.Dock="Right" Content="Continue pipeline" Style="{StaticResource PrimaryButtonStyle}" MinHeight="36" FontSize="13"
+                  Background="{StaticResource ErrorTextBrush}" Command="{Binding ContinuePipelineCommand}" AutomationProperties.Name="Continue the stills" />
           <StackPanel VerticalAlignment="Center" Margin="0,0,14,0">
             <TextBlock Text="Stills failed" FontSize="14" FontWeight="SemiBold" Foreground="{StaticResource PillErrorTextBrush}" />
             <TextBlock Text="{Binding StillsError}" FontSize="13" Foreground="#E2C1BB" TextWrapping="Wrap" Margin="0,2,0,0"
                        AutomationProperties.AutomationId="StillsError" />
+            <TextBlock Text="{Binding QueuedSummary}" FontSize="12" Foreground="#E2C1BB" TextWrapping="Wrap" Margin="0,2,0,0"
+                       Visibility="{Binding HasQueuedStills, Converter={StaticResource Visible}}" />
           </StackPanel>
         </DockPanel>
       </Border>

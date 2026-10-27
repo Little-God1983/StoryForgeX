@@ -162,6 +162,15 @@ internal sealed class CellReader(IDbContextFactory<StoryForgeDbContext> contextF
         (await ReadSegmentsAsync(projectId, PipelineStage.Stills, c => c.CurrentVersion, cancellationToken))
             .ToDictionary(v => v.Key, v => StoredJson.Read<Still>(v.OutputJson));
 
+    /// <summary>The stills waiting in the batch, by shot key, with your prompt for each (null: Claude writes it).</summary>
+    public async Task<IReadOnlyDictionary<string, string?>> QueuedStillsAsync(Guid projectId, CancellationToken cancellationToken)
+    {
+        await using var db = await contextFactory.CreateDbContextAsync(cancellationToken);
+        return await db.Cells.AsNoTracking()
+            .Where(c => c.ProjectId == projectId && c.Stage == PipelineStage.Stills && c.Key != "" && c.Queued)
+            .ToDictionaryAsync(c => c.Key, c => c.QueuedPrompt, cancellationToken);
+    }
+
     /// <summary>The shots as they stand, each in its current version: by segment, then where they start.</summary>
     public async Task<IReadOnlyList<Shot>> CurrentShotsAsync(Guid projectId, CancellationToken cancellationToken) =>
         [.. (await ReadSegmentsAsync(projectId, PipelineStage.Storyboard, c => c.CurrentVersion, cancellationToken))

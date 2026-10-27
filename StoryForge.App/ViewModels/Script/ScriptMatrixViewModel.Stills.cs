@@ -27,7 +27,11 @@ public sealed partial class StillCellViewModel(Action<StillCellViewModel> select
 
     public bool HasStill => Still is not null;
 
-    public bool IsQueued => Still?.Queued == true;
+    /// <summary>It waits in the batch; while the batch is made it shows running instead.</summary>
+    public bool IsQueued => Still is { Queued: true, State: not StageState.Running };
+
+    /// <summary>A run is to make it: it waits in the batch, or was never made (its cell has no version).</summary>
+    public bool IsWaiting => Still is null || Still.Queued || Still.Still is null;
 
     // A shot the run never got to stays "—" when the run failed: the bar says where it failed.
     public StageState State => Still?.State ?? (StageState == StageState.Running ? StageState.Running : StageState.NotStarted);
@@ -55,7 +59,7 @@ public sealed partial class ScriptMatrixViewModel
 {
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsStillsRunning), nameof(IsStillsReview), nameof(IsStillsApproved), nameof(IsStillsFailed), nameof(CanMakeStills))]
-    [NotifyCanExecuteChangedFor(nameof(ApproveRemainingStillsCommand), nameof(ContinuePipelineCommand), nameof(RegenerateStillsCommand), nameof(CancelStillsCommand),
+    [NotifyCanExecuteChangedFor(nameof(ApproveRemainingStillsCommand), nameof(ContinuePipelineCommand), nameof(CancelStillsCommand),
         nameof(ApproveSegmentCommand), nameof(RegenerateSegmentCommand))]
     private StageState _stillsState;
 
@@ -86,12 +90,15 @@ public sealed partial class ScriptMatrixViewModel
     [ObservableProperty]
     private string _stillsApprovedSummary = "";
 
-    /// <summary>"2 stills wait in the batch: Continue pipeline makes them again."; empty when none does.</summary>
+    /// <summary>"2 stills wait in the batch, 1 shot has no still yet: Continue pipeline makes them."; empty when nothing waits.</summary>
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(HasQueuedStills))]
     private string _queuedSummary = "";
 
     public bool HasQueuedStills => QueuedSummary.Length > 0;
+
+    /// <summary>Continue pipeline has something to make: stills in the batch, or shots with no still yet.</summary>
+    private bool HasWaitingStills => StillsState != StageState.NotStarted && StillCells.Any(c => c.IsWaiting);
 
     private IEnumerable<StillCellViewModel> StillCells => Rows.SelectMany(r => r.Shots).Select(s => s.Still);
 
@@ -102,17 +109,11 @@ public sealed partial class ScriptMatrixViewModel
 
     // The batch runs when nothing of the stills runs; a project whose stills were never made starts them.
     private bool CanContinuePipeline() =>
-        CanMakeStills || (!IsStillsRunning && StillCells.Any(c => c.IsQueued) && StillCells.All(c => c.State != StageState.Running));
+        CanMakeStills || (_referencesApproved && !IsStillsRunning && HasWaitingStills && StillCells.All(c => c.State != StageState.Running));
 
-    /// <summary>Continue pipeline: the stills waiting in the batch are made again, one after another.</summary>
+    /// <summary>Continue pipeline: one run makes the stills in the batch and those of shots with none yet.</summary>
     [RelayCommand(CanExecute = nameof(CanContinuePipeline))]
     private Task ContinuePipelineAsync() => ActAsync("continue the pipeline", () => client.ContinuePipelineAsync(ProjectId));
-
-    private bool CanRegenerateStills() => !IsStillsRunning && _referencesApproved && StillCells.All(c => c.State != StageState.Running);
-
-    /// <summary>Retry after the stills failed: every still is made again.</summary>
-    [RelayCommand(CanExecute = nameof(CanRegenerateStills))]
-    private Task RegenerateStillsAsync() => ActAsync("make the stills", () => client.RegenerateAsync(ProjectId, PipelineStage.Stills));
 
     [RelayCommand(CanExecute = nameof(IsStillsRunning))]
     private Task CancelStillsAsync() => ActAsync("cancel the stills", () => client.CancelAsync(ProjectId, PipelineStage.Stills));
@@ -131,9 +132,9 @@ public sealed partial class ScriptMatrixViewModel
                 StillsError = null;
                 foreach (var cell in StillCells)
                 {
-                    // Every still is made again; each shows its new state as it is done.
+                    // The ones this run makes (in the batch, or with none yet) show their new state as each is done.
                     cell.StageState = StageState.Running;
-                    cell.Still = cell.Still is { } made ? made with { State = StageState.Running } : null;
+                    cell.Still = cell.Still is { } made && cell.IsWaiting ? made with { State = StageState.Running } : cell.Still;
                 }
                 RefreshSelection(keepLive: false);
             }
@@ -186,11 +187,20 @@ public sealed partial class ScriptMatrixViewModel
         var shots = Rows.Sum(r => r.Shots.Count);
         StillsApprovedSummary = $"{StillCells.Count(c => c.State == StageState.Approved)} of {shots} shots approved.";
         var queued = StillCells.Count(c => c.IsQueued);
-        QueuedSummary = queued == 0 ? "" : $"{queued} {(queued == 1 ? "still waits" : "stills wait")} in the batch: Continue pipeline makes {(queued == 1 ? "it" : "them")} again.";
+        var missing = stills.State == StageState.NotStarted ? 0 : StillCells.Count(c => c.Still?.Still is null && c.State != StageState.Running);
+        var parts = new List<string>();
+        if (queued > 0)
+        {
+            parts.Add($"{queued} {(queued == 1 ? "still waits" : "stills wait")} in the batch");
+        }
+        if (missing > 0)
+        {
+            parts.Add($"{missing} {(missing == 1 ? "shot has" : "shots have")} no still yet");
+        }
+        QueuedSummary = parts.Count == 0 ? "" : $"{string.Join(", ", parts)}: Continue pipeline makes {(queued + missing == 1 ? "it" : "them")}.";
         OnPropertyChanged(nameof(CanMakeStills));
         ApproveRemainingStillsCommand.NotifyCanExecuteChanged();
         ContinuePipelineCommand.NotifyCanExecuteChanged();
-        RegenerateStillsCommand.NotifyCanExecuteChanged();
     }
 
     private void SelectStill(StillCellViewModel cell)

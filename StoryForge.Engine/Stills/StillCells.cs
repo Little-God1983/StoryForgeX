@@ -10,7 +10,8 @@ namespace StoryForge.Engine.Stills;
 /// <summary>
 /// The stills as the matrix shows them, and what you do to them besides approving and switching
 /// versions (<see cref="SegmentCells"/>): Regenerate and Edit prompt… put a still in the batch,
-/// Continue pipeline makes the batch, Replace with file… puts your own picture in.
+/// Continue pipeline makes the batch (and any shot's still still missing) in one run, Replace with
+/// file… puts your own picture in.
 /// </summary>
 internal sealed class StillCells(
     IDbContextFactory<StoryForgeDbContext> contextFactory,
@@ -37,7 +38,7 @@ internal sealed class StillCells(
         {
             return new StillsView(projectId, StageState.NotStarted, null, [], [], referencesApproved);
         }
-        // While every still is made, one this run has not reached yet is still to come.
+        // While the stills are made, one this run is to make (in the batch, or never made) and has not reached yet is still to come.
         var stored = runner.StoredInRun(projectId, Stage);
         var stills = stageCells.Where(c => c.Key != "").Select(cell =>
         {
@@ -47,7 +48,7 @@ internal sealed class StillCells(
             var path = still is null ? null : Path.Combine(root, still.File);
             return new StillView(
                 cell.Key,
-                stored is not null && !stored.Contains(cell.Key) ? StageState.Running : cell.State,
+                stored is not null && !stored.Contains(cell.Key) && (cell.Queued || cell.CurrentVersion is null) ? StageState.Running : cell.State,
                 cell.CurrentVersion ?? 0,
                 cell.ApprovedVersion,
                 [.. own.Select(v => new ResultVersion(v.Version, v.Origin, v.CreatedAt, v.BasedOn))],
@@ -69,15 +70,18 @@ internal sealed class StillCells(
     }
 
     /// <summary>Regenerate (or Edit prompt…, with your prompt): the still waits in the batch for Continue pipeline.</summary>
-    /// <param name="prompt">Your prompt, used as it is; null or blank for one Claude writes.</param>
+    /// <param name="prompt">
+    /// Your prompt, used as it is; null or blank for one Claude writes. Regenerate on a still already
+    /// waiting with your prompt keeps it: take it out of the batch to have Claude write it again.
+    /// </param>
     public async Task QueueAsync(Guid projectId, string shotKey, string? prompt, CancellationToken cancellationToken)
     {
         prompt = string.IsNullOrWhiteSpace(prompt) ? null : prompt.Trim();
         segments.RequireIdle(projectId, Stage, shotKey);
         await ChangeAsync(projectId, shotKey, cell =>
         {
+            cell.QueuedPrompt = prompt ?? (cell.Queued ? cell.QueuedPrompt : null);
             cell.Queued = true;
-            cell.QueuedPrompt = prompt;
         }, cancellationToken);
     }
 
@@ -93,46 +97,29 @@ internal sealed class StillCells(
     }
 
     /// <summary>
-    /// Continue pipeline: every still in the batch is made again, in the order of the shots, one
-    /// after another (the model loads once). Stills never made (references approved before this
-    /// stage existed) are all made.
+    /// Continue pipeline: one run makes what is waiting, in the order of the shots, so the model loads
+    /// once: every still in the batch, and every shot with no still yet (never made, a run that
+    /// failed before it, a shot split off later). The first time, that is all of them.
     /// </summary>
-    /// <exception cref="InvalidOperationException">Nothing is waiting, or the stills are being made.</exception>
+    /// <exception cref="InvalidOperationException">Nothing is waiting, the references are not approved, or the stills are being made.</exception>
     public async Task ContinueAsync(Guid projectId, CancellationToken cancellationToken)
     {
-        if (runner.IsBusy(projectId, Stage))
+        if (runner.IsAnyBusy(projectId, Stage))
         {
             throw new InvalidOperationException("The stills are being made. Try again when they are done.");
         }
         await projects.GetAsync(projectId, cancellationToken);
-        List<CellEntry> queued;
-        bool started;
-        await using (var db = await contextFactory.CreateDbContextAsync(cancellationToken))
+        if (await cells.StateAsync(projectId, PipelineStage.References, cancellationToken) != StageState.Approved)
         {
-            started = await db.Cells.AnyAsync(c => c.ProjectId == projectId && c.Stage == Stage && c.Key == "" && c.State != StageState.NotStarted, cancellationToken);
-            queued = await db.Cells.AsNoTracking().Where(c => c.ProjectId == projectId && c.Stage == Stage && c.Key != "" && c.Queued).ToListAsync(cancellationToken);
+            throw new InvalidOperationException("Approve the references first: the stills are made from them.");
         }
-        if (!started)
-        {
-            if (await cells.StateAsync(projectId, PipelineStage.References, cancellationToken) != StageState.Approved)
-            {
-                throw new InvalidOperationException("Approve the references first: the stills are made from them.");
-            }
-            await runner.RegenerateAsync(projectId, Stage, cancellationToken);
-            return;
-        }
-        if (queued.Count == 0)
+        var made = await cells.CurrentStillsAsync(projectId, cancellationToken);
+        var missing = (await cells.CurrentShotsAsync(projectId, cancellationToken)).Any(s => !made.ContainsKey(s.Key));
+        if (!missing && (await cells.QueuedStillsAsync(projectId, cancellationToken)).Count == 0)
         {
             throw new InvalidOperationException("No still is waiting to be made again: click Regenerate on the ones you want first.");
         }
-        // In the order of the shots: a continuation is made after the still it starts from.
-        var order = (await cells.CurrentShotsAsync(projectId, cancellationToken)).Select(s => s.Key).ToList();
-        var batch = queued
-            .OrderBy(c => order.IndexOf(c.Key) is >= 0 and var at ? at : int.MaxValue)
-            .ThenBy(c => c.Key, StringComparer.Ordinal)
-            .Select(c => (c.Key, c.QueuedPrompt))
-            .ToList();
-        await runner.EnqueueBatchAsync(projectId, Stage, batch, cancellationToken);
+        await runner.RegenerateAsync(projectId, Stage, cancellationToken);
     }
 
     /// <summary>Your own picture as the still's next version, to review like any other; nothing is made.</summary>
@@ -220,6 +207,10 @@ internal sealed class StillCells(
                 ?? throw new KeyNotFoundException($"There is no still of {shotKey} yet.");
             change(cell);
             cell.UpdatedAt = clock.GetUtcNow();
+            if (await db.Projects.FirstOrDefaultAsync(p => p.Id == projectId, cancellationToken) is { } project)
+            {
+                project.UpdatedAt = cell.UpdatedAt;
+            }
             await db.SaveChangesAsync(cancellationToken);
             state = cell.State;
         }

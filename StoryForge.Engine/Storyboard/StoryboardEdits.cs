@@ -197,6 +197,7 @@ internal sealed class StoryboardEdits(
                     if (cell is not null)
                     {
                         db.Cells.Remove(cell);
+                        await PipelineRunner.RemoveStillsAsync(db, projectId, [change.Key], cancellationToken);
                         states.Add((change.Key, StageState.NotStarted));
                     }
                     continue;

@@ -80,6 +80,11 @@ internal sealed class TestRenders(IComfyUi comfy, SettingsStore settings, IOptio
             var picture = files.FirstOrDefault(f => f.Kind == "images" && Path.GetExtension(f.Name).ToLowerInvariant() is ".png" or ".jpg" or ".jpeg" or ".webp")
                 ?? throw new StageFailedException("The workflow saved no image. It needs a node that saves it, e.g. Save Image.");
             Directory.CreateDirectory(folder);
+            // Only the last one is shown: the ones before go, so the folder does not fill up.
+            foreach (var old in Directory.EnumerateFiles(folder).Where(f => !Path.GetFileName(f).StartsWith("blank-", StringComparison.Ordinal)))
+            {
+                VoiceStage.DeleteQuietly(old);
+            }
             var path = Path.Combine(folder, $"{Guid.NewGuid():N}{Path.GetExtension(picture.Name)}");
             await File.WriteAllBytesAsync(path, picture.Content, cancellationToken);
             return new TestRender(path, prompt, seed, size, clock.GetElapsedTime(started));

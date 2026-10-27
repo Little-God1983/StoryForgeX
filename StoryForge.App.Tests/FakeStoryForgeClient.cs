@@ -308,7 +308,8 @@ internal sealed class FakeStoryForgeClient : IStoryForgeClient
             }
             else if (update.Stage == PipelineStage.Stills && Stills.TryGetValue(update.ProjectId, out var stills))
             {
-                Stills[update.ProjectId] = stills with { State = StageState.Running, Error = null, Activity = [], Stills = [.. stills.Stills.Select(s => s with { State = StageState.Running })] };
+                // As the engine has it: only the stills the run makes (in the batch, or with none yet) run.
+                Stills[update.ProjectId] = stills with { State = StageState.Running, Error = null, Activity = [], Stills = [.. stills.Stills.Select(s => s.Queued || s.Still is null ? s with { State = StageState.Running } : s)] };
             }
         }
         else if (update.Key is null && update.State != StageState.Running)

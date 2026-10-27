@@ -303,7 +303,8 @@ public sealed class StillsRunTests : IDisposable
         Assert.Equal(2, again.Count);
         Assert.StartsWith("the still of S01-3", again[0]);   // in the order of the shots, not of the clicks
         Assert.StartsWith("the still of S02-5", again[1]);
-        Assert.Equal(["S01·3"], _prompts.Requests[1].Shots.Select(s => s.Label));
+        // One prompt call for the whole batch.
+        Assert.Equal(["S01·3", "S02·5"], Assert.Single(_prompts.Requests.Skip(1)).Shots.Select(s => s.Label));
     }
 
     [Fact]
@@ -389,6 +390,114 @@ public sealed class StillsRunTests : IDisposable
         var refused = await Assert.ThrowsAsync<ArgumentException>(() => client.ReplaceStillAsync(project.Id, keys["S01·3"], file));
 
         Assert.StartsWith("notes.txt is not a PNG, JPEG or WebP picture.", refused.Message);
+    }
+
+    [Fact]
+    public async Task A_still_that_fails_in_the_batch_stays_in_it_with_your_prompt()
+    {
+        var client = await StartAsync();
+        var project = await ReferencesApprovedAsync(client);
+        await StillsAsync(client, project.Id);
+        var keys = await KeysAsync(client, project.Id);
+        _comfy.Failure = "CUDA out of memory";
+        _comfy.FailFor = "campfire";
+
+        await client.QueueStillAsync(project.Id, keys["S01·3"], "Karlach by a campfire");
+        await client.ContinuePipelineAsync(project.Id);
+        var view = await StillsAsync(client, project.Id, v => v.Stills.Single(s => s.Key == keys["S01·3"]).State == StageState.Failed);
+
+        var still = view.Stills.Single(s => s.Key == keys["S01·3"]);
+        Assert.Equal((true, "Karlach by a campfire"), (still.Queued, still.QueuedPrompt));
+    }
+
+    [Fact]
+    public async Task Regenerate_on_a_still_queued_with_your_prompt_keeps_your_prompt()
+    {
+        var client = await StartAsync();
+        var project = await ReferencesApprovedAsync(client);
+        await StillsAsync(client, project.Id);
+        var keys = await KeysAsync(client, project.Id);
+
+        await client.QueueStillAsync(project.Id, keys["S01·3"], "Karlach by a campfire");
+        await client.QueueStillAsync(project.Id, keys["S01·3"]);
+
+        Assert.Equal("Karlach by a campfire", (await client.GetStillsAsync(project.Id)).Stills.Single(s => s.Key == keys["S01·3"]).QueuedPrompt);
+    }
+
+    [Fact]
+    public async Task A_merged_away_shot_takes_its_still_with_it_and_the_stage_can_be_approved()
+    {
+        var client = await StartAsync();
+        var project = await ReferencesApprovedAsync(client);
+        await StillsAsync(client, project.Id);
+        var keys = await KeysAsync(client, project.Id);
+
+        await client.MergeShotAsync(project.Id, keys["S01·3"]);
+        var view = await client.GetStillsAsync(project.Id);
+
+        Assert.Equal(59, view.Stills.Count);
+        Assert.DoesNotContain(view.Stills, s => s.Key == keys["S01·4"]);
+        await client.ApproveSegmentsAsync(project.Id, PipelineStage.Stills);
+        Assert.Equal(StageState.Approved, (await StillsAsync(client, project.Id, v => v.State == StageState.Approved)).State);
+    }
+
+    [Fact]
+    public async Task A_shot_split_off_after_the_stills_gets_its_still_from_Continue_pipeline()
+    {
+        var client = await StartAsync();
+        var project = await ReferencesApprovedAsync(client);
+        await StillsAsync(client, project.Id);
+        var keys = await KeysAsync(client, project.Id);
+        var runs = StillRuns().Count;
+
+        await client.SplitShotAsync(project.Id, keys["S01·3"], 25);
+        var split = (await KeysAsync(client, project.Id))["S01·4"];
+        await client.ApproveSegmentsAsync(project.Id, PipelineStage.Stills);
+
+        // Every still there is approved, but the new shot has none yet: the stage waits for it.
+        Assert.Equal(StageState.NeedsReview, (await client.GetStillsAsync(project.Id)).State);
+        await client.ContinuePipelineAsync(project.Id);
+        var view = await StillsAsync(client, project.Id, v => v.Stills.Any(s => s.Key == split && s.State == StageState.NeedsReview));
+        Assert.Equal(runs + 1, StillRuns().Count);
+        Assert.Equal(61, view.Stills.Count);
+    }
+
+    [Fact]
+    public async Task After_a_failed_run_Continue_pipeline_makes_only_the_stills_still_missing()
+    {
+        _comfy.Failure = "CUDA out of memory";
+        _comfy.FailFor = "S02-1,";
+        var client = await StartAsync();
+        var project = await ReferencesApprovedAsync(client);
+        var failed = await StillsAsync(client, project.Id);
+        Assert.Equal(StageState.Failed, failed.State);
+        var made = failed.Stills.Count(s => s.Still is not null);
+        Assert.Equal(15, made);   // all of S01, then S02·1 failed
+        _comfy.Failure = null;
+        var runs = StillRuns().Count;
+
+        await client.ContinuePipelineAsync(project.Id);
+        var view = await StillsAsync(client, project.Id, v => v.Stills.Count(s => s.Still is not null) == 60 && v.Stills.All(s => s.State != StageState.Running));
+
+        Assert.Equal(runs + 45, StillRuns().Count);
+        Assert.All(view.Stills, s => Assert.Equal(1, s.Version));
+        await client.ApproveSegmentsAsync(project.Id, PipelineStage.Stills);
+        Assert.Equal(StageState.Approved, (await StillsAsync(client, project.Id, v => v.State == StageState.Approved)).State);
+    }
+
+    [Fact]
+    public async Task A_new_test_render_takes_the_place_of_the_last()
+    {
+        var client = await StartAsync();
+        var settings = await client.GetSettingsAsync();
+        await client.SaveSettingsAsync(settings with { ComfyUi = settings.ComfyUi with { WorkflowTemplatesFolder = _templates } });
+        var profile = ProfileContent.Empty with { Provider = "ComfyUI", WorkflowTemplate = "qwen.json", Inputs = [new("prompt", "#2.prompt")] };
+
+        var first = await client.TestRenderAsync(profile, "a knight");
+        var second = await client.TestRenderAsync(profile, "a dragon");
+
+        Assert.False(File.Exists(first.Path));
+        Assert.True(File.Exists(second.Path));
     }
 
     [Fact]

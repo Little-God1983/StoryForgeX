@@ -23,7 +23,10 @@ internal sealed record StillsSheet(IReadOnlyList<string> ShotKeys);
 /// profile's template wraps it. A still is never made from the shot before, except for a shot the
 /// storyboard marks as continuing it: that one starts from the still before, one step at most (a
 /// continuation of a continuation starts from the references again). Each still is a cell of its
-/// own, keyed by its shot, and can be made again on its own.
+/// own, keyed by its shot.
+/// A run makes what is waiting: every shot with no still yet, and every still in the batch
+/// (Regenerate, Edit prompt…), in shot order, with one prompt call for all of them. The first run
+/// makes them all; Continue pipeline makes the batch; Retry after a failure makes the ones missing.
 /// </summary>
 internal sealed partial class StillsStage(
     IComfyUi comfy,
@@ -50,7 +53,7 @@ internal sealed partial class StillsStage(
     public PipelineStage Stage => PipelineStage.Stills;
 
     public string CancelledAfter(int stored) =>
-        $"Cancelled after {stored} {(stored == 1 ? "still" : "stills")}. Those are kept; Retry makes them all again.";
+        $"Cancelled after {stored} {(stored == 1 ? "still" : "stills")}. Those are kept; Continue pipeline makes the ones still waiting.";
 
     public async Task<StageResult> RunAsync(StageContext context, CancellationToken cancellationToken)
     {
@@ -58,29 +61,45 @@ internal sealed partial class StillsStage(
         // Before Claude is asked: a profile that cannot make the stills fails at once.
         var painter = await PainterAsync(context, cancellationToken);
         var shots = plan.Shots;
-        // A continuation starts from the shot before, unless that one started from its own shot
+        var stored = await cells.CurrentStillsAsync(context.Project.Id, cancellationToken);
+        var queued = await cells.QueuedStillsAsync(context.Project.Id, cancellationToken);
+        var todo = shots.Select(s => !stored.ContainsKey(s.Key) || queued.ContainsKey(s.Key)).ToArray();
+
+        // A continuation starts from the still before, unless that one started from its own shot
         // before; a text-to-image workflow takes no picture to start from.
         var fromBefore = new bool[shots.Count];
         for (var i = 1; i < shots.Count; i++)
         {
-            fromBefore[i] = painter.TakesPictures && shots[i].ContinuesPrevious && !fromBefore[i - 1];
+            var previous = stored.GetValueOrDefault(shots[i - 1].Key);
+            fromBefore[i] = painter.TakesPictures && shots[i].ContinuesPrevious && (todo[i - 1]
+                ? !fromBefore[i - 1]
+                : previous is { ContinuesFrom: null } && File.Exists(Path.Combine(painter.Root, previous.File)));
         }
-        var asked = shots.Select((s, i) => Describe(plan, s, fromBefore[i])).ToList();
-        var prompts = await PromptsAsync(context, asked, cancellationToken);
+        var asked = Enumerable.Range(0, shots.Count)
+            .Where(i => todo[i] && queued.GetValueOrDefault(shots[i].Key) is null)
+            .Select(i => Describe(plan, shots[i], fromBefore[i]))
+            .ToList();
+        var prompts = asked.Count > 0 ? await PromptsAsync(context, asked, cancellationToken) : new Dictionary<string, string>();
 
         var results = new List<CellResult>();
         var made = new Dictionary<string, Still>();
+        var count = todo.Count(t => t);
         for (var i = 0; i < shots.Count; i++)
         {
+            if (!todo[i])
+            {
+                continue;
+            }
             var shot = shots[i];
             var label = plan.Labels[shot.Key];
-            Report(context, ActivityKind.Model, $"{label} ({i + 1} of {shots.Count})");
-            var before = fromBefore[i] ? made[shots[i - 1].Key] : null;
+            Report(context, ActivityKind.Model, $"{label} ({results.Count + 1} of {count})");
+            var before = fromBefore[i] ? made.GetValueOrDefault(shots[i - 1].Key) ?? stored[shots[i - 1].Key] : null;
             var pictures = Pictures(plan, shot);
-            var prompt = Compose(painter.Profile.PromptTemplate, prompts[label], pictures.Select(p => p.Look));
-            var still = await PaintAsync(context, painter, plan, shot, prompt, pictures, before, yours: false, cancellationToken);
+            var yours = queued.GetValueOrDefault(shot.Key);
+            var prompt = yours ?? Compose(painter.Profile.PromptTemplate, prompts[label], pictures.Select(p => p.Look));
+            var still = await PaintAsync(context, painter, plan, shot, prompt, pictures, before, yours is not null, cancellationToken);
             made[shot.Key] = still;
-            var result = new CellResult(shot.Key, StoredJson.Write(still), Still.SchemaVersion, Hash(context.Project.Setup, shot, pictures, before, null));
+            var result = new CellResult(shot.Key, StoredJson.Write(still), Still.SchemaVersion, Hash(context.Project.Setup, shot, pictures, before, yours));
             // Stored at once: a still takes a while, and you look at it while the next is made.
             if (context.StoreSegment is { } store)
             {
@@ -88,12 +107,12 @@ internal sealed partial class StillsStage(
             }
             results.Add(result);
         }
-        Report(context, ActivityKind.Check, $"{results.Count} {(results.Count == 1 ? "still" : "stills")} made");
+        Report(context, ActivityKind.Check, results.Count == 0 ? "every shot has its still: nothing was waiting" : $"{results.Count} {(results.Count == 1 ? "still" : "stills")} made");
+        // No segments: the stills not made in this run stay as they are, and every one made is stored already.
         return new StageResult(
-            StoredJson.Write(new StillsSheet([.. shots.Select(s => s.Key)])),
+            StoredJson.Write(new StillsSheet([.. made.Keys])),
             Still.SchemaVersion,
-            InputHash.Of(results.Select(r => r.InputHash)),
-            results);
+            InputHash.Of(results.Select(r => r.InputHash)));
     }
 
     public async Task<CellResult> RunSegmentAsync(StageContext context, string key, CancellationToken cancellationToken)
@@ -111,8 +130,7 @@ internal sealed partial class StillsStage(
         if (painter.TakesPictures && shot.ContinuesPrevious && index > 0)
         {
             var previous = plan.Shots[index - 1];
-            var stills = await cells.CurrentStillsAsync(context.Project.Id, cancellationToken);
-            var still = stills.GetValueOrDefault(previous.Key);
+            var still = (await cells.CurrentStillsAsync(context.Project.Id, cancellationToken)).GetValueOrDefault(previous.Key);
             if (still is null || !File.Exists(Path.Combine(painter.Root, still.File)))
             {
                 Report(context, ActivityKind.Check, $"{label} continues {plan.Labels[previous.Key]}, which has no still yet: made from the references");
@@ -127,19 +145,10 @@ internal sealed partial class StillsStage(
             }
         }
         var pictures = Pictures(plan, shot);
-        string prompt;
-        if (context.Prompt is { } yours)
-        {
-            prompt = yours.Trim();
-            Report(context, ActivityKind.Model, $"{label}: made with your prompt");
-        }
-        else
-        {
-            var prompts = await PromptsAsync(context, [Describe(plan, shot, before is not null)], cancellationToken);
-            prompt = Compose(painter.Profile.PromptTemplate, prompts[label], pictures.Select(p => p.Look));
-        }
-        var made = await PaintAsync(context, painter, plan, shot, prompt, pictures, before, context.Prompt is not null, cancellationToken);
-        return new CellResult(key, StoredJson.Write(made), Still.SchemaVersion, Hash(context.Project.Setup, shot, pictures, before, context.Prompt));
+        var prompts = await PromptsAsync(context, [Describe(plan, shot, before is not null)], cancellationToken);
+        var prompt = Compose(painter.Profile.PromptTemplate, prompts[label], pictures.Select(p => p.Look));
+        var made = await PaintAsync(context, painter, plan, shot, prompt, pictures, before, yours: false, cancellationToken);
+        return new CellResult(key, StoredJson.Write(made), Still.SchemaVersion, Hash(context.Project.Setup, shot, pictures, before, null));
     }
 
     /// <summary>Everything a still is made from; the same inputs give the same hash (#11 compares them).</summary>
