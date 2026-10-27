@@ -426,8 +426,8 @@ public sealed partial class ScriptMatrixViewModel(IStoryForgeClient client, Guid
         }
         if (update.Stage == PipelineStage.References)
         {
-            // Approved references let the stills be made: the bar follows.
-            if (update.Key is null && update.State is StageState.Approved or StageState.NeedsReview)
+            // Approved references let the stills be made, and references proposed again take that back: the bar follows.
+            if (update.Key is null && update.Activity is null)
             {
                 await LoadAsync();
             }

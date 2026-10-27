@@ -268,6 +268,22 @@ public sealed class StillsMatrixTests
     }
 
     [Fact]
+    public async Task References_proposed_again_take_Continue_pipeline_away()
+    {
+        var (matrix, project) = await OpenAsync();
+        var script = matrix.Script!;
+        script.Rows[1].Shots[0].Still.SelectCommand.Execute(null);
+        await script.RegenerateSegmentCommand.ExecuteAsync(null);
+        Assert.True(script.ContinuePipelineCommand.CanExecute(null));
+
+        _client.Stills[project.Id] = _client.Stills[project.Id] with { ReferencesApproved = false };
+        _client.Raise(new StageUpdate(project.Id, PipelineStage.References, StageState.Running));
+        await matrix.Updating;
+
+        Assert.False(script.ContinuePipelineCommand.CanExecute(null));
+    }
+
+    [Fact]
     public async Task The_Stills_chip_opens_the_matrix()
     {
         var (matrix, _) = await OpenAsync();

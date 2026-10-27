@@ -145,10 +145,12 @@ internal sealed partial class StillsStage(
             }
         }
         var pictures = Pictures(plan, shot);
-        var prompts = await PromptsAsync(context, [Describe(plan, shot, before is not null)], cancellationToken);
-        var prompt = Compose(painter.Profile.PromptTemplate, prompts[label], pictures.Select(p => p.Look));
-        var made = await PaintAsync(context, painter, plan, shot, prompt, pictures, before, yours: false, cancellationToken);
-        return new CellResult(key, StoredJson.Write(made), Still.SchemaVersion, Hash(context.Project.Setup, shot, pictures, before, null));
+        // Waiting in the batch with your prompt: made with it, as the batch would.
+        var yours = (await cells.QueuedStillsAsync(context.Project.Id, cancellationToken)).GetValueOrDefault(key);
+        var prompt = yours ?? Compose(
+            painter.Profile.PromptTemplate, (await PromptsAsync(context, [Describe(plan, shot, before is not null)], cancellationToken))[label], pictures.Select(p => p.Look));
+        var made = await PaintAsync(context, painter, plan, shot, prompt, pictures, before, yours is not null, cancellationToken);
+        return new CellResult(key, StoredJson.Write(made), Still.SchemaVersion, Hash(context.Project.Setup, shot, pictures, before, yours));
     }
 
     /// <summary>Everything a still is made from; the same inputs give the same hash (#11 compares them).</summary>

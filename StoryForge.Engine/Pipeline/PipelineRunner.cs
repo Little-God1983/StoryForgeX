@@ -416,6 +416,7 @@ internal sealed class PipelineRunner(
             job.Started = true;
         }
         var goOn = false;
+        var settleStills = false;
         try
         {
             job.Cancel.Token.ThrowIfCancellationRequested();
@@ -428,10 +429,7 @@ internal sealed class PipelineRunner(
                 var state = await StoreAsync(job, result, gated, Snapshot(activity));
                 Forget(job);
                 Publish(Update(job, state));
-                if (job.Stage == PipelineStage.Storyboard)
-                {
-                    await SettleAsync(job.ProjectId, PipelineStage.Stills, CancellationToken.None);   // its shots changed: every one needs a still
-                }
+                settleStills = job.Stage == PipelineStage.Storyboard;   // its shots changed: every one needs a still
                 goOn = state == StageState.Approved;
             }
             else
@@ -478,8 +476,22 @@ internal sealed class PipelineRunner(
             job.Cancel.Dispose();
         }
 
-        // Outside the stage's own try: the stage is stored and approved, and a next stage that
-        // cannot be queued must not mark it failed.
+        // Outside the stage's own try: the stage is stored, and what follows from it must not mark it failed.
+        if (settleStills)
+        {
+            try
+            {
+                await SettleAsync(job.ProjectId, PipelineStage.Stills, _stopping.Token);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                Debug.WriteLine($"Settling the stills after the storyboard of {job.ProjectId} failed: {ex}");
+            }
+            catch (OperationCanceledException)
+            {
+                // Closing.
+            }
+        }
         if (goOn)
         {
             try
@@ -567,7 +579,9 @@ internal sealed class PipelineRunner(
             }
             AddVersion(db, cell, await NextVersionAsync(db, job.ProjectId, job.Stage, result.Key), result.OutputJson, result.SchemaVersion, result.InputHash);
             cell.State = state = gated ? StageState.NeedsReview : StageState.Approved;
-            cell.ApprovedVersion = gated ? null : cell.CurrentVersion;
+            // A still made again in the batch keeps the approval of the one before, to switch back to;
+            // a whole run of any other stage makes everything anew, to review again.
+            cell.ApprovedVersion = !gated ? cell.CurrentVersion : job.Stage == PipelineStage.Stills ? cell.ApprovedVersion : null;
             cell.Error = null;
             cell.ActivityJson = "[]";
             // Made again: out of the batch. Only now, so one that fails or is cancelled stays in it, with your prompt.

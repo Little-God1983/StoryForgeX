@@ -437,6 +437,11 @@ public sealed class StillsRunTests : IDisposable
 
         Assert.Equal(59, view.Stills.Count);
         Assert.DoesNotContain(view.Stills, s => s.Key == keys["S01·4"]);
+        await using (var db = await _engine.DbAsync())
+        {
+            // Its versions go with it: a key that comes back starts with no pictures of another shot.
+            Assert.False(await db.CellVersions.AnyAsync(v => v.Stage == PipelineStage.Stills && v.Key == keys["S01·4"]));
+        }
         await client.ApproveSegmentsAsync(project.Id, PipelineStage.Stills);
         Assert.Equal(StageState.Approved, (await StillsAsync(client, project.Id, v => v.State == StageState.Approved)).State);
     }
@@ -578,6 +583,39 @@ public sealed class StillsRunTests : IDisposable
 
         Assert.True(File.Exists(mine.Path));   // shown in another profile's editor
         Assert.True(File.Exists(other.Path));
+    }
+
+    [Fact]
+    public async Task Making_a_still_again_in_the_batch_keeps_the_approval_of_the_one_before()
+    {
+        var client = await StartAsync();
+        var project = await ReferencesApprovedAsync(client);
+        await StillsAsync(client, project.Id);
+        var keys = await KeysAsync(client, project.Id);
+        await client.ApproveSegmentAsync(project.Id, PipelineStage.Stills, keys["S01·3"], 1);
+
+        await client.QueueStillAsync(project.Id, keys["S01·3"]);
+        await client.ContinuePipelineAsync(project.Id);
+        await StillsAsync(client, project.Id, v => v.Stills.Single(s => s.Key == keys["S01·3"]) is { Version: 2, State: not StageState.Running });
+        await client.SelectSegmentVersionAsync(project.Id, PipelineStage.Stills, keys["S01·3"], 1);
+
+        var still = (await client.GetStillsAsync(project.Id)).Stills.Single(s => s.Key == keys["S01·3"]);
+        Assert.Equal((1, StageState.Approved, (int?)1), (still.Version, still.State, still.ApprovedVersion));
+    }
+
+    [Fact]
+    public async Task Making_one_still_again_on_its_own_uses_the_prompt_you_queued()
+    {
+        var client = await StartAsync();
+        var project = await ReferencesApprovedAsync(client);
+        await StillsAsync(client, project.Id);
+        var keys = await KeysAsync(client, project.Id);
+
+        await client.QueueStillAsync(project.Id, keys["S01·3"], "Karlach by a campfire, still of mine");
+        await client.RegenerateSegmentAsync(project.Id, PipelineStage.Stills, keys["S01·3"]);
+        var view = await StillsAsync(client, project.Id, v => v.Stills.Single(s => s.Key == keys["S01·3"]) is { Version: 2, State: not StageState.Running });
+
+        Assert.Equal(("Karlach by a campfire, still of mine", true), (view.Stills.Single(s => s.Key == keys["S01·3"]).Still!.Prompt, view.Stills.Single(s => s.Key == keys["S01·3"]).Still!.YourPrompt));
     }
 
     [Fact]
