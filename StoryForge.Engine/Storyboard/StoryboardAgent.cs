@@ -63,7 +63,7 @@ internal sealed class ClaudeCliStoryboardAgent(ClaudeCli claude, IOptions<StoryF
         var what = request.Cast is null ? "the shots" : $"the shots of {string.Join(", ", request.Segments.Select(s => s.Segment.Id))}";
         Report(activity, session is null ? (request.Cast is null ? "planning the shots from the narration" : $"cutting {what} again") : "fixing the storyboard");
         var reply = await claude.AskAsync(
-            Call(request, session is null ? FirstPrompt(request) : ClaudeCliScriptAgent.CorrectionPrompt(problems, "the whole storyboard"), Schema, session),
+            Call(request, session is null ? FirstPrompt(request) : ClaudeCliScriptAgent.CorrectionPrompt(problems, request.Cast is null ? "the whole storyboard" : what), Schema, session),
             new ClaudeStream(new ResearchPages(), activity, clock, $"planning {what}"),
             cancellationToken);
         ReportCost(activity, reply);
@@ -123,7 +123,7 @@ internal sealed class ClaudeCliStoryboardAgent(ClaudeCli claude, IOptions<StoryF
         if (request.Cast is { } cast)
         {
             prompt.AppendLine(CultureInfo.InvariantCulture,
-                $"8. The cast of the video so far: {string.Join(", ", cast.Select(c => $"{c.Name} ({c.Kind.ToString().ToLowerInvariant()})"))}. Use these names for them; add to the cast list only who and what these shots show that is not on it.");
+                $"8. The cast of the video so far: {string.Join(", ", cast.Select(c => $"{c.Name} ({c.Kind.ToString().ToLowerInvariant()})"))}. Name them so in the shots. Your cast list needs only who and what these shots show that is not on it yet.");
         }
         AppendProfile(prompt, request.Instructions);
         return prompt.ToString();

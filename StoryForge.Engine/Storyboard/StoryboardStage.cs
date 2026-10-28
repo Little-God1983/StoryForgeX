@@ -83,14 +83,18 @@ internal sealed class StoryboardStage(IStoryboardAgent agent, CellReader cells, 
             tries = attempt;
             var answer = await agent.PlanAsync(request, session, problems, context.Activity, cancellationToken);
             session = answer.Session;
-            problems = StoryboardCheck.Problems(answer.Output, segments, request.MaxClipSeconds);
+            // The cast so far counts as on the list: the answer's own list need name only who is new.
+            var output = answer.Output is null ? null : answer.Output with
+            {
+                Cast = [.. sheet.Cast.Select(c => new CastOutput(c.Name, c.Kind.ToString().ToLowerInvariant(), c.KeyReason)), .. answer.Output.Cast ?? []],
+            };
+            problems = StoryboardCheck.Problems(output, segments, request.MaxClipSeconds);
             if (problems.Count == 0)
             {
                 // Everyone on the list stays, as they are spelled there; the new shots name them so.
-                var known = StoryboardCheck.Names(sheet.Cast.Select(c => c.Name));
-                var cast = sheet.Cast.Concat(StoryboardCheck.ToCast(answer.Output!).Where(c => !known.ContainsKey(StoryboardCheck.Normal(c.Name)))).ToList();
+                var cast = StoryboardCheck.ToCast(output!);
                 var names = StoryboardCheck.Names(cast.Select(c => c.Name));
-                var shots = StoryboardCheck.ToShots(answer.Output!, segments, await cells.UsedShotKeysAsync(context.Project.Id, cancellationToken))
+                var shots = StoryboardCheck.ToShots(output!, segments, await cells.UsedShotKeysAsync(context.Project.Id, cancellationToken))
                     .Select(s => s with { Cast = StoryboardCheck.CastOf(s.Cast, names) })
                     .ToList();
                 var cutFrom = sheet.VoiceVersions.ToDictionary();

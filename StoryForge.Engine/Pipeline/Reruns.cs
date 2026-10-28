@@ -50,20 +50,7 @@ internal sealed class Reruns(
             return;
         }
         segments.RequireIdle(projectId, stage, key);
-        await runner.MarkAsync(projectId, stage, [key], true, cancellationToken);
-        if (!plan.Keep && stage != PipelineStage.References)
-        {
-            try
-            {
-                await runner.RegenerateSegmentAsync(projectId, stage, key, null, cancellationToken);
-            }
-            catch
-            {
-                await runner.MarkAsync(projectId, stage, [key], false, CancellationToken.None);
-                throw;
-            }
-        }
-        await runner.AdvanceRerunsAsync(projectId, cancellationToken);
+        await runner.StartRerunAsync(projectId, stage, key, remake: !plan.Keep && stage != PipelineStage.References, cancellationToken);
     }
 
     /// <summary>Stop the rerun: what waits for approval stays as it is, and nothing more is made after it.</summary>

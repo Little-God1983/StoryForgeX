@@ -190,6 +190,86 @@ public sealed partial class StillsRunTests
     }
 
     [Fact]
+    public async Task A_cut_whose_cast_list_names_only_who_is_new_still_passes()
+    {
+        var client = await StartAsync();
+        var project = await ReferencesApprovedAsync(client);
+        await StillsAsync(client, project.Id);
+        // As the prompt asks: Raphael, new, on the list; Karlach, on it already, only in the shots.
+        _board.Answer(Recut("S02") with { Cast = [new("Raphael", "character", "")] });
+
+        await client.RerunFromHereAsync(project.Id, PipelineStage.Voice, "S02");
+
+        var board = await CutAsync(client, project.Id, "S02", 10);
+        Assert.Null(board.Error);
+        Assert.Equal(["Karlach", "Soul coin", "Mammon's mint", "Raphael"], board.Cast.Select(c => c.Name));
+        Assert.Equal(["Karlach"], board.Shots.First(s => s.SegmentId == "S02" && s.Number == 2).Shot.Cast);
+    }
+
+    [Fact]
+    public async Task Cancelling_a_rerun_still_waiting_its_turn_stops_it()
+    {
+        var client = await StartAsync();
+        var project = await ReferencesApprovedAsync(client);
+        await StillsAsync(client, project.Id);
+        var keys = await KeysAsync(client, project.Id);
+        _board.HoldShot();
+        await client.RegenerateSegmentAsync(project.Id, PipelineStage.Storyboard, keys["S01·1"]);   // runs, and holds the queue
+        await ScriptRunTests.WaitForAsync(() => client.GetStoryboardAsync(project.Id), v => _board.Rewrites.Count == 1);
+
+        await client.RerunFromHereAsync(project.Id, PipelineStage.Voice, "S02");
+        await client.CancelSegmentAsync(project.Id, PipelineStage.Voice, "S02");
+
+        var voice = (await client.GetVoiceAsync(project.Id)).Segments.Single(s => s.Id == "S02");
+        Assert.Equal((1, StageState.Approved, false), (voice.Version, voice.State, voice.Rerun));
+        await client.CancelSegmentAsync(project.Id, PipelineStage.Storyboard, keys["S01·1"]);
+    }
+
+    [Fact]
+    public async Task Stop_rerun_while_the_shots_are_cut_again_leaves_their_stills_alone()
+    {
+        var client = await StartAsync();
+        var project = await ReferencesApprovedAsync(client);
+        await StillsAsync(client, project.Id);
+        var release = new TaskCompletionSource();
+        _board.AnswerWhen(release.Task, Recut("S02"));
+        await client.RerunFromHereAsync(project.Id, PipelineStage.Voice, "S02");
+        await ScriptRunTests.WaitForAsync(() => client.GetStoryboardAsync(project.Id), v => v.State == StageState.Running);
+
+        await client.StopRerunAsync(project.Id);
+        release.SetResult();
+
+        var board = await CutAsync(client, project.Id, "S02", 10);
+        Assert.All(board.Shots, s => Assert.False(s.Rerun));
+    }
+
+    [Fact]
+    public async Task Retry_after_the_whole_storyboard_failed_plans_it_whole_even_with_a_rerun_waiting()
+    {
+        var client = await StartAsync();
+        var project = await ReferencesApprovedAsync(client);
+        await StillsAsync(client, project.Id);
+        await GateAsync(project.Id, PipelineStage.Voice);
+        await client.RerunFromHereAsync(project.Id, PipelineStage.Voice, "S02");
+        await ScriptRunTests.WaitForAsync(() => client.GetVoiceAsync(project.Id), v => v.Segments.Single(s => s.Id == "S02").State == StageState.NeedsReview);
+        var bad = Board() with { Segments = [.. Board().Segments.Take(3)] };
+        _board.Answer(bad).Answer(bad).Answer(bad);
+        await client.RegenerateAsync(project.Id, PipelineStage.Storyboard);
+        await ScriptRunTests.WaitForAsync(() => client.GetStoryboardAsync(project.Id), v => v.State == StageState.Failed);
+        await client.ApproveSegmentAsync(project.Id, PipelineStage.Voice, "S02", 2);   // the rerun waits for the storyboard
+        _board.Answer(Board());
+
+        await client.RegenerateAsync(project.Id, PipelineStage.Storyboard);
+
+        await ScriptRunTests.WaitForAsync(() => client.GetStoryboardAsync(project.Id), v => v.State is StageState.NeedsReview or StageState.Failed);
+        var board = await client.GetStoryboardAsync(project.Id);
+        Assert.Equal(4, _board.Requests[^1].Segments.Count);
+        // S02 was cut from its new voice with the rest: the rerun goes on from its new shots, and is not cut again.
+        Assert.All(board.Shots, s => Assert.Equal(s.SegmentId == "S02", s.Rerun));
+        Assert.False((await client.GetVoiceAsync(project.Id)).Segments.Single(s => s.Id == "S02").Rerun);
+    }
+
+    [Fact]
     public async Task The_question_says_what_a_rerun_from_a_shot_or_a_still_makes_again()
     {
         var client = await StartAsync();

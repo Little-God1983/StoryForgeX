@@ -29,15 +29,43 @@ internal sealed partial class PipelineRunner
         await _advancing.WaitAsync(cancellationToken);
         try
         {
-            foreach (var stage in RerunStages)
+            List<CellEntry> marked;
+            await using (var db = await contextFactory.CreateDbContextAsync(cancellationToken))
             {
-                await AdvanceAsync(projectId, stage, cancellationToken);
+                // A stage's own cell is marked only while a rerun's cut runs or failed (Retry): no step goes on from it.
+                marked = await db.Cells.AsNoTracking().Where(c => c.ProjectId == projectId && c.Rerun && c.Key != Whole).ToListAsync(cancellationToken);
+            }
+            foreach (var stage in RerunStages.Where(s => marked.Any(c => c.Stage == s)))
+            {
+                await AdvanceAsync(projectId, stage, [.. marked.Where(c => c.Stage == stage)], cancellationToken);
             }
         }
         finally
         {
             _advancing.Release();
         }
+    }
+
+    /// <summary>
+    /// Starts a rerun from a cell: made again (unless <paramref name="remake"/> is false: your own
+    /// work stays), then marked. Under the lock, so no step goes on from it before it is made.
+    /// </summary>
+    internal async Task StartRerunAsync(Guid projectId, PipelineStage stage, string key, bool remake, CancellationToken cancellationToken)
+    {
+        await _advancing.WaitAsync(cancellationToken);
+        try
+        {
+            if (remake)
+            {
+                await RegenerateSegmentAsync(projectId, stage, key, null, cancellationToken);
+            }
+            await MarkAsync(projectId, stage, [key], true, cancellationToken);
+        }
+        finally
+        {
+            _advancing.Release();
+        }
+        await AdvanceRerunsAsync(projectId, cancellationToken);
     }
 
     /// <summary>Marks (or unmarks) cells as part of a rerun.</summary>
@@ -48,15 +76,10 @@ internal sealed partial class PipelineRunner
             .ExecuteUpdateAsync(c => c.SetProperty(e => e.Rerun, rerun), cancellationToken);
     }
 
-    private async Task AdvanceAsync(Guid projectId, PipelineStage stage, CancellationToken cancellationToken)
+    private async Task AdvanceAsync(Guid projectId, PipelineStage stage, List<CellEntry> marked, CancellationToken cancellationToken)
     {
-        List<CellEntry> marked;
-        await using (var db = await contextFactory.CreateDbContextAsync(cancellationToken))
-        {
-            marked = await db.Cells.AsNoTracking().Where(c => c.ProjectId == projectId && c.Stage == stage && c.Rerun).ToListAsync(cancellationToken);
-        }
         // Each waits for its approval: at its gate, or after a failure for Retry.
-        if (marked.Count == 0 || marked.Any(c => c.State != StageState.Approved) || IsAnyBusy(projectId, stage))
+        if (marked.Any(c => c.State != StageState.Approved) || IsAnyBusy(projectId, stage))
         {
             return;
         }
@@ -186,7 +209,7 @@ internal sealed partial class PipelineRunner
         var redo = new HashSet<string>(direct);
         foreach (var (key, still) in stills)
         {
-            if (!still.YourFile && still.ContinuesFrom is { } from && (direct.Contains(from) || !shots.Contains(from)))
+            if (!still.YourFile && still.ContinuesFrom is { } from && (direct.Contains(from) || (stage == PipelineStage.Storyboard && !shots.Contains(from))))
             {
                 redo.Add(key);
             }
@@ -202,7 +225,8 @@ internal sealed partial class PipelineRunner
             return null;
         }
         await using var db = await contextFactory.CreateDbContextAsync(cancellationToken);
-        if (await db.Cells.AsNoTracking().FirstOrDefaultAsync(c => c.ProjectId == projectId && c.Stage == stage && c.Key == Whole, cancellationToken) is not { State: StageState.Failed })
+        // Marked while the cut ran, and kept when it failed (or the app closed): a whole run that failed is planned whole again.
+        if (await db.Cells.AsNoTracking().FirstOrDefaultAsync(c => c.ProjectId == projectId && c.Stage == stage && c.Key == Whole, cancellationToken) is not { State: StageState.Failed, Rerun: true })
         {
             return null;
         }
@@ -222,6 +246,7 @@ internal sealed partial class PipelineRunner
         else if (job.Scope is { } scope)
         {
             await MarkAsync(job.ProjectId, PipelineStage.Voice, scope, false, CancellationToken.None);
+            await MarkAsync(job.ProjectId, job.Stage, [Whole], false, CancellationToken.None);
         }
     }
 }
