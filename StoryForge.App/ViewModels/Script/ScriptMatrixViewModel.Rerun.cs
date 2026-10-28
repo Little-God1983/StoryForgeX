@@ -13,15 +13,18 @@ public sealed partial class ScriptMatrixViewModel
 {
     /// <summary>A rerun waits on the selected cell: once it is approved, what is made from it is made again.</summary>
     public bool SelectedIsRerun =>
-        (IsBoardPanel ? SelectedShot?.Shot.Rerun : IsStillPanel ? false : IsVoicePanel ? SelectedVoice?.Rerun : Selected?.Segment.Rerun) == true;
+        (IsBoardPanel ? SelectedShot?.Shot.Rerun : IsStillPanel || IsClipPanel ? false : IsVoicePanel ? SelectedVoice?.Rerun : Selected?.Segment.Rerun) == true;
 
     /// <summary>"Part of a rerun: once you approve it, what is made from it is made again."</summary>
     public string SelectedRerunText => SelectedState == StageState.Approved
         ? "Part of a rerun: what is made from it is made again next."
         : "Part of a rerun: once you approve it, what is made from it is made again.";
 
+    // Nothing comes after a clip yet: a rerun from one would only be its Regenerate.
+    private bool CanRerunFromHere() => SegmentIdle() && !IsClipPanel;
+
     /// <summary>Asks first with what it would make again; nothing happens without a yes.</summary>
-    [RelayCommand(CanExecute = nameof(SegmentIdle))]
+    [RelayCommand(CanExecute = nameof(CanRerunFromHere))]
     private async Task RerunFromHereAsync()
     {
         var (stage, key) = (SelectedStage, SelectedKey);

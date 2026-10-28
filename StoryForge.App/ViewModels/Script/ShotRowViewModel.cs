@@ -4,13 +4,18 @@ using StoryForge.Client;
 
 namespace StoryForge.App.ViewModels.Script;
 
-/// <summary>One shot under its segment, as board 2b draws it: "S01·2", what it shows, its Board cell and its Still cell.</summary>
-public sealed partial class ShotRowViewModel(ShotView shot, Action<ShotRowViewModel> select, Action<StillCellViewModel>? selectStill = null) : ObservableObject
+/// <summary>One shot under its segment, as board 2b draws it: "S01·2", what it shows, its Board, Still and Clip cells.</summary>
+public sealed partial class ShotRowViewModel(
+    ShotView shot, Action<ShotRowViewModel> select, Action<StillCellViewModel>? selectStill = null, Action<ClipCellViewModel>? selectClip = null) : ObservableObject
 {
     private StillCellViewModel? _still;
+    private ClipCellViewModel? _clip;
 
     /// <summary>The shot's still; it shows "—" before the stills are made.</summary>
     public StillCellViewModel Still => _still ??= new(selectStill ?? (_ => { }), () => Label);
+
+    /// <summary>The shot's clip; it shows "—" before the clips are made.</summary>
+    public ClipCellViewModel Clip => _clip ??= new(selectClip ?? (_ => { }), () => Label);
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(Label), nameof(Description), nameof(State), nameof(DisplayState), nameof(StateText), nameof(VersionText), nameof(AccessibleName))]
