@@ -24,7 +24,7 @@ internal sealed class Reruns(
 {
     /// <summary>What a rerun from a cell does.</summary>
     /// <param name="Keep">The cell is your own work and stays; what is made from it is made again.</param>
-    /// <param name="Stills">From a still or a reference image: the stills made again, in the batch.</param>
+    /// <param name="Stills">The stills it makes again (from a still: in the batch).</param>
     /// <param name="Nothing">Nothing would be made: the text says why, and the rerun is refused.</param>
     private sealed record Plan(string Text, bool Keep, IReadOnlyList<string> Stills, bool Nothing);
 
@@ -68,7 +68,7 @@ internal sealed class Reruns(
             return;
         }
         segments.RequireIdle(projectId, stage, key);
-        await runner.StartRerunAsync(projectId, stage, key, remake: !plan.Keep && stage != PipelineStage.References, cancellationToken);
+        await runner.StartRerunAsync(projectId, stage, key, remake: !plan.Keep, cancellationToken);   // a reference image's plan always keeps it
     }
 
     /// <summary>Stop the rerun: what waits for approval stays as it is, and nothing more is made after it.</summary>
@@ -107,13 +107,26 @@ internal sealed class Reruns(
         var stillsMade = await cells.StateAsync(projectId, PipelineStage.Stills, cancellationToken) != StageState.NotStarted;
         var keep = origin == VersionOrigin.Edited;
         string Label(string shotKey) => ShotTiming.Label(shots, shotKey);
-        return stage switch
+        var plan = stage switch
         {
             PipelineStage.Script or PipelineStage.Voice => await SegmentPlanAsync(projectId, stage, key, keep && stage == PipelineStage.Script, shots, stills, stillsMade, cancellationToken),
             PipelineStage.Storyboard => ShotPlan(key, keep, stills, stillsMade, Label),
             PipelineStage.Stills => StillPlan(key, stills, Label),
             _ => await ImagePlanAsync(projectId, cell, shots, stills, stillsMade, cancellationToken),
         };
+        if (!plan.Nothing && plan.Stills.Count > 0)
+        {
+            // One run makes the whole batch: what you queued yourself goes with it.
+            var waiting = (await cells.QueuedStillsAsync(projectId, cancellationToken)).Keys.Count(k => !plan.Stills.Contains(k));
+            if (waiting > 0)
+            {
+                plan = plan with
+                {
+                    Text = plan.Text + (waiting == 1 ? " The still waiting in the batch is made in the same run." : $" The {waiting} stills waiting in the batch are made in the same run."),
+                };
+            }
+        }
+        return plan;
     }
 
     private async Task<Plan> SegmentPlanAsync(
@@ -132,6 +145,7 @@ internal sealed class Reruns(
             }
         }
         var own = shots.Where(s => s.SegmentId == key).Select(s => s.Key).ToHashSet();
+        var remade = new List<string>();
         var tail = "";
         if (spoken && own.Count > 0)
         {
@@ -139,11 +153,12 @@ internal sealed class Reruns(
             if (stillsMade)
             {
                 parts.Add(own.Count == 1 ? "its still" : $"their {own.Count} stills");
-                var after = stills.Count(s => !own.Contains(s.Key) && !s.Value.YourFile && s.Value.ContinuesFrom is { } from && own.Contains(from));
-                if (after > 0)
+                var after = stills.Where(s => !own.Contains(s.Key) && !s.Value.YourFile && s.Value.ContinuesFrom is { } from && own.Contains(from)).Select(s => s.Key).ToList();
+                if (after.Count > 0)
                 {
-                    parts.Add(after == 1 ? "the still after them that starts from one" : $"the {after} stills after them that start from one");
+                    parts.Add(after.Count == 1 ? "the still after them that starts from one" : $"the {after.Count} stills after them that start from one");
                 }
+                remade = [.. own, .. after];
                 if (own.Any(k => stills.GetValueOrDefault(k) is { YourFile: true }))
                 {
                     tail += " Your own pictures of its shots go with the old shots.";
@@ -157,17 +172,19 @@ internal sealed class Reruns(
             return new Plan($"Nothing is made from {key}'s {what} yet.", true, [], true);
         }
         var head = keep ? $"This keeps your edit of {key}'s {what} and remakes {Join(parts)}" : $"This remakes {Join([$"{key}'s {what}", .. parts])}";
-        return new Plan($"{head}. Other segments stay as they are.{tail}", keep, [], false);
+        return new Plan($"{head}. Other segments stay as they are.{tail}", keep, remade, false);
     }
 
     private static Plan ShotPlan(string key, bool keep, IReadOnlyDictionary<string, Still> stills, bool stillsMade, Func<string, string> label)
     {
         var parts = new List<string>();
+        var remade = new List<string>();
         var mine = stills.GetValueOrDefault(key);
         if (stillsMade && mine is not { YourFile: true })
         {
             parts.Add("its still");
             parts.AddRange(After(key, stills, label));
+            remade = [key, .. stills.Where(s => !s.Value.YourFile && s.Value.ContinuesFrom == key).Select(s => s.Key)];
         }
         if (keep && parts.Count == 0)
         {
@@ -175,7 +192,7 @@ internal sealed class Reruns(
         }
         var head = keep ? $"This keeps your changes to shot {label(key)} and remakes {Join(parts)}" : $"This remakes {Join([$"shot {label(key)}", .. parts])}";
         var yours = mine is { YourFile: true } ? " Your own picture of it stays." : "";
-        return new Plan($"{head}. Other shots stay as they are.{yours}", keep, [], false);
+        return new Plan($"{head}. Other shots stay as they are.{yours}", keep, remade, false);
     }
 
     private static Plan StillPlan(string key, IReadOnlyDictionary<string, Still> stills, Func<string, string> label)
@@ -214,7 +231,7 @@ internal sealed class Reruns(
             text += direct.Count - first == 1 ? " and the one that starts from them" : $" and the {direct.Count - first} that start from them";
         }
         var wait = cell.State != StageState.Approved ? " They are made once you approve the image." : "";
-        return new Plan($"{text}. Other stills stay as they are.{wait}", true, [], false);
+        return new Plan($"{text}. Other stills stay as they are.{wait}", true, [.. direct], false);
     }
 
     /// <summary>"the still of S04·3, which starts from it": the stills after this one's that start from it.</summary>

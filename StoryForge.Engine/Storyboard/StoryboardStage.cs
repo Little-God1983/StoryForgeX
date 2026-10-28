@@ -93,8 +93,7 @@ internal sealed class StoryboardStage(IStoryboardAgent agent, CellReader cells, 
             {
                 // Everyone on the list stays, as they are spelled there; the new shots name them so.
                 var cast = StoryboardCheck.ToCast(output!);
-                var names = StoryboardCheck.Names(cast.Select(c => c.Name));
-                // The list's spelling first: the new shots name everyone as it does.
+                // ToShots spells the cast as the list does, the cast so far first.
                 var shots = StoryboardCheck.ToShots(output!, segments, await cells.UsedShotKeysAsync(context.Project.Id, cancellationToken));
                 var cutFrom = sheet.VoiceVersions.ToDictionary();
                 foreach (var id in scope.Where(voices.ContainsKey))

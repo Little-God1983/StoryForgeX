@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using Microsoft.EntityFrameworkCore;
 using StoryForge.Client;
 using StoryForge.Engine.Data;
@@ -116,6 +117,10 @@ internal sealed partial class PipelineRunner
         }
         foreach (var key in spoken)
         {
+            if (IsBusy(projectId, PipelineStage.Voice, key))
+            {
+                continue;   // spoken again already, maybe from the script before: after it, from the new one
+            }
             try
             {
                 await EnqueueAsync(projectId, PipelineStage.Voice, key, cancellationToken);
@@ -229,25 +234,42 @@ internal sealed partial class PipelineRunner
         {
             return null;
         }
-        await using var db = await contextFactory.CreateDbContextAsync(cancellationToken);
-        // Kept with the cell when the cut failed (or the app closed), whether the rerun goes on or was
-        // stopped: Retry never plans every segment anew in its place. A whole run that failed is planned whole again.
-        return await db.Cells.AsNoTracking().FirstOrDefaultAsync(c => c.ProjectId == projectId && c.Stage == stage && c.Key == Whole, cancellationToken)
-            is { State: StageState.Failed, RerunScope: { Length: > 0 } scope }
-            ? scope.Split(',').ToHashSet()
-            : null;
+        string? scope;
+        await using (var db = await contextFactory.CreateDbContextAsync(cancellationToken))
+        {
+            // Kept with the cell when the cut failed (or the app closed), whether the rerun goes on or was
+            // stopped: Retry never plans every segment anew in its place. A whole run that failed is planned whole again.
+            scope = (await db.Cells.AsNoTracking().FirstOrDefaultAsync(c => c.ProjectId == projectId && c.Stage == stage && c.Key == Whole, cancellationToken))
+                is { State: StageState.Failed, RerunScope: { Length: > 0 } kept } ? kept : null;
+        }
+        if (scope is null)
+        {
+            return null;
+        }
+        // Segments a script written since no longer has are not cut again; with none left, the storyboard is planned whole.
+        var segments = (await cells.ApprovedSegmentsAsync(projectId, cancellationToken)).Select(s => s.Segment.Id).ToHashSet();
+        var left = scope.Split(',').Where(segments.Contains).ToHashSet();
+        return left.Count > 0 ? left : null;
     }
 
     /// <summary>A cancelled run stops the rerun it was part of: the cell it made, or the segments it cut again.</summary>
     private async Task StopRerunAsync(Job job)
     {
-        if (job.Key != Whole)
+        try
         {
-            await MarkAsync(job.ProjectId, job.Stage, [job.Key], false, CancellationToken.None);
+            if (job.Key != Whole)
+            {
+                await MarkAsync(job.ProjectId, job.Stage, [job.Key], false, CancellationToken.None);
+            }
+            else if (job.Scope is { } scope)
+            {
+                await MarkAsync(job.ProjectId, PipelineStage.Voice, scope, false, CancellationToken.None);
+            }
         }
-        else if (job.Scope is { } scope)
+        catch (Exception ex)
         {
-            await MarkAsync(job.ProjectId, PipelineStage.Voice, scope, false, CancellationToken.None);
+            // The cell still goes back as cancelled: a rerun left marked waits, and Stop rerun ends it.
+            Debug.WriteLine($"Stopping the rerun of {job.Stage} {job.Key} of {job.ProjectId} failed: {ex}");
         }
     }
 }

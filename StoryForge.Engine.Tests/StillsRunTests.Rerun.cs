@@ -346,6 +346,43 @@ public sealed partial class StillsRunTests
     }
 
     [Fact]
+    public async Task The_question_says_when_stills_waiting_in_the_batch_are_made_with_them()
+    {
+        var client = await StartAsync();
+        var project = await ReferencesApprovedAsync(client);
+        await StillsAsync(client, project.Id);
+        var keys = await KeysAsync(client, project.Id);
+        await client.QueueStillAsync(project.Id, keys["S03·5"]);
+
+        Assert.Equal(
+            "This remakes the still of S01·2. Other stills stay as they are. The still waiting in the batch is made in the same run.",
+            (await client.GetRerunPlanAsync(project.Id, PipelineStage.Stills, keys["S01·2"])).Text);
+    }
+
+    [Fact]
+    public async Task Retry_plans_the_whole_storyboard_when_the_segments_a_failed_cut_was_for_are_gone()
+    {
+        var client = await StartAsync();
+        var project = await ReferencesApprovedAsync(client);
+        await StillsAsync(client, project.Id);
+        await using (var db = await _engine.DbAsync())
+        {
+            var board = await db.Cells.SingleAsync(c => c.ProjectId == project.Id && c.Stage == PipelineStage.Storyboard && c.Key == "");
+            board.State = StageState.Failed;
+            board.RerunScope = "S09";   // cut for a segment a script written since no longer has
+            await db.SaveChangesAsync();
+        }
+        _board.Answer(Board());
+        var asked = _board.Requests.Count;
+
+        await client.RegenerateAsync(project.Id, PipelineStage.Storyboard);
+
+        var view = await ScriptRunTests.WaitForAsync(() => client.GetStoryboardAsync(project.Id), v => v.State is StageState.NeedsReview or StageState.Failed);
+        Assert.Null(view.Error);
+        Assert.Equal((asked + 1, 4), (_board.Requests.Count, _board.Requests[^1].Segments.Count));
+    }
+
+    [Fact]
     public async Task The_question_says_what_a_rerun_from_a_shot_or_a_still_makes_again()
     {
         var client = await StartAsync();
