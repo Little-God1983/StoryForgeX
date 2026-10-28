@@ -103,6 +103,12 @@ public sealed record ShotView(
 
     /// <summary>Why it is out of date (stale), e.g. "S04's voice changed since the shot was cut"; null while it is up to date.</summary>
     public string? Stale { get; init; }
+
+    /// <summary>
+    /// Part of a rerun (Rerun pipeline from here): once it is approved, what is made from it is made
+    /// again. False when no rerun waits on it.
+    /// </summary>
+    public bool Rerun { get; init; }
 }
 
 /// <summary>Everything the matrix shows of the Storyboard stage.</summary>

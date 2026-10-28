@@ -34,6 +34,12 @@ public sealed class CellEntry
     /// <summary>Your prompt a queued still is made again with (Edit prompt…); null for one the model writes.</summary>
     public string? QueuedPrompt { get; set; }
 
+    /// <summary>
+    /// Part of a rerun (Rerun pipeline from here): once it is approved, what is made from it is made
+    /// again. A script segment's, a voice's, a shot's or a reference image's cell.
+    /// </summary>
+    public bool Rerun { get; set; }
+
     public DateTimeOffset UpdatedAt { get; set; }
 }
 

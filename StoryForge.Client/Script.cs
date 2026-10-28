@@ -49,6 +49,12 @@ public sealed record SegmentView(
 {
     /// <summary>Why it is out of date (stale), e.g. "S04's script changed since it was spoken"; null while it is up to date.</summary>
     public string? Stale { get; init; }
+
+    /// <summary>
+    /// Part of a rerun (Rerun pipeline from here): once it is approved, what is made from it is made
+    /// again. False when no rerun waits on it.
+    /// </summary>
+    public bool Rerun { get; init; }
 }
 
 /// <summary>Everything the result matrix shows of the Script stage.</summary>

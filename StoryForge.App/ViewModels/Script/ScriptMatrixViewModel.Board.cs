@@ -14,7 +14,7 @@ public sealed partial class ScriptMatrixViewModel
 {
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsBoardRunning), nameof(IsBoardReview), nameof(IsBoardApproved), nameof(IsBoardFailed), nameof(CanPlanBoard))]
-    [NotifyCanExecuteChangedFor(nameof(ApproveRemainingBoardCommand), nameof(RegenerateBoardCommand), nameof(CancelBoardCommand), nameof(ApproveSegmentCommand), nameof(RegenerateSegmentCommand))]
+    [NotifyCanExecuteChangedFor(nameof(ApproveRemainingBoardCommand), nameof(RegenerateBoardCommand), nameof(CancelBoardCommand), nameof(ApproveSegmentCommand), nameof(RegenerateSegmentCommand), nameof(RerunFromHereCommand))]
     private StageState _boardState;
 
     public bool IsBoardRunning => BoardState == StageState.Running;
@@ -250,7 +250,7 @@ public sealed partial class ScriptMatrixViewModel
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsNotEditingShot), nameof(IsNotEditingAny))]
-    [NotifyCanExecuteChangedFor(nameof(SaveShotDescriptionCommand), nameof(ApproveSegmentCommand), nameof(RegenerateSegmentCommand))]
+    [NotifyCanExecuteChangedFor(nameof(SaveShotDescriptionCommand), nameof(ApproveSegmentCommand), nameof(RegenerateSegmentCommand), nameof(RerunFromHereCommand))]
     private bool _isEditingShot;
 
     public bool IsNotEditingShot => !IsEditingShot;

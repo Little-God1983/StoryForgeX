@@ -58,6 +58,7 @@ internal sealed class VoiceSegments(
                 runner.LiveActivity(projectId, Stage, cell.Key) ?? StoredJson.Read<List<ActivityLine>>(cell.ActivityJson))
             {
                 Stale = stale.GetValueOrDefault((Stage, cell.Key)),
+                Rerun = cell.Rerun,
             };
         }).OfType<VoiceSegmentView>().ToList();
         return new VoiceView(

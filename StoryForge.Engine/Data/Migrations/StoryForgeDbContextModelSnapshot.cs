@@ -47,6 +47,9 @@ namespace StoryForge.Engine.Data.Migrations
                     b.Property<string>("QueuedPrompt")
                         .HasColumnType("TEXT");
 
+                    b.Property<bool>("Rerun")
+                        .HasColumnType("INTEGER");
+
                     b.Property<string>("State")
                         .IsRequired()
                         .HasColumnType("TEXT");

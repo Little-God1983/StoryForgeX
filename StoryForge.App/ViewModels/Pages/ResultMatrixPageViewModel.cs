@@ -120,7 +120,7 @@ public sealed partial class ResultMatrixPageViewModel : PageViewModel
         ShowsWholeScript = false;
         Breadcrumb = $"Projects / {project.Setup.Name}";
         Script?.Playback.Stop();   // the project before keeps no file open
-        Script = new ScriptMatrixViewModel(_client, project.Id, _newPlayer?.Invoke(), _pickPicture);
+        Script = new ScriptMatrixViewModel(_client, project.Id, _newPlayer?.Invoke(), _pickPicture, _confirm);
         ScriptLoading = Script.LoadAsync();
     }
 

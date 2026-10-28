@@ -21,6 +21,10 @@ internal sealed class StoryboardStage(IStoryboardAgent agent, CellReader cells, 
 
     public async Task<StageResult> RunAsync(StageContext context, CancellationToken cancellationToken)
     {
+        if (context.Scope is { } scope)
+        {
+            return await RecutAsync(context, scope, cancellationToken);
+        }
         var (request, voices) = await RequestAsync(context, null, cancellationToken);
         var segments = request.Segments.Select(s => s.Words).ToList();
         string? session = null;
@@ -41,6 +45,64 @@ internal sealed class StoryboardStage(IStoryboardAgent agent, CellReader cells, 
                 var hash = Hash(context.Project.Setup, voices, request.Pacing);
                 return new StageResult(
                     StoredJson.Write(sheet),
+                    Shot.SchemaVersion,
+                    hash,
+                    [.. shots.Select(s => new CellResult(s.Key, StoredJson.Write(s), Shot.SchemaVersion, hash))]);
+            }
+            Fail(context, attempt, problems, last: attempt == Tries || session is null);
+            if (session is null)
+            {
+                break;
+            }
+        }
+        throw new StageFailedException(
+            $"The answer was not a valid storyboard after {tries} {(tries == 1 ? "try" : "tries")}. Last problem: {problems[0]}");
+    }
+
+    /// <summary>
+    /// A rerun: the shots of these segments cut again from their approved voices. The other segments
+    /// keep their shots, and the voices they were cut from; the cast list keeps everyone on it and
+    /// takes in whoever the new shots show besides. The result's segments are the new shots only.
+    /// </summary>
+    private async Task<StageResult> RecutAsync(StageContext context, IReadOnlySet<string> scope, CancellationToken cancellationToken)
+    {
+        var sheet = await cells.CurrentStoryboardAsync(context.Project.Id, cancellationToken)
+            ?? throw new StageFailedException("The storyboard has not been planned yet.");
+        var (all, voices) = await RequestAsync(context, null, cancellationToken);
+        var request = all with { Segments = [.. all.Segments.Where(s => scope.Contains(s.Segment.Id))], Cast = sheet.Cast };
+        if (request.Segments.Count == 0)
+        {
+            throw new StageFailedException($"The script has no segment {string.Join(", ", scope)} to cut again.");
+        }
+        var segments = request.Segments.Select(s => s.Words).ToList();
+        string? session = null;
+        IReadOnlyList<string> problems = [];
+        var tries = 0;
+        for (var attempt = 1; attempt <= Tries; attempt++)
+        {
+            tries = attempt;
+            var answer = await agent.PlanAsync(request, session, problems, context.Activity, cancellationToken);
+            session = answer.Session;
+            problems = StoryboardCheck.Problems(answer.Output, segments, request.MaxClipSeconds);
+            if (problems.Count == 0)
+            {
+                // Everyone on the list stays, as they are spelled there; the new shots name them so.
+                var known = StoryboardCheck.Names(sheet.Cast.Select(c => c.Name));
+                var cast = sheet.Cast.Concat(StoryboardCheck.ToCast(answer.Output!).Where(c => !known.ContainsKey(StoryboardCheck.Normal(c.Name)))).ToList();
+                var names = StoryboardCheck.Names(cast.Select(c => c.Name));
+                var shots = StoryboardCheck.ToShots(answer.Output!, segments, await cells.UsedShotKeysAsync(context.Project.Id, cancellationToken))
+                    .Select(s => s with { Cast = StoryboardCheck.CastOf(s.Cast, names) })
+                    .ToList();
+                var cutFrom = sheet.VoiceVersions.ToDictionary();
+                foreach (var id in scope.Where(voices.ContainsKey))
+                {
+                    cutFrom[id] = voices[id];
+                }
+                Report(context, string.Create(System.Globalization.CultureInfo.InvariantCulture,
+                    $"{string.Join(", ", scope.Order(StringComparer.Ordinal))} cut again: {shots.Count} shots · shortest {ShotTiming.Seconds(shots.Min(s => s.Seconds))} s · longest {ShotTiming.Seconds(shots.Max(s => s.Seconds))} s"));
+                var hash = Hash(context.Project.Setup, cutFrom, request.Pacing);
+                return new StageResult(
+                    StoredJson.Write(new StoryboardSheet(cast, cutFrom, request.Pacing)),
                     Shot.SchemaVersion,
                     hash,
                     [.. shots.Select(s => new CellResult(s.Key, StoredJson.Write(s), Shot.SchemaVersion, hash))]);

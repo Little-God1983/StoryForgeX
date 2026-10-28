@@ -63,7 +63,7 @@ public sealed partial class ScriptMatrixViewModel
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsStillsRunning), nameof(IsStillsReview), nameof(IsStillsApproved), nameof(IsStillsFailed), nameof(CanMakeStills))]
     [NotifyCanExecuteChangedFor(nameof(ApproveRemainingStillsCommand), nameof(ContinuePipelineCommand), nameof(CancelStillsCommand),
-        nameof(ApproveSegmentCommand), nameof(RegenerateSegmentCommand))]
+        nameof(ApproveSegmentCommand), nameof(RegenerateSegmentCommand), nameof(RerunFromHereCommand))]
     private StageState _stillsState;
 
     public bool IsStillsRunning => StillsState == StageState.Running;
@@ -274,7 +274,7 @@ public sealed partial class ScriptMatrixViewModel
     /// <summary>Edit prompt… is open: your prompt for the still, to queue it with.</summary>
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsNotEditingAny))]
-    [NotifyCanExecuteChangedFor(nameof(QueuePromptCommand), nameof(ApproveSegmentCommand), nameof(RegenerateSegmentCommand))]
+    [NotifyCanExecuteChangedFor(nameof(QueuePromptCommand), nameof(ApproveSegmentCommand), nameof(RegenerateSegmentCommand), nameof(RerunFromHereCommand))]
     private bool _isEditingPrompt;
 
     [ObservableProperty]

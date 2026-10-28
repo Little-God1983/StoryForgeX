@@ -201,7 +201,7 @@ internal static class StoryboardCheck
     }
 
     /// <summary>"house of hope" for " House of  Hope": what tells two names apart.</summary>
-    private static string Normal(string? name) => string.Join(' ', (name ?? "").Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries)).ToLowerInvariant();
+    internal static string Normal(string? name) => string.Join(' ', (name ?? "").Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries)).ToLowerInvariant();
 
     /// <summary>One of the three words, any case; a number or a mix ("character, place") is none of them.</summary>
     private static CastKind? ToKind(string? kind) =>

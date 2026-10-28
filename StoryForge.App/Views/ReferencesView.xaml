@@ -474,6 +474,9 @@
                 <Button Content="Add my own picture…" Style="{StaticResource SecondaryButtonStyle}" MinHeight="36" Margin="0,0,4,0" Command="{Binding AddOwnPictureCommand}" />
                 <Button Content="Remove from the list" Style="{StaticResource SecondaryButtonStyle}" MinHeight="36" Margin="4,0,0,0" Command="{Binding RemoveCommand}" />
               </UniformGrid>
+              <!-- The stills that use this image, made again; asks first with how many. -->
+              <Button Content="Rerun pipeline from here ↓" Style="{StaticResource SecondaryButtonStyle}" MinHeight="40" Margin="0,8,0,0" Command="{Binding RerunFromHereCommand}"
+                      AutomationProperties.Name="Rerun pipeline from here" ToolTip="Makes the stills that use this image again." />
             </StackPanel>
 
             <ScrollViewer VerticalScrollBarVisibility="Auto">
@@ -496,6 +499,15 @@
                 </ItemsControl>
                 <Button Content="Remove this image" Style="{StaticResource SmallButtonStyle}" HorizontalAlignment="Left" Margin="0,0,0,10" Command="{Binding RemoveImageCommand}"
                         ToolTip="Only when there are others: e.g. one that came out with nothing on it." />
+                <!-- A rerun waits on this image. -->
+                <Border Background="{StaticResource CardBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="8" Padding="12,8" Margin="0,0,0,10"
+                        Visibility="{Binding RerunText, Converter={views:NullToCollapsedConverter}}">
+                  <DockPanel>
+                    <Button DockPanel.Dock="Right" Content="Stop rerun" Style="{StaticResource SmallButtonStyle}" Margin="8,0,0,0" VerticalAlignment="Center" Command="{Binding StopRerunCommand}" />
+                    <TextBlock Text="{Binding RerunText}" FontSize="13" Foreground="{StaticResource AccentTextBrush}" TextWrapping="Wrap" VerticalAlignment="Center"
+                               AutomationProperties.AutomationId="ImageRerun" />
+                  </DockPanel>
+                </Border>
 
                 <Border Background="{StaticResource AccentSoftBrush}" CornerRadius="8" Padding="12,10" Margin="0,0,0,10" Visibility="{Binding ShowsPartial, Converter={StaticResource Visible}}">
                   <StackPanel>

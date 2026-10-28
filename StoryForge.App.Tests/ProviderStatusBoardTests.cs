@@ -117,6 +117,9 @@ public sealed class ProviderStatusBoardTests
         public Task QueueStillAsync(Guid projectId, string shotKey, string? prompt = null, CancellationToken cancellationToken = default) => _inner.QueueStillAsync(projectId, shotKey, prompt, cancellationToken);
         public Task UnqueueStillAsync(Guid projectId, string shotKey, CancellationToken cancellationToken = default) => _inner.UnqueueStillAsync(projectId, shotKey, cancellationToken);
         public Task ContinuePipelineAsync(Guid projectId, CancellationToken cancellationToken = default) => _inner.ContinuePipelineAsync(projectId, cancellationToken);
+        public Task<string> GetRerunPlanAsync(Guid projectId, PipelineStage stage, string key, CancellationToken cancellationToken = default) => _inner.GetRerunPlanAsync(projectId, stage, key, cancellationToken);
+        public Task RerunFromHereAsync(Guid projectId, PipelineStage stage, string key, CancellationToken cancellationToken = default) => _inner.RerunFromHereAsync(projectId, stage, key, cancellationToken);
+        public Task StopRerunAsync(Guid projectId, CancellationToken cancellationToken = default) => _inner.StopRerunAsync(projectId, cancellationToken);
         public Task ReplaceStillAsync(Guid projectId, string shotKey, string path, CancellationToken cancellationToken = default) => _inner.ReplaceStillAsync(projectId, shotKey, path, cancellationToken);
         public Task<TestRender> TestRenderAsync(ProfileContent profile, string line, CancellationToken cancellationToken = default) => _inner.TestRenderAsync(profile, line, cancellationToken);
     }

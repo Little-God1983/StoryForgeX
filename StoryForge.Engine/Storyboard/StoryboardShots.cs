@@ -47,6 +47,8 @@ internal sealed class StoryboardShots(
 
         versions.RemoveAll(v => v.Key == "");
         var stale = await staleness.GetAsync(projectId, cancellationToken);
+        // While a rerun cuts some segments again, their shots are being made: the others stay as they are.
+        var recut = runner.Scope(projectId, Stage) ?? new HashSet<string>();
         var shown = stageCells.Where(c => c.Key != "").Select(cell =>
         {
             var own = versions.Where(v => v.Key == cell.Key).OrderBy(v => v.Version).ToList();
@@ -58,7 +60,7 @@ internal sealed class StoryboardShots(
             s.Cell.Key,
             s.Shot.SegmentId,
             1 + shown.Count(o => o.Shot.SegmentId == s.Shot.SegmentId && o.Shot.FirstWord < s.Shot.FirstWord),
-            s.Cell.State,
+            recut.Contains(s.Shot.SegmentId) ? StageState.Running : s.Cell.State,
             s.Cell.CurrentVersion ?? 0,
             s.Cell.ApprovedVersion,
             [.. s.Own.Select(v => new ResultVersion(v.Version, v.Origin, v.CreatedAt, v.BasedOn))],
@@ -70,6 +72,7 @@ internal sealed class StoryboardShots(
                 .Where(v => v.Shot.FirstWord != s.Shot.FirstWord || v.Shot.WordCount != s.Shot.WordCount)
                 .Select(v => v.Version)],
             Stale = stale.GetValueOrDefault((Stage, s.Cell.Key)),
+            Rerun = s.Cell.Rerun,
         }).ToList();
         return new StoryboardView(
             projectId,

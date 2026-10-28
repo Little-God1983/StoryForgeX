@@ -78,6 +78,7 @@ internal sealed class ReferenceViews(
                 runner.LiveActivity(projectId, Stage, cell.Key) ?? StoredJson.Read<List<ActivityLine>>(cell.ActivityJson))
             {
                 Stale = stale.GetValueOrDefault((Stage, cell.Key)),
+                Rerun = cell.Rerun,
             };
         }).ToList();
 

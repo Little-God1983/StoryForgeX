@@ -14,11 +14,13 @@ namespace StoryForge.Engine.Pipeline;
 /// next stage that exists; the stages arrive one issue at a time (Research in #5, Script in #6, …).
 /// A stage with a result per segment (the script) keeps each segment in a cell of its own: it is
 /// approved when every segment is, and a single segment can be written again on its own.
+/// A rerun (Rerun pipeline from here) goes on from the cells it marks: see PipelineRunner.Reruns.cs.
 /// </summary>
-internal sealed class PipelineRunner(
+internal sealed partial class PipelineRunner(
     IDbContextFactory<StoryForgeDbContext> contextFactory,
     IEnumerable<IStageWorker> workers,
     ProjectStore projects,
+    CellReader cells,
     TimeProvider clock) : IHostedService
 {
     internal const string ClosedWhileRunning = "StoryForge was closed while this stage ran. Retry runs it again.";
@@ -91,6 +93,15 @@ internal sealed class PipelineRunner(
         }
     }
 
+    /// <summary>The segments a whole-stage run is for (a rerun re-cutting them); null when it runs for all, or does not run.</summary>
+    public IReadOnlySet<string>? Scope(Guid projectId, PipelineStage stage)
+    {
+        lock (_lock)
+        {
+            return _jobs.TryGetValue((projectId, stage, Whole), out var job) ? job.Scope : null;
+        }
+    }
+
     /// <summary>What a running stage (or segment) has done so far; null when it is not running.</summary>
     public IReadOnlyList<ActivityLine>? LiveActivity(Guid projectId, PipelineStage stage, string key = Whole)
     {
@@ -120,7 +131,8 @@ internal sealed class PipelineRunner(
         {
             throw new InvalidOperationException($"The {stage} stage is not built yet.");
         }
-        await EnqueueAsync(projectId, stage, Whole, cancellationToken);
+        // Retry after a rerun's re-cut failed: those segments are cut again, not the whole storyboard.
+        await EnqueueAsync(projectId, stage, Whole, cancellationToken, scope: await FailedRecutAsync(projectId, stage, cancellationToken));
     }
 
     /// <summary>Writes one segment of a stage again; the stage's other segments stay as they are.</summary>
@@ -258,6 +270,7 @@ internal sealed class PipelineRunner(
         }
         Publish(new StageUpdate(projectId, stage, StageState.Approved));
         await ContinueAsync(projectId, stage, cancellationToken);
+        await AdvanceRerunsAsync(projectId, cancellationToken);
     }
 
     /// <summary>
@@ -286,6 +299,8 @@ internal sealed class PipelineRunner(
                 await ContinueAsync(projectId, stage, cancellationToken);
             }
         }
+        // A cell a rerun waits on may be approved now (or its stage, which the stills wait for).
+        await AdvanceRerunsAsync(projectId, cancellationToken);
     }
 
     /// <summary>Tells the app about a change made outside a run, e.g. an edited fact sheet.</summary>
@@ -328,9 +343,10 @@ internal sealed class PipelineRunner(
         await EnqueueAsync(projectId, next, Whole, cancellationToken);
     }
 
-    private async Task EnqueueAsync(Guid projectId, PipelineStage stage, string key, CancellationToken cancellationToken, string? note = null)
+    /// <param name="scope">A whole-stage run for these segments only (a rerun's re-cut); null for all.</param>
+    private async Task EnqueueAsync(Guid projectId, PipelineStage stage, string key, CancellationToken cancellationToken, string? note = null, IReadOnlySet<string>? scope = null)
     {
-        var job = new Job(projectId, stage, key, CancellationTokenSource.CreateLinkedTokenSource(_stopping.Token)) { Note = note };
+        var job = new Job(projectId, stage, key, CancellationTokenSource.CreateLinkedTokenSource(_stopping.Token)) { Note = note, Scope = scope };
         lock (_lock)
         {
             // Checked with the adding, so neither can slip in beside the other: a whole run replaces
@@ -432,7 +448,7 @@ internal sealed class PipelineRunner(
             job.Cancel.Token.ThrowIfCancellationRequested();
             var project = await projects.GetAsync(job.ProjectId, job.Cancel.Token);
             var gated = IsGated(project.Setup, job.Stage);
-            var context = new StageContext(project, reporter, job.Key == Whole ? segment => StoreRunSegmentAsync(job, segment, gated) : null, job.Note);
+            var context = new StageContext(project, reporter, job.Key == Whole ? segment => StoreRunSegmentAsync(job, segment, gated) : null, job.Note, job.Scope);
             if (job.Key == Whole)
             {
                 var result = await _workers[job.Stage].RunAsync(context, job.Cancel.Token);
@@ -457,6 +473,11 @@ internal sealed class PipelineRunner(
         }
         catch (OperationCanceledException) when (job.Cancel.IsCancellationRequested)
         {
+            if (!_stopping.IsCancellationRequested)
+            {
+                // Cancel stops a rerun here: what it would go on to make stays as it is.
+                await StopRerunAsync(job);
+            }
             if (_stopping.IsCancellationRequested)
             {
                 await FailAsync(job, ClosedWhileRunning, Snapshot(activity));
@@ -517,6 +538,19 @@ internal sealed class PipelineRunner(
                 // Closing.
             }
         }
+        try
+        {
+            // What this run made may be what a rerun waits on; a run it waited for is out of the way.
+            await AdvanceRerunsAsync(job.ProjectId, _stopping.Token);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            Debug.WriteLine($"Going on with a rerun of {job.ProjectId} failed: {ex}");
+        }
+        catch (OperationCanceledException)
+        {
+            // Closing.
+        }
     }
 
     private async Task<StageState> StoreAsync(Job job, StageResult result, bool gated, List<ActivityLine> activity)
@@ -534,6 +568,11 @@ internal sealed class PipelineRunner(
             // A new whole result replaces the segments: each gets the new text as its next version
             // (to review again when the stage is gated); segments the new result lacks are gone.
             var existing = await db.Cells.Where(c => c.ProjectId == job.ProjectId && c.Stage == job.Stage && c.Key != Whole).ToListAsync();
+            if (job.Scope is { } scope)
+            {
+                // A rerun's re-cut: only the shots of its segments make way; the others stay as they are.
+                existing.RemoveAll(c => !scope.Contains(ShotSegment(c.Key)));
+            }
             var gone = existing.Where(c => segments.All(s => s.Key != c.Key)).ToList();
             db.Cells.RemoveRange(gone);
             if (job.Stage == PipelineStage.Storyboard)
@@ -556,7 +595,16 @@ internal sealed class PipelineRunner(
                 child.State = gated ? StageState.NeedsReview : StageState.Approved;
                 child.ApprovedVersion = gated ? null : child.CurrentVersion;
                 child.Error = null;
+                child.Rerun = job.Scope is not null;   // the rerun goes on from the new shots: their stills come next
                 child.UpdatedAt = clock.GetUtcNow();
+            }
+        }
+        if (job.Scope is { } cut)
+        {
+            // Cut again from these voices: the rerun has moved on from them.
+            foreach (var voice in await db.Cells.Where(c => c.ProjectId == job.ProjectId && c.Stage == PipelineStage.Voice && c.Rerun).ToListAsync())
+            {
+                voice.Rerun = !cut.Contains(voice.Key);
             }
         }
         if (job.Stage == PipelineStage.Stills)
@@ -896,6 +944,9 @@ internal sealed class PipelineRunner(
 
         /// <summary>Why one segment is made again, as you said on Regenerate; null without one.</summary>
         public string? Note { get; init; }
+
+        /// <summary>A whole-stage run for these segments only (a rerun's re-cut); null for all.</summary>
+        public IReadOnlySet<string>? Scope { get; init; }
 
         /// <summary>Done once EnqueueAsync has marked the cell Running and queued the job.</summary>
         public TaskCompletionSource Queued { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
