@@ -69,27 +69,47 @@ internal sealed class ClipsStage(
         var own = context.Project.Setup.Clips.Profile;
         var groups = todo.GroupBy(s => queued.GetValueOrDefault(s.Key).Profile ?? own).OrderBy(g => g.Key == own ? 0 : 1).ToList();
         var animators = new Dictionary<ProfileRef, Animator>();
-        foreach (var group in groups)
+        var failures = new List<string>();
+        foreach (var group in groups.ToList())
         {
-            // Before Claude is asked: a profile that cannot make the clips fails at once.
-            animators[group.Key] = await AnimatorAsync(context, group.Key, cancellationToken);
+            // Before Claude is asked: the project's profile that cannot make the clips fails at once;
+            // one a clip was switched to fails those clips alone, and the others are made.
+            try
+            {
+                animators[group.Key] = await AnimatorAsync(context, group.Key, cancellationToken);
+            }
+            catch (StageFailedException ex) when (group.Key != own && context.FailSegment is { } fail)
+            {
+                foreach (var shot in group)
+                {
+                    var reason = $"{plan.Labels[shot.Key]}: {ex.Message}";
+                    Report(context, ActivityKind.Failed, reason);
+                    await fail(shot.Key, reason);
+                    failures.Add(reason);
+                }
+                groups.Remove(group);
+            }
         }
+        todo = [.. groups.SelectMany(g => g)];
         var asked = todo.Where(s => queued.GetValueOrDefault(s.Key).Prompt is null).ToList();
         var prompts = asked.Count > 0
             ? await PromptsAsync(context, plan, [.. asked.Select(s => (s, animators[queued.GetValueOrDefault(s.Key).Profile ?? own]))], cancellationToken)
             : new Dictionary<string, string>();
-        await FreeAsync(context, cancellationToken);
+        if (todo.Count > 0)
+        {
+            await FreeAsync(context, cancellationToken);
+        }
 
         var results = new List<CellResult>();
         var made = new List<string>();
-        var failures = new List<string>();
+        var done = 0;
         foreach (var group in groups)
         {
             var animator = animators[group.Key];
             foreach (var shot in group)
             {
                 var label = plan.Labels[shot.Key];
-                Report(context, ActivityKind.Model, $"{label} ({results.Count + 1} of {todo.Count}) · {animator.Model}");
+                Report(context, ActivityKind.Model, $"{label} ({++done} of {todo.Count}) · {animator.Model}");
                 var yours = queued.GetValueOrDefault(shot.Key).Prompt;
                 var prompt = yours ?? StillsStage.Compose(animator.Profile.PromptTemplate, prompts[label], []);
                 Clip clip;
@@ -155,7 +175,8 @@ internal sealed class ClipsStage(
 
     /// <summary>
     /// How long a shot's clip runs, and its handles: half a second before and after, less when the
-    /// shot is near the model's longest clip, so the clip never runs past it.
+    /// shot is near the model's longest clip, so the handles never take it past that. A shot longer
+    /// than the model makes is refused before (see <see cref="AnimateAsync"/>).
     /// </summary>
     internal static (double Seconds, double Handle) Length(double shotSeconds, int maxClipSeconds)
     {
@@ -258,7 +279,17 @@ internal sealed class ClipsStage(
             throw new StageFailedException($"Clips are made through ComfyUI for now, and this project uses {setup.Clips.Provider}.");
         }
         var own = profileRef == setup.Clips.Profile;
-        var profile = (await profiles.GetVersionAsync(profileRef.ProfileId, profileRef.Version, cancellationToken)).Content;
+        ProfileContent profile;
+        try
+        {
+            profile = (await profiles.GetVersionAsync(profileRef.ProfileId, profileRef.Version, cancellationToken)).Content;
+        }
+        catch (KeyNotFoundException)
+        {
+            throw new StageFailedException(own
+                ? "The project's video profile is gone."
+                : "The video profile it was switched to is gone. Take it out of the waiting ones, or make it with another.");
+        }
         var name = own ? setup.Clips.Model : (await profiles.ListAsync(cancellationToken)).FirstOrDefault(p => p.Id == profileRef.ProfileId)?.Name ?? "another video profile";
         var templates = (await settings.LoadAsync(cancellationToken)).ComfyUi.WorkflowTemplatesFolder;
         var workflow = await WorkflowTemplate.LoadAsync(templates, profile.WorkflowTemplate, cancellationToken, "video");
@@ -281,7 +312,15 @@ internal sealed class ClipsStage(
         if ((await settings.LoadAsync(cancellationToken)).ComfyUi.FreeVramBetweenStages)
         {
             Report(context, ActivityKind.Model, "freeing ComfyUI's VRAM");
-            await comfy.FreeMemoryAsync(cancellationToken);
+            try
+            {
+                await comfy.FreeMemoryAsync(cancellationToken);
+            }
+            catch (StageFailedException ex)
+            {
+                // A help, not a need: the clips are made all the same, maybe slower.
+                Report(context, ActivityKind.Failed, $"could not free ComfyUI's VRAM: {ex.Message}");
+            }
         }
     }
 
@@ -291,6 +330,12 @@ internal sealed class ClipsStage(
         var label = plan.Labels[shot.Key];
         try
         {
+            if (shot.Seconds > animator.MaxClipSeconds + 0.001)
+            {
+                // A profile switched to may make shorter clips than the storyboard was cut for.
+                throw new StageFailedException(string.Create(System.Globalization.CultureInfo.InvariantCulture,
+                    $"the shot lasts {shot.Seconds:0.##} s, and {animator.Model} makes at most {animator.MaxClipSeconds} s. Make it with the project's model."));
+            }
             if (!plan.Stills.TryGetValue(shot.Key, out var still) || !File.Exists(Path.Combine(animator.Root, still.Still.File)))
             {
                 throw new StageFailedException("its approved still is gone from the projects folder. Make the still again first.");

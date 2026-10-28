@@ -495,7 +495,7 @@ internal sealed partial class PipelineRunner(
                 if (StoredCount(job) is var stored && (stored > 0 || await KeptAsync(job)))
                 {
                     // Segments of this run are stored already, or what it saved before them: going back to before would hide them.
-                    await FailAsync(job, _workers[job.Stage].CancelledAfter(stored), Snapshot(activity));
+                    await FailAsync(job, _workers[job.Stage].CancelledAfter(stored - FailedCount(job)), Snapshot(activity));
                 }
                 else
                 {
@@ -695,6 +695,7 @@ internal sealed partial class PipelineRunner(
         lock (job.Stored)
         {
             job.Stored.Add(key);   // done with in this run: no longer "to come"
+            job.Failed.Add(key);
         }
         Publish(new StageUpdate(job.ProjectId, job.Stage, StageState.Failed, Key: key));
     }
@@ -712,6 +713,15 @@ internal sealed partial class PipelineRunner(
             .Select(c => c.CurrentVersion)
             .FirstOrDefaultAsync(CancellationToken.None);
         return version != job.PreviousVersion;
+    }
+
+    /// <summary>How many of those it could not make (they show failed): they are not kept.</summary>
+    private static int FailedCount(Job job)
+    {
+        lock (job.Stored)
+        {
+            return job.Failed.Count;
+        }
     }
 
     /// <summary>How many segments the run stored as it went; with <paramref name="key"/>, whether it stored that one.</summary>
@@ -1009,8 +1019,11 @@ internal sealed partial class PipelineRunner(
         /// <summary>What the stage has done so far; locked while written or copied.</summary>
         public List<ActivityLine> Activity { get; } = [];
 
-        /// <summary>The segments stored while the run went on; locked while written or read.</summary>
+        /// <summary>The segments stored while the run went on (or failed, see <see cref="Failed"/>); locked with it while written or read.</summary>
         public HashSet<string> Stored { get; } = [];
+
+        /// <summary>The segments it could not make, marked failed while it went on; locked with <see cref="Stored"/>.</summary>
+        public HashSet<string> Failed { get; } = [];
     }
 
     /// <summary>Reports on the stage's own thread, at once; <see cref="Progress{T}"/> would post to a context.</summary>

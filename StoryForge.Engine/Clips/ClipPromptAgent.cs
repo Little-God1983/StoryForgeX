@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using System.Globalization;
 using System.Text;
 using System.Text.Json;
@@ -28,6 +29,17 @@ internal interface IClipPromptAgent
         ClipPromptRequest request, string? session, IReadOnlyList<string> problems, IProgress<ActivityLine> activity, CancellationToken cancellationToken);
 }
 
+// What the model hands back: the same shape as the still prompts, described for motion. The schema
+// Claude CLI enforces is generated from these records (and Claude reads its descriptions); its text
+// stays plain ASCII, because npm's claude.cmd passes it through cmd.exe.
+
+internal sealed record ClipPromptsOutput(
+    [property: Description("One motion prompt for every shot asked for, in the order asked.")] IReadOnlyList<ClipPromptOutput> Prompts);
+
+internal sealed record ClipPromptOutput(
+    [property: Description("The shot, as the prompt names it, e.g. S01-2.")] string Shot,
+    [property: Description("The motion prompt for this shot: what moves and how the camera moves, starting from its still.")] string Prompt);
+
 /// <summary>The motion prompts through Claude CLI, with no tools and no MCP servers at all.</summary>
 internal sealed class ClaudeCliClipPromptAgent(ClaudeCli claude, IOptions<StoryForgeEngineOptions> options, TimeProvider clock) : IClipPromptAgent
 {
@@ -39,7 +51,7 @@ internal sealed class ClaudeCliClipPromptAgent(ClaudeCli claude, IOptions<StoryF
         the camera moves. You never ask for text, letters or logos.
         """;
 
-    internal static string Schema { get; } = OutputSchema.Json<StillPromptsOutput>();
+    internal static string Schema { get; } = OutputSchema.Json<ClipPromptsOutput>();
 
     public async Task<ScriptAnswer<StillPromptsOutput>> WriteAsync(
         ClipPromptRequest request, string? session, IReadOnlyList<string> problems, IProgress<ActivityLine> activity, CancellationToken cancellationToken)
@@ -67,7 +79,10 @@ internal sealed class ClaudeCliClipPromptAgent(ClaudeCli claude, IOptions<StoryF
         StillPromptsOutput? output;
         try
         {
-            output = OutputSchema.Read<StillPromptsOutput>(reply.Output);
+            // Checked as the still prompts are: one per shot asked for.
+            output = OutputSchema.Read<ClipPromptsOutput>(reply.Output) is { } read
+                ? new StillPromptsOutput(read.Prompts is null ? null! : [.. read.Prompts.Select(p => p is null ? null! : new StillPromptOutput(p.Shot, p.Prompt))])
+                : null;
         }
         catch (JsonException)
         {

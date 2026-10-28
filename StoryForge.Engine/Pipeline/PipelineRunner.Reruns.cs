@@ -152,8 +152,8 @@ internal sealed partial class PipelineRunner
             await MarkAsync(projectId, PipelineStage.Voice, keys, false, cancellationToken);
             return;
         }
-        // A storyboard run, or stills made from the shots that would go: after it. A failed cut waits for Retry.
-        if (board.State == StageState.Failed || IsAnyBusy(projectId, PipelineStage.Storyboard) || IsAnyBusy(projectId, PipelineStage.Stills))
+        // A storyboard run, or stills or clips made from the shots that would go: after it. A failed cut waits for Retry.
+        if (board.State == StageState.Failed || IsAnyBusy(projectId, PipelineStage.Storyboard) || IsAnyBusy(projectId, PipelineStage.Stills) || IsAnyBusy(projectId, PipelineStage.Clips))
         {
             return;
         }

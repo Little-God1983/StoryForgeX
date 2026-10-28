@@ -116,10 +116,13 @@ internal sealed class FakeImageComfy : IComfyUi
     /// <summary>How often ComfyUI was asked to free its memory.</summary>
     public int Freed { get; private set; }
 
+    /// <summary>While set, freeing the memory fails with it.</summary>
+    public string? FreeFailure { get; set; }
+
     public Task FreeMemoryAsync(CancellationToken cancellationToken)
     {
         Freed++;
-        return Task.CompletedTask;
+        return FreeFailure is { } reason ? Task.FromException(new StageFailedException(reason)) : Task.CompletedTask;
     }
 
     /// <summary>An API-format image workflow: a picture in, a prompt, a seed, a size, a picture out.</summary>

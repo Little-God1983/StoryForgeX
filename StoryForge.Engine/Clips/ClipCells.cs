@@ -123,7 +123,14 @@ internal sealed class ClipCells(
             cell.Queued = false;
             cell.QueuedPrompt = null;
             cell.QueuedProfile = null;
+            if (cell is { State: StageState.Failed, CurrentVersion: not null })
+            {
+                // Its making again failed: it is back to the clip it had, to review or approved as it was.
+                cell.State = cell.ApprovedVersion == cell.CurrentVersion ? StageState.Approved : StageState.NeedsReview;
+                cell.Error = null;
+            }
         }, cancellationToken);
+        await runner.SettleAsync(projectId, Stage, cancellationToken);
     }
 
     /// <summary>

@@ -220,6 +220,98 @@ public sealed partial class StillsRunTests
         Assert.Empty(ClipRuns());
     }
 
+    [Fact]
+    public async Task Approve_remaining_leaves_a_clip_that_was_never_made_failed()
+    {
+        var client = await StartWithClipsAsync();
+        _comfy.Failure = "CUDA out of memory";
+        _comfy.FailFor = "the motion of S02-3,";
+        var project = await StillsApprovedAsync(client);
+        await ClipsAsync(client, project.Id);
+        var keys = await KeysAsync(client, project.Id);
+
+        await client.ApproveSegmentsAsync(project.Id, PipelineStage.Clips);
+
+        var view = await client.GetClipsAsync(project.Id);
+        Assert.Equal((StageState.Failed, "S02·3: CUDA out of memory"), view.Clips.Single(c => c.Key == keys["S02·3"]) is var c ? (c.State, c.Error) : default);
+        Assert.Equal(59, view.Clips.Count(c => c.State == StageState.Approved));
+    }
+
+    [Fact]
+    public async Task Taking_a_failed_clip_out_of_the_waiting_ones_gives_back_the_one_it_had()
+    {
+        var client = await StartWithClipsAsync();
+        var project = await StillsApprovedAsync(client);
+        await ClipsAsync(client, project.Id);
+        var keys = await KeysAsync(client, project.Id);
+        _comfy.Failure = "CUDA out of memory";
+        _comfy.FailFor = "the motion of S01-2,";
+        await client.QueueClipAsync(project.Id, keys["S01·2"]);
+        await client.MakeClipsAsync(project.Id);
+        await ClipsAsync(client, project.Id, v => v.State != StageState.Running && v.Clips.Single(c => c.Key == keys["S01·2"]).State == StageState.Failed);
+
+        await client.UnqueueClipAsync(project.Id, keys["S01·2"]);
+
+        var clip = (await client.GetClipsAsync(project.Id)).Clips.Single(c => c.Key == keys["S01·2"]);
+        Assert.Equal((StageState.NeedsReview, 1, false, (string?)null), (clip.State, clip.Version, clip.Queued, clip.Error));
+    }
+
+    [Fact]
+    public async Task A_clip_switched_to_a_profile_that_cannot_make_it_fails_alone()
+    {
+        var client = await StartWithClipsAsync();
+        var project = await StillsApprovedAsync(client);
+        await ClipsAsync(client, project.Id);
+        var keys = await KeysAsync(client, project.Id);
+        var broken = await client.CreateProfileAsync(ProfileKind.Video, "Broken");
+        var starter = await client.GetProfileVersionAsync(broken.Id);
+        var saved = await client.SaveProfileVersionAsync(broken.Id, starter.Content with { WorkflowTemplate = "video.json", Inputs = [.. VideoInputs.Where(i => i.Key != "frames")] });
+        await client.QueueClipAsync(project.Id, keys["S03·2"], profile: new ProfileRef(broken.Id, saved.Version));
+        await client.QueueClipAsync(project.Id, keys["S01·2"]);
+
+        await client.MakeClipsAsync(project.Id);
+
+        var view = await ClipsAsync(client, project.Id, v => v.State != StageState.Running && v.Clips.Single(c => c.Key == keys["S01·2"]).Version == 2);
+        Assert.Equal(StageState.NeedsReview, view.State);
+        var failed = view.Clips.Single(c => c.Key == keys["S03·2"]);
+        Assert.Equal((StageState.Failed, 1), (failed.State, failed.Version));
+        Assert.Equal("S03·2: The video profile Broken does not say where 'frames' goes. Map it to the workflow's node in the profile.", failed.Error);
+    }
+
+    [Fact]
+    public async Task A_shot_longer_than_the_profile_switched_to_makes_fails_with_why()
+    {
+        var client = await StartWithClipsAsync();
+        var project = await StillsApprovedAsync(client);
+        await ClipsAsync(client, project.Id);
+        var keys = await KeysAsync(client, project.Id);
+        var shorter = await VideoProfileAsync(client, "Short", maxClip: 4);
+        await client.QueueClipAsync(project.Id, keys["S03·2"], profile: shorter);
+
+        await client.MakeClipsAsync(project.Id);
+
+        var view = await ClipsAsync(client, project.Id, v => v.State != StageState.Running);
+        var shot = (await client.GetStoryboardAsync(project.Id)).Shots.Single(s => s.Key == keys["S03·2"]).Shot;
+        var failed = view.Clips.Single(c => c.Key == keys["S03·2"]);
+        Assert.Equal(StageState.Failed, failed.State);
+        Assert.Equal($"S03·2: the shot lasts {shot.Seconds.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture)} s, and Short makes at most 4 s. Make it with the project's model.", failed.Error);
+        Assert.Equal(60, ClipRuns().Count);   // nothing sent to ComfyUI for it
+    }
+
+    [Fact]
+    public async Task When_ComfyUI_will_not_free_its_memory_the_clips_are_made_all_the_same()
+    {
+        var client = await StartWithClipsAsync();
+        _comfy.FreeFailure = "ComfyUI would not free its memory (HTTP 404).";
+        var project = await StillsApprovedAsync(client);
+
+        var view = await ClipsAsync(client, project.Id);
+
+        Assert.Null(view.Error);
+        Assert.Equal(60, view.Clips.Count(c => c.Version == 1));
+        Assert.Contains(view.Activity, l => l.Text.Contains("could not free ComfyUI's VRAM", StringComparison.Ordinal));
+    }
+
     [Theory]
     [InlineData(5, 20, 6, 0.5)]
     [InlineData(19.6, 20, 20, 0.2)]

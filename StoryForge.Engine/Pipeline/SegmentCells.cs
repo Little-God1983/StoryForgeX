@@ -86,6 +86,8 @@ internal sealed class SegmentCells(
                     throw new InvalidOperationException($"{string.Join(", ", bare)} {(bare.Count == 1 ? "has" : "have")} no image yet: make the images first.");
                 }
             }
+            // One never made (a clip that failed on its first try) has nothing to approve: it stays as it is.
+            segments.RemoveAll(s => s.CurrentVersion is null);
             approved = [.. segments.Where(s => s.State != StageState.Approved).Select(s => s.Key)];
             foreach (var segment in segments)
             {
