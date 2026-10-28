@@ -17,7 +17,14 @@ namespace StoryForge.Engine.Pipeline;
 /// stay as they are. Null for every segment.
 /// </param>
 internal sealed record StageContext(
-    Project Project, IProgress<ActivityLine> Activity, Func<CellResult, Task>? StoreSegment = null, string? Note = null, IReadOnlySet<string>? Scope = null);
+    Project Project, IProgress<ActivityLine> Activity, Func<CellResult, Task>? StoreSegment = null, string? Note = null, IReadOnlySet<string>? Scope = null)
+{
+    /// <summary>
+    /// Marks one segment failed with the reason while the whole-stage run goes on with the next (a
+    /// clip that would not come out). Null outside a whole-stage run.
+    /// </summary>
+    public Func<string, string, Task>? FailSegment { get; init; }
+}
 
 /// <summary>A stage's finished result, ready to store as a new version.</summary>
 /// <param name="OutputJson">The result in <see cref="StoredJson"/> form.</param>

@@ -94,6 +94,9 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IStageWorker, StillsStage>();
         services.AddSingleton<StillCells>();
         services.AddSingleton<TestRenders>();
+        services.AddSingleton<Clips.IClipPromptAgent, Clips.ClaudeCliClipPromptAgent>();
+        services.AddSingleton<IStageWorker, Clips.ClipsStage>();
+        services.AddSingleton<Clips.ClipCells>();
         services.AddSingleton<Reruns>();
         // After DatabaseInitializer: hosted services start in order, and the runner reads the database.
         services.AddSingleton<PipelineRunner>();

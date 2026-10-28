@@ -235,13 +235,15 @@ internal sealed partial class PipelineRunner(
         {
             throw new InvalidOperationException($"The {stage} stage is running. Approve it when it is done.");
         }
-        if (stage == PipelineStage.Stills)
+        if (stage is PipelineStage.Stills or PipelineStage.Clips)
         {
-            // As a whole only as its stills settle it, under the settle lock: every shot with its still, each approved.
+            // As a whole only as its stills (or clips) settle it, under the settle lock: every shot with its own, each approved.
             await SettleAsync(projectId, stage, cancellationToken);
             if ((await projects.GetAsync(projectId, cancellationToken)).Stages.FirstOrDefault(s => s.Stage == stage)?.State != StageState.Approved)
             {
-                throw new InvalidOperationException("Approve every still first, and make the ones still missing: the clips are made from them.");
+                throw new InvalidOperationException(stage == PipelineStage.Stills
+                    ? "Approve every still first, and make the ones still missing: the clips are made from them."
+                    : "Approve every clip first, and make the ones still missing.");
             }
             return;
         }
@@ -454,7 +456,10 @@ internal sealed partial class PipelineRunner(
             job.Cancel.Token.ThrowIfCancellationRequested();
             var project = await projects.GetAsync(job.ProjectId, job.Cancel.Token);
             var gated = IsGated(project.Setup, job.Stage);
-            var context = new StageContext(project, reporter, job.Key == Whole ? segment => StoreRunSegmentAsync(job, segment, gated) : null, job.Note, job.Scope);
+            var context = new StageContext(project, reporter, job.Key == Whole ? segment => StoreRunSegmentAsync(job, segment, gated) : null, job.Note, job.Scope)
+            {
+                FailSegment = job.Key == Whole ? (key, reason) => FailRunSegmentAsync(job, key, reason) : null,
+            };
             if (job.Key == Whole)
             {
                 var result = await _workers[job.Stage].RunAsync(context, job.Cancel.Token);
@@ -519,6 +524,7 @@ internal sealed partial class PipelineRunner(
             try
             {
                 await SettleAsync(job.ProjectId, PipelineStage.Stills, _stopping.Token);
+                await SettleAsync(job.ProjectId, PipelineStage.Clips, _stopping.Token);
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
@@ -620,10 +626,10 @@ internal sealed partial class PipelineRunner(
                 voice.Rerun = false;
             }
         }
-        if (job.Stage == PipelineStage.Stills)
+        if (job.Stage is PipelineStage.Stills or PipelineStage.Clips)
         {
-            // From the stills, not the gate alone: a run that made only some leaves the approved ones
-            // approved, and every shot needs a still.
+            // From the stills (or clips), not the gate alone: a run that made only some leaves the
+            // approved ones approved, and every shot needs its own.
             await SettleAsync(db, job.ProjectId, job.Stage, CancellationToken.None);
         }
         await TouchAsync(db, cell, CancellationToken.None);
@@ -650,12 +656,13 @@ internal sealed partial class PipelineRunner(
             cell.State = state = gated ? StageState.NeedsReview : StageState.Approved;
             // A still made again in the batch keeps the approval of the one before, to switch back to;
             // a whole run of any other stage makes everything anew, to review again.
-            cell.ApprovedVersion = !gated ? cell.CurrentVersion : job.Stage == PipelineStage.Stills ? cell.ApprovedVersion : null;
+            cell.ApprovedVersion = !gated ? cell.CurrentVersion : job.Stage is PipelineStage.Stills or PipelineStage.Clips ? cell.ApprovedVersion : null;
             cell.Error = null;
             cell.ActivityJson = "[]";
             // Made again: out of the batch. Only now, so one that fails or is cancelled stays in it, with your prompt.
             cell.Queued = false;
             cell.QueuedPrompt = null;
+            cell.QueuedProfile = null;
             await TouchAsync(db, cell, CancellationToken.None);
             await db.SaveChangesAsync(CancellationToken.None);
         }
@@ -664,6 +671,32 @@ internal sealed partial class PipelineRunner(
             job.Stored.Add(result.Key);
         }
         Publish(new StageUpdate(job.ProjectId, job.Stage, state, Key: result.Key));
+    }
+
+    /// <summary>
+    /// One segment of a whole-stage run could not be made (see <see cref="StageContext.FailSegment"/>):
+    /// its cell shows failed with the reason, keeping what it had, while the run goes on with the next.
+    /// </summary>
+    private async Task FailRunSegmentAsync(Job job, string key, string reason)
+    {
+        await using (var db = await contextFactory.CreateDbContextAsync(CancellationToken.None))
+        {
+            var cell = await db.Cells.FirstOrDefaultAsync(c => c.ProjectId == job.ProjectId && c.Stage == job.Stage && c.Key == key);
+            if (cell is null)
+            {
+                cell = new CellEntry { ProjectId = job.ProjectId, Stage = job.Stage, Key = key };
+                db.Cells.Add(cell);
+            }
+            cell.State = StageState.Failed;
+            cell.Error = reason;   // still queued, with your prompt: Make clips tries it again
+            await TouchAsync(db, cell, CancellationToken.None);
+            await db.SaveChangesAsync(CancellationToken.None);
+        }
+        lock (job.Stored)
+        {
+            job.Stored.Add(key);   // done with in this run: no longer "to come"
+        }
+        Publish(new StageUpdate(job.ProjectId, job.Stage, StageState.Failed, Key: key));
     }
 
     /// <summary>Whether a whole run saved its result partway, as References keeps its list before its images.</summary>
@@ -715,6 +748,7 @@ internal sealed partial class PipelineRunner(
         cell.ActivityJson = StoredJson.Write(activity);
         cell.Queued = false;   // made again: out of the batch
         cell.QueuedPrompt = null;
+        cell.QueuedProfile = null;
         await TouchAsync(db, cell, CancellationToken.None);
         var stage = await SettleAsync(db, job.ProjectId, job.Stage, CancellationToken.None);
         await db.SaveChangesAsync(CancellationToken.None);
@@ -741,9 +775,9 @@ internal sealed partial class PipelineRunner(
         {
             state = StageState.NeedsReview;   // every reference on the list needs an approved image, not just the ones that have one
         }
-        if (stage == PipelineStage.Stills && state == StageState.Approved)
+        if (stage is PipelineStage.Stills or PipelineStage.Clips && state == StageState.Approved)
         {
-            // Every shot needs a still, not just the ones that have one: a shot split off later has none yet.
+            // Every shot needs a still (a clip), not just the ones that have one: a shot split off later has none yet.
             var shots = await db.Cells.AsNoTracking().Where(c => c.ProjectId == projectId && c.Stage == PipelineStage.Storyboard && c.Key != Whole).Select(c => c.Key).ToListAsync(cancellationToken);
             if (shots.Any(k => segments.All(s => s.Key != k || s.CurrentVersion is null)))
             {
@@ -761,12 +795,14 @@ internal sealed partial class PipelineRunner(
         return state;
     }
 
-    /// <summary>The stills of shots that are gone (merged, or planned away): a still is the shot's, and its key may come back.</summary>
+    /// <summary>The stills and clips of shots that are gone (merged, or planned away): they are the shot's, and its key may come back.</summary>
     internal static async Task RemoveStillsAsync(StoryForgeDbContext db, Guid projectId, IReadOnlyList<string> shotKeys, CancellationToken cancellationToken)
     {
         if (shotKeys.Count > 0)
         {
-            db.Cells.RemoveRange(await db.Cells.Where(c => c.ProjectId == projectId && c.Stage == PipelineStage.Stills && shotKeys.Contains(c.Key)).ToListAsync(cancellationToken));
+            db.Cells.RemoveRange(await db.Cells
+                .Where(c => c.ProjectId == projectId && (c.Stage == PipelineStage.Stills || c.Stage == PipelineStage.Clips) && shotKeys.Contains(c.Key))
+                .ToListAsync(cancellationToken));
         }
     }
 

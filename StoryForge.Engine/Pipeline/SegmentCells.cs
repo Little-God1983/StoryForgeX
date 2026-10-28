@@ -19,7 +19,8 @@ internal sealed class SegmentCells(
     TimeProvider clock)
 {
     /// <summary>The stages whose segments are cells of their own.</summary>
-    public static bool HasSegments(PipelineStage stage) => stage is PipelineStage.Script or PipelineStage.Voice or PipelineStage.Storyboard or PipelineStage.References or PipelineStage.Stills;
+    public static bool HasSegments(PipelineStage stage) =>
+        stage is PipelineStage.Script or PipelineStage.Voice or PipelineStage.Storyboard or PipelineStage.References or PipelineStage.Stills or PipelineStage.Clips;
 
     public async Task ApproveAsync(Guid projectId, PipelineStage stage, string segmentId, int version, CancellationToken cancellationToken)
     {
@@ -224,6 +225,7 @@ internal sealed class SegmentCells(
         PipelineStage.Storyboard => "storyboard",
         PipelineStage.References => "references",
         PipelineStage.Stills => "stills",
+        PipelineStage.Clips => "clips",
         _ => "script",
     };
 
@@ -231,7 +233,7 @@ internal sealed class SegmentCells(
     {
         PipelineStage.Voice => "spoken",
         PipelineStage.Storyboard => "planned",
-        PipelineStage.References or PipelineStage.Stills => "made",
+        PipelineStage.References or PipelineStage.Stills or PipelineStage.Clips => "made",
         _ => "written",
     };
 }

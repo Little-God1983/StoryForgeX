@@ -239,6 +239,33 @@ public interface IStoryForgeClient
     /// <exception cref="InvalidOperationException">Nothing is waiting, the references are not approved, or the stills are being made.</exception>
     Task ContinuePipelineAsync(Guid projectId, CancellationToken cancellationToken = default);
 
+    /// <summary>The Clips stage: its state, and each shot's clip with its versions and whether it waits to be made again.</summary>
+    /// <exception cref="KeyNotFoundException">No such project.</exception>
+    Task<ClipsView> GetClipsAsync(Guid projectId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Regenerate on a clip (or Edit prompt…, with your prompt; or Make with…, with another video
+    /// profile): it waits, and Make clips makes it again with the others, each model's together.
+    /// </summary>
+    /// <param name="prompt">Your prompt, used as it is; null or blank for one Claude writes.</param>
+    /// <param name="profile">Another video profile to make it with (the fallback); null for the project's. The app never switches on its own.</param>
+    /// <exception cref="KeyNotFoundException">No such project, or the shot has no clip cell yet.</exception>
+    /// <exception cref="InvalidOperationException">The clip or the Clips stage is being made.</exception>
+    Task QueueClipAsync(Guid projectId, string shotKey, string? prompt = null, ProfileRef? profile = null, CancellationToken cancellationToken = default);
+
+    /// <summary>Takes a clip out of the waiting ones: it stays as it is.</summary>
+    /// <exception cref="KeyNotFoundException">No such project, or the shot has no clip cell yet.</exception>
+    /// <exception cref="InvalidOperationException">The clip or the Clips stage is being made.</exception>
+    Task UnqueueClipAsync(Guid projectId, string shotKey, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Make clips: the clips waiting are made again, and the shots with none yet get theirs, in one
+    /// run. When the clips were never made (stills approved before), they are all made.
+    /// </summary>
+    /// <exception cref="KeyNotFoundException">No such project.</exception>
+    /// <exception cref="InvalidOperationException">Nothing is waiting, the stills are not approved, or the clips are being made.</exception>
+    Task MakeClipsAsync(Guid projectId, CancellationToken cancellationToken = default);
+
     /// <summary>
     /// What Rerun pipeline from here on this cell would make again, as the question before it says:
     /// "This remakes S04's voice, its 4 shots and their 4 stills. Other segments stay as they are."

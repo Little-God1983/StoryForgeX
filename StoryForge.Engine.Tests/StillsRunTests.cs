@@ -59,7 +59,8 @@ public sealed partial class StillsRunTests : IDisposable
 
     public void Dispose() => _engine.Dispose();
 
-    private Task<IStoryForgeClient> StartAsync() => _engine.StartClientAsync(services =>
+    /// <param name="more">More services, e.g. the Clips stage.</param>
+    private Task<IStoryForgeClient> StartAsync(Action<IServiceCollection>? more = null) => _engine.StartClientAsync(services =>
     {
         services.Replace(ServiceDescriptor.Singleton<IResearchAgent>(new ScriptRunTests.ThreeFacts()));
         services.Replace(ServiceDescriptor.Singleton<IScriptAgent>(_script));
@@ -70,6 +71,7 @@ public sealed partial class StillsRunTests : IDisposable
         services.Replace(ServiceDescriptor.Singleton<IStillPromptAgent>(_prompts));
         StoryboardRunTests.UseVoice<StoryboardRunTests.WordsVoice>(services);
         services.AddSingleton<IStageWorker, StillsStage>();
+        more?.Invoke(services);
     });
 
     /// <summary>

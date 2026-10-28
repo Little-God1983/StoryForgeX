@@ -101,6 +101,15 @@
       "crop": "center"
     }
   },
+  "302": {
+    "class_type": "GetImageSize",
+    "inputs": {
+      "image": [
+        "301",
+        0
+      ]
+    }
+  },
   "264": {
     "class_type": "MiniMaxH3ImageToVideo",
     "inputs": {
@@ -113,8 +122,14 @@
         0
       ],
       "prompt": "The camera slowly pushes in.",
-      "width": 1344,
-      "height": 768,
+      "width": [
+        "302",
+        0
+      ],
+      "height": [
+        "302",
+        1
+      ],
       "length": 124,
       "first_frame": [
         "301",

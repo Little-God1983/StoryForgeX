@@ -183,10 +183,12 @@ internal sealed class StoryboardEdits(
         {
             return;
         }
-        if (changes.Any(c => c.Shot is null || c.IsNew) && runner.IsAnyBusy(projectId, PipelineStage.Stills))
+        if (changes.Any(c => c.Shot is null || c.IsNew) && (runner.IsAnyBusy(projectId, PipelineStage.Stills) || runner.IsAnyBusy(projectId, PipelineStage.Clips)))
         {
-            // A shot merged away meanwhile would get its still back from the run, and one split off would be missed.
-            throw new InvalidOperationException("The stills are being made from the storyboard. Try again when they are done.");
+            // A shot merged away meanwhile would get its still (or clip) back from the run, and one split off would be missed.
+            throw new InvalidOperationException(runner.IsAnyBusy(projectId, PipelineStage.Stills)
+                ? "The stills are being made from the storyboard. Try again when they are done."
+                : "The clips are being made from the storyboard. Try again when they are done.");
         }
 
         var gated = await segments.GatedAsync(projectId, Stage, cancellationToken);
@@ -253,5 +255,6 @@ internal sealed class StoryboardEdits(
         }
         await runner.SettleAsync(projectId, Stage, cancellationToken);
         await runner.SettleAsync(projectId, PipelineStage.Stills, cancellationToken);   // a shot split off has no still yet
+        await runner.SettleAsync(projectId, PipelineStage.Clips, cancellationToken);   // nor a clip
     }
 }

@@ -44,6 +44,9 @@ namespace StoryForge.Engine.Data.Migrations
                     b.Property<bool>("Queued")
                         .HasColumnType("INTEGER");
 
+                    b.Property<string>("QueuedProfile")
+                        .HasColumnType("TEXT");
+
                     b.Property<string>("QueuedPrompt")
                         .HasColumnType("TEXT");
 

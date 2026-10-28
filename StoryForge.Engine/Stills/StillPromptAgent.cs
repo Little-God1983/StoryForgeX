@@ -47,7 +47,10 @@ internal sealed record StillPromptOutput(
 /// <summary>Checks the model's prompts: one for every shot asked for, none empty, none for a shot not asked for.</summary>
 internal static class StillPromptCheck
 {
-    public static IReadOnlyList<string> Problems(StillPromptsOutput? output, IReadOnlyList<StillShot> shots)
+    public static IReadOnlyList<string> Problems(StillPromptsOutput? output, IReadOnlyList<StillShot> shots) => Problems(output, [.. shots.Select(s => s.Label)]);
+
+    /// <summary>The same for any shots by label, e.g. the clips' motion prompts.</summary>
+    public static IReadOnlyList<string> Problems(StillPromptsOutput? output, IReadOnlyList<string> labels)
     {
         if (output?.Prompts is null)
         {
@@ -55,32 +58,34 @@ internal static class StillPromptCheck
         }
         var problems = new List<string>();
         var answered = output.Prompts.Where(p => p is not null).ToList();
-        foreach (var extra in answered.Where(p => shots.All(s => !Same(s.Label, p.Shot))))
+        foreach (var extra in answered.Where(p => labels.All(l => !Same(l, p.Shot))))
         {
             problems.Add($"{extra.Shot} is not one of the shots asked for.");
         }
-        foreach (var shot in shots)
+        foreach (var label in labels)
         {
-            var mine = answered.Where(p => Same(shot.Label, p.Shot)).ToList();
+            var mine = answered.Where(p => Same(label, p.Shot)).ToList();
             if (mine.Count == 0)
             {
-                problems.Add($"{Name(shot.Label)} has no prompt.");
+                problems.Add($"{Name(label)} has no prompt.");
             }
             else if (mine.Count > 1)
             {
-                problems.Add($"{Name(shot.Label)} has {mine.Count} prompts; give it one.");
+                problems.Add($"{Name(label)} has {mine.Count} prompts; give it one.");
             }
             else if (string.IsNullOrWhiteSpace(mine[0].Prompt))
             {
-                problems.Add($"The prompt for {Name(shot.Label)} is empty.");
+                problems.Add($"The prompt for {Name(label)} is empty.");
             }
         }
         return problems;
     }
 
     /// <summary>The prompt of each shot, by label; only for an answer with no problems.</summary>
-    public static IReadOnlyDictionary<string, string> ByLabel(StillPromptsOutput output, IReadOnlyList<StillShot> shots) =>
-        shots.ToDictionary(s => s.Label, s => output.Prompts.First(p => p is not null && Same(s.Label, p.Shot)).Prompt.Trim());
+    public static IReadOnlyDictionary<string, string> ByLabel(StillPromptsOutput output, IReadOnlyList<StillShot> shots) => ByLabel(output, [.. shots.Select(s => s.Label)]);
+
+    public static IReadOnlyDictionary<string, string> ByLabel(StillPromptsOutput output, IReadOnlyList<string> labels) =>
+        labels.ToDictionary(l => l, l => output.Prompts.First(p => p is not null && Same(l, p.Shot)).Prompt.Trim());
 
     /// <summary>"S01-2": the label as the model writes it, in ASCII.</summary>
     public static string Name(string label) => label.Replace('·', '-');
