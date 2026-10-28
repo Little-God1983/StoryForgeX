@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using StoryForge.App.ViewModels.Script;
@@ -135,7 +136,7 @@ public sealed partial class ReferencesViewModel
         {
             nameof(SelectedCard), nameof(SelectedPicture), nameof(ShowsCard), nameof(ShowsPicture), nameof(ShowsNothingSelected), nameof(SelectedName), nameof(SelectedStatus),
             nameof(PreviewPath), nameof(ShowsPartial), nameof(MadeUpText), nameof(ShowsMissing), nameof(MissingWhy), nameof(ShowsAsIs), nameof(ImageChoices),
-            nameof(Versions), nameof(MadeFrom), nameof(Look), nameof(SelectedShots), nameof(MergeChoices), nameof(UseForChoices),
+            nameof(Versions), nameof(MadeFrom), nameof(Look), nameof(SelectedShots), nameof(MergeChoices), nameof(UseForChoices), nameof(RerunText),
         })
         {
             OnPropertyChanged(name);
@@ -144,6 +145,7 @@ public sealed partial class ReferencesViewModel
         {
             ApproveCommand, RegenerateCommand, ShowVersionCommand, AddImageCommand, SearchAgainCommand, AddOwnPictureCommand,
             FromDescriptionCommand, StartEditLookCommand, SaveLookCommand, MergeCommand, RemoveCommand, RemoveImageCommand, UsePictureCommand, UseAsItIsCommand, OpenPageCommand, DiscardPictureCommand,
+            RerunFromHereCommand,
         })
         {
             command.NotifyCanExecuteChanged();
@@ -203,6 +205,43 @@ public sealed partial class ReferencesViewModel
         var key = SelectedImage!.Key;
         return ConfirmedImage(key) ? ActAsync("make the image again", () => client.RegenerateSegmentAsync(ProjectId, PipelineStage.References, key)) : Task.CompletedTask;
     }
+
+    /// <summary>A rerun waits on the image: "Part of a rerun: once you approve it, the stills that use it are made again."; null for none.</summary>
+    public string? RerunText => SelectedImage is { Rerun: true } image
+        ? $"Part of a rerun: {(image.State == StageState.Approved ? "the stills that use it are made again next." : "once you approve it, the stills that use it are made again.")}"
+        : null;
+
+    // Only an image some still went into: from any other, nothing would be made again.
+    private bool CanRerunFromHere() => CardIdle() && !IsListPhase && SelectedImage is { Version: > 0 } image && _view?.StillsUsingImage.GetValueOrDefault(image.Key) > 0;
+
+    /// <summary>Rerun pipeline from here ↓: the stills that use the image made again. Asks first with how many.</summary>
+    [RelayCommand(CanExecute = nameof(CanRerunFromHere))]
+    private async Task RerunFromHereAsync()
+    {
+        var key = SelectedImage!.Key;
+        RerunPlan plan;
+        try
+        {
+            plan = await client.GetRerunPlanAsync(ProjectId, PipelineStage.References, key);
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"Could not rerun the stills from here: {ex}");
+            ActionError = $"Could not rerun the stills from here: {ex.Message}";
+            return;
+        }
+        if (!plan.CanRun)
+        {
+            ActionError = plan.Text;   // nothing to ask: nothing would be made
+        }
+        else if (confirm?.Invoke($"{plan.Text} Go on?") != false)
+        {
+            await ActAsync("rerun the stills from here", () => client.RerunFromHereAsync(ProjectId, PipelineStage.References, key));
+        }
+    }
+
+    [RelayCommand]
+    private Task StopRerunAsync() => ActAsync("stop the rerun", () => client.StopRerunAsync(ProjectId));
 
     private bool CanShowVersion(int version) => CardIdle() && SelectedImage is not null;
 

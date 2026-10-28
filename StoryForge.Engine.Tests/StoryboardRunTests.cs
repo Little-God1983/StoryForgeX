@@ -258,7 +258,7 @@ public sealed class StoryboardRunTests : IDisposable
     /// <summary>Storyboards and shots from a script; records what it was asked.</summary>
     internal sealed class FakeStoryboardAgent : IStoryboardAgent
     {
-        private readonly Queue<StoryboardOutput> _boards = new();
+        private readonly Queue<Func<CancellationToken, Task<StoryboardOutput>>> _boards = new();
         private readonly Queue<Func<CancellationToken, Task<ShotRewriteOutput>>> _shots = new();
 
         public List<StoryboardRequest> Requests { get; } = [];
@@ -270,7 +270,18 @@ public sealed class StoryboardRunTests : IDisposable
 
         public FakeStoryboardAgent Answer(StoryboardOutput output)
         {
-            _boards.Enqueue(output);
+            _boards.Enqueue(_ => Task.FromResult(output));
+            return this;
+        }
+
+        /// <summary>The next storyboard comes once <paramref name="release"/> is done.</summary>
+        public FakeStoryboardAgent AnswerWhen(Task release, StoryboardOutput output)
+        {
+            _boards.Enqueue(async token =>
+            {
+                await release.WaitAsync(token);
+                return output;
+            });
             return this;
         }
 
@@ -286,7 +297,7 @@ public sealed class StoryboardRunTests : IDisposable
             throw new InvalidOperationException("unreachable");
         });
 
-        public Task<ScriptAnswer<StoryboardOutput>> PlanAsync(StoryboardRequest request, string? session, IReadOnlyList<string> problems,
+        public async Task<ScriptAnswer<StoryboardOutput>> PlanAsync(StoryboardRequest request, string? session, IReadOnlyList<string> problems,
             IProgress<ActivityLine> activity, CancellationToken cancellationToken)
         {
             lock (Requests)
@@ -294,7 +305,7 @@ public sealed class StoryboardRunTests : IDisposable
                 Requests.Add(request);
                 Problems.Add(problems);
             }
-            return Task.FromResult(new ScriptAnswer<StoryboardOutput>("s", _boards.Dequeue()));
+            return new ScriptAnswer<StoryboardOutput>("s", await _boards.Dequeue()(cancellationToken));
         }
 
         public async Task<ScriptAnswer<ShotRewriteOutput>> RewriteShotAsync(StoryboardRequest request, IReadOnlyList<Shot> board, IReadOnlyList<CastMember> cast,

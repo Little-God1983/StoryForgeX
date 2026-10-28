@@ -19,7 +19,7 @@ namespace StoryForge.Engine.Tests;
 /// (a continuation from the still before, one step at most), and each still is made again in the
 /// batch, from your prompt, or replaced by your own file.
 /// </summary>
-public sealed class StillsRunTests : IDisposable
+public sealed partial class StillsRunTests : IDisposable
 {
     private readonly EngineTestHost _engine = new();
     private readonly ScriptRunTests.FakeScriptAgent _script = new();

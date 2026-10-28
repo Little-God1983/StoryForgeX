@@ -193,7 +193,9 @@ public sealed partial class SegmentRowViewModel(SegmentView segment, Action<Segm
 /// while a stage runs.
 /// </summary>
 /// <param name="pickPicture">Asks for a picture file (Replace with file…); null when none was picked.</param>
-public sealed partial class ScriptMatrixViewModel(IStoryForgeClient client, Guid projectId, IAudioPlayer? player = null, Func<string?>? pickPicture = null) : ObservableObject
+/// <param name="confirm">Asks yes or no before a rerun; without it, the rerun goes ahead.</param>
+public sealed partial class ScriptMatrixViewModel(
+    IStoryForgeClient client, Guid projectId, IAudioPlayer? player = null, Func<string?>? pickPicture = null, Func<string, bool>? confirm = null) : ObservableObject
 {
     // Counts loads and live updates; a load that finds the count moved on drops its view.
     private int _loads;
@@ -209,7 +211,7 @@ public sealed partial class ScriptMatrixViewModel(IStoryForgeClient client, Guid
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsRunning), nameof(IsReview), nameof(IsApproved), nameof(IsFailed), nameof(IsNotStarted), nameof(ShowsLog), nameof(HasSegments))]
-    [NotifyCanExecuteChangedFor(nameof(ApproveRemainingCommand), nameof(RegenerateScriptCommand), nameof(CancelCommand), nameof(ApproveSegmentCommand), nameof(RegenerateSegmentCommand), nameof(StartEditCommand),
+    [NotifyCanExecuteChangedFor(nameof(ApproveRemainingCommand), nameof(RegenerateScriptCommand), nameof(CancelCommand), nameof(ApproveSegmentCommand), nameof(RegenerateSegmentCommand), nameof(RerunFromHereCommand), nameof(StartEditCommand),
         nameof(AskNoteCommand), nameof(ApproveRowCommand), nameof(AskNoteRowCommand), nameof(StartEditRowCommand), nameof(ShowRowVersionCommand), nameof(CopyAllCommand))]
     private StageState _state;
 
@@ -225,7 +227,7 @@ public sealed partial class ScriptMatrixViewModel(IStoryForgeClient client, Guid
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsVoiceRunning), nameof(IsVoiceReview), nameof(IsVoiceApproved), nameof(IsVoiceFailed), nameof(CanPlanBoard))]
-    [NotifyCanExecuteChangedFor(nameof(ApproveRemainingVoiceCommand), nameof(RegenerateVoiceCommand), nameof(CancelVoiceCommand), nameof(ApproveSegmentCommand), nameof(RegenerateSegmentCommand))]
+    [NotifyCanExecuteChangedFor(nameof(ApproveRemainingVoiceCommand), nameof(RegenerateVoiceCommand), nameof(CancelVoiceCommand), nameof(ApproveSegmentCommand), nameof(RegenerateSegmentCommand), nameof(RerunFromHereCommand))]
     private StageState _voiceState;
 
     public bool IsVoiceRunning => VoiceState == StageState.Running;
@@ -701,12 +703,17 @@ public sealed partial class ScriptMatrixViewModel(IStoryForgeClient client, Guid
 
     private void RefreshPanel()
     {
-        foreach (var name in new[] { nameof(SelectedHeading), nameof(SelectedStatus), nameof(SelectedNarration), nameof(SelectedNote), nameof(SelectedFacts), nameof(SelectedVersions), nameof(SelectedError), nameof(SelectedStale), nameof(SelectedStaleHint), nameof(SelectedIsRunning), nameof(SelectedShowsLog) })
+        foreach (var name in new[]
+        {
+            nameof(SelectedHeading), nameof(SelectedStatus), nameof(SelectedNarration), nameof(SelectedNote), nameof(SelectedFacts), nameof(SelectedVersions), nameof(SelectedError),
+            nameof(SelectedStale), nameof(SelectedStaleHint), nameof(SelectedIsRunning), nameof(SelectedShowsLog), nameof(SelectedIsRerun), nameof(SelectedRerunText),
+        })
         {
             OnPropertyChanged(name);
         }
         ApproveSegmentCommand.NotifyCanExecuteChanged();
         RegenerateSegmentCommand.NotifyCanExecuteChanged();
+        RerunFromHereCommand.NotifyCanExecuteChanged();
         StartEditCommand.NotifyCanExecuteChanged();
         AskNoteCommand.NotifyCanExecuteChanged();
         CancelSegmentCommand.NotifyCanExecuteChanged();

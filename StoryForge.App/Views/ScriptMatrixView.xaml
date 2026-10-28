@@ -575,6 +575,9 @@
               <Button Content="Cancel" Style="{StaticResource SecondaryButtonStyle}" MinHeight="44" Margin="0,8,0,0" Command="{Binding CancelSegmentCommand}"
                       AutomationProperties.Name="Cancel the segment"
                       Visibility="{Binding SelectedIsRunning, Converter={StaticResource Visible}}" />
+              <!-- Asks first with what it would make again: this cell, then what is made from it. -->
+              <Button Content="Rerun pipeline from here ↓" Style="{StaticResource SecondaryButtonStyle}" MinHeight="44" Margin="0,8,0,0"
+                      Command="{Binding RerunFromHereCommand}" AutomationProperties.Name="Rerun pipeline from here" />
             </StackPanel>
 
             <ScrollViewer VerticalScrollBarVisibility="Auto">
@@ -594,6 +597,16 @@
                     <TextBlock Text="{Binding SelectedStaleHint}" FontSize="12" Foreground="#B4A8F5" TextWrapping="Wrap" Margin="0,4,0,0" />
                     <TextBlock Text="It still shows what it was." FontSize="12" Foreground="#B4A8F5" TextWrapping="Wrap" Margin="0,2,0,0" />
                   </StackPanel>
+                </Border>
+                <!-- A rerun waits on this cell. -->
+                <Border Background="{StaticResource CardBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="8" Padding="12,8" Margin="0,0,0,12"
+                        Visibility="{Binding SelectedIsRerun, Converter={StaticResource Visible}}">
+                  <DockPanel>
+                    <Button DockPanel.Dock="Right" Content="Stop rerun" Style="{StaticResource SecondaryButtonStyle}" Padding="10,4" Margin="8,0,0,0" VerticalAlignment="Center"
+                            Command="{Binding StopRerunCommand}" />
+                    <TextBlock Text="{Binding SelectedRerunText}" FontSize="13" Foreground="{StaticResource AccentTextBrush}" TextWrapping="Wrap" VerticalAlignment="Center"
+                               AutomationProperties.AutomationId="SelectedRerun" />
+                  </DockPanel>
                 </Border>
                 <Border Background="{StaticResource CardBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="8" Padding="12,8" Margin="0,0,0,12"
                         Visibility="{Binding SelectedShowsLog, Converter={StaticResource Visible}}">

@@ -751,6 +751,32 @@ internal sealed class FakeStoryForgeClient : IStoryForgeClient
         return Task.CompletedTask;
     }
 
+    /// <summary>What the question before a rerun says; by default it names the cell.</summary>
+    public Func<PipelineStage, string, RerunPlan> RerunPlan { get; set; } = (stage, key) => new($"This remakes {key} ({stage}).", true);
+
+    /// <summary>Reruns started (stage, key), and "stop" for Stop rerun.</summary>
+    public List<(string Action, PipelineStage Stage, string Key)> Reruns { get; } = [];
+
+    public Task<RerunPlan> GetRerunPlanAsync(Guid projectId, PipelineStage stage, string key, CancellationToken cancellationToken = default)
+    {
+        ThrowIfFailing();
+        return Task.FromResult(RerunPlan(stage, key));
+    }
+
+    public Task RerunFromHereAsync(Guid projectId, PipelineStage stage, string key, CancellationToken cancellationToken = default)
+    {
+        ThrowIfFailing();
+        Reruns.Add(("rerun", stage, key));
+        return Task.CompletedTask;
+    }
+
+    public Task StopRerunAsync(Guid projectId, CancellationToken cancellationToken = default)
+    {
+        ThrowIfFailing();
+        Reruns.Add(("stop", default, ""));
+        return Task.CompletedTask;
+    }
+
     /// <summary>The test lines rendered, with the profile as it was.</summary>
     public List<(ProfileContent Profile, string Line)> TestRenders { get; } = [];
 

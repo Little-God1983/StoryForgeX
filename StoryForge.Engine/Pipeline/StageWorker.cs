@@ -12,7 +12,12 @@ namespace StoryForge.Engine.Pipeline;
 /// voice) shows each segment as soon as it is done. Its result's own segments then skip the ones
 /// stored this way. Null outside a whole-stage run.
 /// </param>
-internal sealed record StageContext(Project Project, IProgress<ActivityLine> Activity, Func<CellResult, Task>? StoreSegment = null, string? Note = null);
+/// <param name="Scope">
+/// A whole-stage run for these segments only (a rerun re-cutting one segment's shots): the others
+/// stay as they are. Null for every segment.
+/// </param>
+internal sealed record StageContext(
+    Project Project, IProgress<ActivityLine> Activity, Func<CellResult, Task>? StoreSegment = null, string? Note = null, IReadOnlySet<string>? Scope = null);
 
 /// <summary>A stage's finished result, ready to store as a new version.</summary>
 /// <param name="OutputJson">The result in <see cref="StoredJson"/> form.</param>

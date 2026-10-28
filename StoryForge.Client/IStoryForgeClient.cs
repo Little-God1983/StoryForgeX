@@ -239,6 +239,27 @@ public interface IStoryForgeClient
     /// <exception cref="InvalidOperationException">Nothing is waiting, the references are not approved, or the stills are being made.</exception>
     Task ContinuePipelineAsync(Guid projectId, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// What Rerun pipeline from here on this cell would make again, as the question before it says:
+    /// "This remakes S04's voice, its 4 shots and their 4 stills. Other segments stay as they are."
+    /// </summary>
+    /// <param name="key">The segment ("S04"), the shot or still (its shot's key), or the reference image ("R01/1").</param>
+    /// <exception cref="KeyNotFoundException">No such project, or nothing is made for the cell yet.</exception>
+    Task<RerunPlan> GetRerunPlanAsync(Guid projectId, PipelineStage stage, string key, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Rerun pipeline from here: the cell is made again (your own work stays), then, stage by stage,
+    /// what is made from it and nothing else; each waits at its gate as a run does. From a reference
+    /// image, the stills that use it.
+    /// </summary>
+    /// <exception cref="KeyNotFoundException">No such project, or nothing is made for the cell yet.</exception>
+    /// <exception cref="InvalidOperationException">The cell is being made, or nothing would be made from it.</exception>
+    Task RerunFromHereAsync(Guid projectId, PipelineStage stage, string key, CancellationToken cancellationToken = default);
+
+    /// <summary>Stops the project's reruns: what waits for approval stays as it is, and nothing more is made after it.</summary>
+    /// <exception cref="KeyNotFoundException">No such project.</exception>
+    Task StopRerunAsync(Guid projectId, CancellationToken cancellationToken = default);
+
     /// <summary>Your own picture as the still's next version (Replace with file…), to review like any other; nothing is made.</summary>
     /// <exception cref="KeyNotFoundException">No such project or shot.</exception>
     /// <exception cref="FileNotFoundException">No such file.</exception>

@@ -32,6 +32,7 @@ internal sealed class InProcessStoryForgeClient(
     ReferenceEdits referenceEdits,
     StillCells stills,
     TestRenders testRenders,
+    Reruns reruns,
     ProjectFolders folders) : IStoryForgeClient
 {
     public event EventHandler<StageUpdate>? StageUpdated
@@ -170,6 +171,14 @@ internal sealed class InProcessStoryForgeClient(
     public Task UnqueueStillAsync(Guid projectId, string shotKey, CancellationToken cancellationToken = default) => stills.UnqueueAsync(projectId, shotKey, cancellationToken);
 
     public Task ContinuePipelineAsync(Guid projectId, CancellationToken cancellationToken = default) => stills.ContinueAsync(projectId, cancellationToken);
+
+    public Task<RerunPlan> GetRerunPlanAsync(Guid projectId, PipelineStage stage, string key, CancellationToken cancellationToken = default) =>
+        reruns.PlanAsync(projectId, stage, key, cancellationToken);
+
+    public Task RerunFromHereAsync(Guid projectId, PipelineStage stage, string key, CancellationToken cancellationToken = default) =>
+        reruns.StartAsync(projectId, stage, key, cancellationToken);
+
+    public Task StopRerunAsync(Guid projectId, CancellationToken cancellationToken = default) => reruns.StopAsync(projectId, cancellationToken);
 
     public Task ReplaceStillAsync(Guid projectId, string shotKey, string path, CancellationToken cancellationToken = default) =>
         stills.ReplaceAsync(projectId, shotKey, path, cancellationToken);

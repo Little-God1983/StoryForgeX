@@ -13,6 +13,10 @@ internal sealed record StoryboardSegment(Segment Segment, SegmentWords Words);
 
 /// <summary>What the storyboard is cut from: the brief, the approved script as spoken, the storyboard profile and the pacing.</summary>
 /// <param name="Model">The model to use; empty means the provider's default.</param>
+/// <param name="Cast">
+/// Re-cutting some segments only (a rerun): the cast list of the storyboard so far, whose names the
+/// new shots use. Null for the whole storyboard.
+/// </param>
 internal sealed record StoryboardRequest(
     Guid ProjectId,
     string Brief,
@@ -20,7 +24,8 @@ internal sealed record StoryboardRequest(
     string Instructions,
     string Model,
     Pacing Pacing,
-    int MaxClipSeconds);
+    int MaxClipSeconds,
+    IReadOnlyList<CastMember>? Cast = null);
 
 /// <summary>The model that plans the shots. It has no tools: the script in the prompt is all it knows.</summary>
 internal interface IStoryboardAgent
@@ -55,10 +60,11 @@ internal sealed class ClaudeCliStoryboardAgent(ClaudeCli claude, IOptions<StoryF
     public async Task<ScriptAnswer<StoryboardOutput>> PlanAsync(
         StoryboardRequest request, string? session, IReadOnlyList<string> problems, IProgress<ActivityLine> activity, CancellationToken cancellationToken)
     {
-        Report(activity, session is null ? "planning the shots from the narration" : "fixing the storyboard");
+        var what = request.Cast is null ? "the shots" : $"the shots of {string.Join(", ", request.Segments.Select(s => s.Segment.Id))}";
+        Report(activity, session is null ? (request.Cast is null ? "planning the shots from the narration" : $"cutting {what} again") : "fixing the storyboard");
         var reply = await claude.AskAsync(
-            Call(request, session is null ? FirstPrompt(request) : ClaudeCliScriptAgent.CorrectionPrompt(problems, "the whole storyboard"), Schema, session),
-            new ClaudeStream(new ResearchPages(), activity, clock, "planning the shots"),
+            Call(request, session is null ? FirstPrompt(request) : ClaudeCliScriptAgent.CorrectionPrompt(problems, request.Cast is null ? "the whole storyboard" : what), Schema, session),
+            new ClaudeStream(new ResearchPages(), activity, clock, $"planning {what}"),
             cancellationToken);
         ReportCost(activity, reply);
         return new ScriptAnswer<StoryboardOutput>(reply.Session, Read<StoryboardOutput>(reply.Output));
@@ -81,7 +87,16 @@ internal sealed class ClaudeCliStoryboardAgent(ClaudeCli claude, IOptions<StoryF
     internal static string FirstPrompt(StoryboardRequest request)
     {
         var prompt = new StringBuilder();
-        prompt.AppendLine("Cut the narration of this video into shots.");
+        if (request.Cast is null)
+        {
+            prompt.AppendLine("Cut the narration of this video into shots.");
+        }
+        else
+        {
+            // A rerun: these segments only. The others keep their shots, and their cast.
+            prompt.AppendLine(CultureInfo.InvariantCulture,
+                $"Cut these segments of the narration of this video into shots again: {string.Join(", ", request.Segments.Select(s => s.Segment.Id))}. The other segments keep their shots.");
+        }
         prompt.AppendLine();
         prompt.AppendLine("Brief:");
         prompt.AppendLine(request.Brief);
@@ -105,6 +120,11 @@ internal sealed class ClaudeCliStoryboardAgent(ClaudeCli claude, IOptions<StoryF
             6. For every shot say what is seen (subject, setting, light, camera), who and what is in it (at most {Shot.MaxCast}, the ones that matter most), and whether it continues the shot before (same scene, the camera moves on).
             7. The cast list holds everyone and everything that is shown: characters, places and objects. Only what is shown, never what is only named. Give keyReason only for something shown in just one shot that carries the story, and say why; leave it empty otherwise.
             """);
+        if (request.Cast is { } cast)
+        {
+            prompt.AppendLine(CultureInfo.InvariantCulture,
+                $"8. The cast of the video so far: {string.Join(", ", cast.Select(c => $"{c.Name} ({c.Kind.ToString().ToLowerInvariant()})"))}. Name them so in the shots. Your cast list needs only who and what these shots show that is not on it yet.");
+        }
         AppendProfile(prompt, request.Instructions);
         return prompt.ToString();
     }

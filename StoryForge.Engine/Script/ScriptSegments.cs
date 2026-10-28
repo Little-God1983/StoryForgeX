@@ -65,6 +65,7 @@ internal sealed class ScriptSegments(
                 runner.LiveActivity(projectId, Stage, cell.Key) ?? StoredJson.Read<List<ActivityLine>>(cell.ActivityJson))
             {
                 Stale = stale.GetValueOrDefault((Stage, cell.Key)),
+                Rerun = cell.Rerun,
             };
         }).OfType<SegmentView>().ToList();
         var activity = runner.LiveActivity(projectId, Stage) ?? StoredJson.Read<List<ActivityLine>>(whole.ActivityJson);
