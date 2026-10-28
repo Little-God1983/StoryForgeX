@@ -384,6 +384,66 @@ public sealed partial class StillsRunTests
         Assert.Contains("fps", keys);
     }
 
+    [Fact]
+    public async Task When_Claude_cannot_write_the_prompts_a_clip_with_your_prompt_is_made_all_the_same()
+    {
+        var client = await StartWithClipsAsync();
+        var project = await StillsApprovedAsync(client);
+        await ClipsAsync(client, project.Id);
+        var keys = await KeysAsync(client, project.Id);
+        await client.QueueClipAsync(project.Id, keys["S01·2"], "The coin spins.");
+        await client.QueueClipAsync(project.Id, keys["S01·3"]);
+        _motion.Failure = "Claude CLI is not reachable.";
+
+        await client.MakeClipsAsync(project.Id);
+
+        var view = await ClipsAsync(client, project.Id, v => v.State != StageState.Running && v.Clips.Single(c => c.Key == keys["S01·2"]).Version == 2);
+        var failed = view.Clips.Single(c => c.Key == keys["S01·3"]);
+        Assert.Equal((StageState.Failed, "S01·3: Claude CLI is not reachable."), (failed.State, failed.Error));
+    }
+
+    [Fact]
+    public async Task VRAM_is_freed_again_before_another_video_model_loads()
+    {
+        var client = await StartWithClipsAsync();
+        var project = await StillsApprovedAsync(client);
+        await ClipsAsync(client, project.Id);
+        var keys = await KeysAsync(client, project.Id);
+        var ltx = await VideoProfileAsync(client, "LTX 2.5", maxClip: 30);
+        await client.QueueClipAsync(project.Id, keys["S01·2"]);
+        await client.QueueClipAsync(project.Id, keys["S03·2"], profile: ltx);
+        var before = _comfy.Freed;
+
+        await client.MakeClipsAsync(project.Id);
+
+        await ClipsAsync(client, project.Id, v => v.State != StageState.Running && v.Clips.Single(c => c.Key == keys["S03·2"]).Version == 2);
+        Assert.Equal(before + 2, _comfy.Freed);
+    }
+
+    [Fact]
+    public async Task A_shot_too_long_for_the_projects_own_model_says_so_without_sending_you_back_to_it()
+    {
+        var client = await StartWithClipsAsync();
+        var project = await StillsApprovedAsync(client);
+        await ClipsAsync(client, project.Id);
+        var keys = await KeysAsync(client, project.Id);
+        await using (var db = await _engine.DbAsync())
+        {
+            var entry = await Microsoft.EntityFrameworkCore.EntityFrameworkQueryableExtensions.SingleAsync(db.Projects, p => p.Id == project.Id);
+            var options = new System.Text.Json.JsonSerializerOptions { Converters = { new System.Text.Json.Serialization.JsonStringEnumConverter() } };
+            var setup = System.Text.Json.JsonSerializer.Deserialize<ProjectSetup>(entry.SetupJson, options)!;
+            entry.SetupJson = System.Text.Json.JsonSerializer.Serialize(setup with { Clips = setup.Clips with { MaxClipSeconds = 4 } }, options);
+            await db.SaveChangesAsync();
+        }
+        await client.QueueClipAsync(project.Id, keys["S01·2"]);
+
+        await client.MakeClipsAsync(project.Id);
+
+        var view = await ClipsAsync(client, project.Id, v => v.State != StageState.Running);
+        var error = view.Clips.Single(c => c.Key == keys["S01·2"]).Error ?? view.Error;
+        Assert.EndsWith("Minimax H3 makes at most 4 s. Cut the shot shorter on the storyboard.", error);
+    }
+
     [Theory]
     [InlineData(5, 20, 6, 0.5)]
     [InlineData(19.6, 20, 20, 0.2)]
@@ -395,12 +455,19 @@ public sealed partial class StillsRunTests
     {
         public List<ClipPromptRequest> Requests { get; } = [];
 
+        /// <summary>While set, asking fails with it, as Claude CLI down would.</summary>
+        public string? Failure { get; set; }
+
         public Task<ScriptAnswer<StillPromptsOutput>> WriteAsync(ClipPromptRequest request, string? session, IReadOnlyList<string> problems,
             IProgress<ActivityLine> activity, CancellationToken cancellationToken)
         {
             lock (Requests)
             {
                 Requests.Add(request);
+            }
+            if (Failure is { } reason)
+            {
+                throw new StageFailedException(reason);
             }
             var prompts = request.Shots.Select(s => StillPromptCheck.Name(s.Label)).Select(label => new StillPromptOutput(label, $"the motion of {label}")).ToList();
             return Task.FromResult(new ScriptAnswer<StillPromptsOutput>("s", new StillPromptsOutput(prompts)));

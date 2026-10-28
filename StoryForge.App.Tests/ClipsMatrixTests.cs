@@ -132,6 +132,19 @@ public sealed class ClipsMatrixTests
     }
 
     [Fact]
+    public async Task The_video_profile_picked_for_one_clip_is_not_picked_for_the_next()
+    {
+        var (matrix, _) = await OpenAsync();
+        var script = matrix.Script!;
+        script.Rows[1].Shots[0].Clip.SelectCommand.Execute(null);
+        script.SelectedClipModel = Ltx;
+
+        script.Rows[0].Shots[0].Clip.SelectCommand.Execute(null);
+
+        Assert.Null(script.SelectedClipModel);
+    }
+
+    [Fact]
     public async Task Edit_prompt_queues_the_clip_with_your_motion_prompt()
     {
         var (matrix, _) = await OpenAsync();

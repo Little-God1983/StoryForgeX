@@ -108,12 +108,26 @@ internal sealed class ClipsStage(
         }
         todo = [.. groups.SelectMany(g => g).Where(s => !skipped.Contains(s.Key))];
         var asked = todo.Where(s => queued.GetValueOrDefault(s.Key).Prompt is null).ToList();
-        var prompts = asked.Count > 0
-            ? await PromptsAsync(context, plan, [.. asked.Select(s => (s, animators[queued.GetValueOrDefault(s.Key).Profile ?? own]))], cancellationToken)
-            : new Dictionary<string, string>();
-        if (todo.Count > 0)
+        IReadOnlyDictionary<string, string> prompts = new Dictionary<string, string>();
+        if (asked.Count > 0)
         {
-            await FreeAsync(context, cancellationToken);
+            try
+            {
+                prompts = await PromptsAsync(context, plan, [.. asked.Select(s => (s, animators[queued.GetValueOrDefault(s.Key).Profile ?? own]))], cancellationToken);
+            }
+            catch (StageFailedException ex) when (context.FailSegment is { } fail)
+            {
+                // Those clips fail with the reason; the ones made from your prompt need no Claude and are made.
+                foreach (var shot in asked)
+                {
+                    var reason = $"{plan.Labels[shot.Key]}: {ex.Message}";
+                    Report(context, ActivityKind.Failed, reason);
+                    await fail(shot.Key, reason);
+                    failures.Add(reason);
+                    skipped.Add(shot.Key);
+                }
+                todo = [.. todo.Where(s => !skipped.Contains(s.Key))];
+            }
         }
 
         var results = new List<CellResult>();
@@ -122,7 +136,13 @@ internal sealed class ClipsStage(
         foreach (var group in groups)
         {
             var animator = animators[group.Key];
-            foreach (var shot in group.Where(s => !skipped.Contains(s.Key)))
+            var shots = group.Where(s => !skipped.Contains(s.Key)).ToList();
+            if (shots.Count > 0)
+            {
+                // Before each video model loads: the one before it (or the image model) may still hold the VRAM.
+                await FreeAsync(context, cancellationToken);
+            }
+            foreach (var shot in shots)
             {
                 var label = plan.Labels[shot.Key];
                 Report(context, ActivityKind.Model, $"{label} ({++done} of {todo.Count}) · {animator.Model}");
@@ -167,6 +187,10 @@ internal sealed class ClipsStage(
         var (yours, switched) = (await cells.QueuedClipsAsync(context.Project.Id, cancellationToken)).GetValueOrDefault(key);
         var profile = switched ?? context.Project.Setup.Clips.Profile;
         var animator = await AnimatorAsync(context, profile, cancellationToken);
+        if (Problem(animator, plan, shot) is { } problem)
+        {
+            throw new StageFailedException($"{plan.Labels[key]}: {problem}");   // before Claude is paid to write its prompt
+        }
         var prompt = yours ?? StillsStage.Compose(animator.Profile.PromptTemplate, (await PromptsAsync(context, plan, [(shot, animator)], cancellationToken))[plan.Labels[key]], []);
         await FreeAsync(context, cancellationToken);
         var clip = await AnimateAsync(context, animator, plan, shot, prompt, yours is not null, cancellationToken);
@@ -283,9 +307,10 @@ internal sealed class ClipsStage(
 
     /// <summary>What a clip is made with: a video profile's workflow, its size, its longest clip, and what to call it.</summary>
     /// <param name="Model">"Minimax H3" for the project's profile; the profile's name for one a clip was switched to.</param>
+    /// <param name="Own">It is the project's own video profile, not one a clip was switched to.</param>
     /// <param name="Uploaded">The stills uploaded to ComfyUI in this run, with the name it gave each: every one goes once.</param>
     private sealed record Animator(
-        JsonObject Workflow, ProfileContent Profile, string Model, GenerationSize Size, int MaxClipSeconds, string Root, string Folder, Dictionary<string, string> Uploaded);
+        JsonObject Workflow, ProfileContent Profile, string Model, bool Own, GenerationSize Size, int MaxClipSeconds, string Root, string Folder, Dictionary<string, string> Uploaded);
 
     private async Task<Animator> AnimatorAsync(StageContext context, ProfileRef profileRef, CancellationToken cancellationToken)
     {
@@ -319,7 +344,7 @@ internal sealed class ClipsStage(
         // The project's video size; a profile switched to makes the same shape in its own size.
         var size = own ? setup.Clips.Size : profile.Sizes.FirstOrDefault(s => s.Aspect == setup.Clips.Size.Aspect) ?? setup.Clips.Size;
         var max = own ? setup.Clips.MaxClipSeconds : profile.MaxClipSeconds ?? setup.Clips.MaxClipSeconds;
-        return new Animator(workflow, profile, name, size, max, await folders.RootAsync(cancellationToken), ProjectFolders.Of(context.Project), []);
+        return new Animator(workflow, profile, name, own, size, max, await folders.RootAsync(cancellationToken), ProjectFolders.Of(context.Project), []);
     }
 
     /// <summary>Frees ComfyUI's VRAM before the video model loads, as Settings say (the image model may still hold it).</summary>
@@ -403,7 +428,8 @@ internal sealed class ClipsStage(
         {
             // A profile switched to may make shorter clips than the storyboard was cut for.
             return string.Create(System.Globalization.CultureInfo.InvariantCulture,
-                $"the shot lasts {shot.Seconds:0.##} s, and {animator.Model} makes at most {animator.MaxClipSeconds} s. Make it with the project's model.");
+                $"the shot lasts {shot.Seconds:0.##} s, and {animator.Model} makes at most {animator.MaxClipSeconds} s. ")
+                + (animator.Own ? "Cut the shot shorter on the storyboard." : "Make it with the project's model.");
         }
         return !plan.Stills.TryGetValue(shot.Key, out var still) || !File.Exists(Path.Combine(animator.Root, still.Still.File))
             ? "its approved still is gone from the projects folder. Make the still again first."

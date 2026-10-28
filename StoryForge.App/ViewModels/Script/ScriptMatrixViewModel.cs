@@ -717,6 +717,7 @@ public sealed partial class ScriptMatrixViewModel(
         IsEditing = false;
         IsEditingShot = false;
         IsEditingPrompt = false;
+        SelectedClipModel = null;   // a video profile is picked for one clip, not the next
         CloseNote();
         if (sameRow)
         {
@@ -756,7 +757,6 @@ public sealed partial class ScriptMatrixViewModel(
         RefreshBoardPanel();
         RefreshStillPanel();
         RefreshClipPanel();
-        RerunFromHereCommand.NotifyCanExecuteChanged();
         ShowClip();
     }
 

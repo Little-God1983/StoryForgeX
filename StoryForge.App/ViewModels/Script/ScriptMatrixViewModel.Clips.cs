@@ -252,7 +252,7 @@ public sealed partial class ScriptMatrixViewModel
     /// <summary>"Made by Minimax H3 · from still v2".</summary>
     public string ClipMadeBy => SelectedClip?.Clip is { } clip ? $"Made by {clip.Model} · from still v{clip.StillVersion}" : "";
 
-    /// <summary>"5.95 s with 0.5 s handles · 1280×704 · seed 184223 · 24 fps".</summary>
+    /// <summary>"5.95 s with 0.5 s handles · 1280×704 · seed 184223 · wf minimax.json".</summary>
     public string ClipDetails => SelectedClip?.Clip is { } clip
         ? string.Create(CultureInfo.InvariantCulture,
             $"{Seconds(clip.Seconds)} s{(clip.Handle > 0 ? $" with {Seconds(clip.Handle)} s handles" : "")} · {clip.Size.Width}×{clip.Size.Height} · seed {clip.Seed}{(clip.Workflow.Length > 0 ? $" · wf {clip.Workflow}" : "")}")

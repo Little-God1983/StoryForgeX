@@ -89,7 +89,7 @@ internal sealed partial class PipelineRunner(
         }
         lock (job.Stored)
         {
-            return new HashSet<string>(job.Stored);
+            return new HashSet<string>(job.Stored.Concat(job.Failed));   // done with, either way
         }
     }
 
@@ -492,7 +492,7 @@ internal sealed partial class PipelineRunner(
             {
                 // Cancel stops a rerun here: what it would go on to make stays as it is.
                 await StopRerunAsync(job);
-                if (StoredCount(job) - FailedCount(job) is var stored && (stored > 0 || await KeptAsync(job)))
+                if (StoredCount(job) is var stored && (stored > 0 || await KeptAsync(job)))
                 {
                     // Segments of this run are stored already, or what it saved before them: going back to before would hide them.
                     await FailAsync(job, _workers[job.Stage].CancelledAfter(stored), Snapshot(activity));
@@ -699,8 +699,7 @@ internal sealed partial class PipelineRunner(
         }
         lock (job.Stored)
         {
-            job.Stored.Add(key);   // done with in this run: no longer "to come"
-            job.Failed.Add(key);
+            job.Failed.Add(key);   // done with in this run: no longer "to come", and not kept
         }
         Publish(new StageUpdate(job.ProjectId, job.Stage, StageState.Failed, Key: key));
     }
@@ -720,7 +719,7 @@ internal sealed partial class PipelineRunner(
         return version != job.PreviousVersion;
     }
 
-    /// <summary>How many of those it could not make (they show failed): they are not kept.</summary>
+    /// <summary>How many segments it could not make (they show failed).</summary>
     private static int FailedCount(Job job)
     {
         lock (job.Stored)
@@ -1024,7 +1023,7 @@ internal sealed partial class PipelineRunner(
         /// <summary>What the stage has done so far; locked while written or copied.</summary>
         public List<ActivityLine> Activity { get; } = [];
 
-        /// <summary>The segments stored while the run went on (or failed, see <see cref="Failed"/>); locked with it while written or read.</summary>
+        /// <summary>The segments stored while the run went on; locked while written or read, <see cref="Failed"/> with it.</summary>
         public HashSet<string> Stored { get; } = [];
 
         /// <summary>The segments it could not make, marked failed while it went on; locked with <see cref="Stored"/>.</summary>
