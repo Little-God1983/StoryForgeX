@@ -33,7 +33,7 @@ public sealed class RerunTests
             Shot("S01", 1, 0, 4.2, 0, 4, StageState.Approved),
             Shot("S02", 1, 0, 5, 0, 10, StageState.Approved));
         _client.Stills[project.Id] = new StillsView(project.Id, StageState.Approved, null, [], [Still("S01/0001"), Still("S02/0001")], true);
-        _client.RerunPlan = (stage, key) => $"This remakes {key}'s {stage.ToString().ToLowerInvariant()}.";
+        _client.RerunPlan = (stage, key) => new RerunPlan($"This remakes {key}'s {stage.ToString().ToLowerInvariant()}.", true);
         var page = new ResultMatrixPageViewModel(_client, _ => { }, pickPicture: () => null, confirm: question =>
         {
             _asked.Add(question);
@@ -96,6 +96,21 @@ public sealed class RerunTests
 
         await script.StopRerunCommand.ExecuteAsync(null);
         Assert.Equal(("stop", default(PipelineStage), ""), Assert.Single(_client.Reruns));
+    }
+
+    [Fact]
+    public async Task With_nothing_to_make_it_says_why_and_asks_nothing()
+    {
+        var (page, _) = await OpenAsync();
+        var script = page.Script!;
+        script.Rows[1].Voice.SelectCommand.Execute(null);
+        _client.RerunPlan = (_, _) => new RerunPlan("Nothing is made from S02's voice yet.", false);
+
+        await script.RerunFromHereCommand.ExecuteAsync(null);
+
+        Assert.Empty(_asked);
+        Assert.Empty(_client.Reruns);
+        Assert.Equal("Nothing is made from S02's voice yet.", script.ActionError);
     }
 
     [Fact]

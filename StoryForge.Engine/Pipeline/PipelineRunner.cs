@@ -386,7 +386,8 @@ internal sealed partial class PipelineRunner(
                 cell.ActivityJson = "[]";
                 if (key == Whole)
                 {
-                    cell.Rerun = scope is not null;   // a rerun's cut: Retry after it fails cuts the same segments
+                    // A rerun's cut: Retry after it fails cuts the same segments.
+                    cell.RerunScope = scope is null ? null : string.Join(',', scope.Order(StringComparer.Ordinal));
                 }
             }, cancellationToken);
         }
@@ -567,7 +568,6 @@ internal sealed partial class PipelineRunner(
         cell.ApprovedVersion = gated ? cell.ApprovedVersion : cell.CurrentVersion;
         cell.Error = null;
         cell.ActivityJson = StoredJson.Write(activity);
-        cell.Rerun = false;
 
         // The shots of a segment whose rerun waits for the storyboard are cut from its new voice now,
         // by a rerun's cut or a whole run alike: the rerun goes on from them (unless it was stopped meanwhile).

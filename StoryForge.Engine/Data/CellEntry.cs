@@ -40,6 +40,12 @@ public sealed class CellEntry
     /// </summary>
     public bool Rerun { get; set; }
 
+    /// <summary>
+    /// The storyboard's own cell: the segments its last run cut again for a rerun ("S02,S05"); null
+    /// when it planned them all. Retry after that run failed cuts the same segments again.
+    /// </summary>
+    public string? RerunScope { get; set; }
+
     public DateTimeOffset UpdatedAt { get; set; }
 }
 

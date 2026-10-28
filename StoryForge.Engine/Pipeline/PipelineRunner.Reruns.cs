@@ -32,7 +32,6 @@ internal sealed partial class PipelineRunner
             List<CellEntry> marked;
             await using (var db = await contextFactory.CreateDbContextAsync(cancellationToken))
             {
-                // A stage's own cell is marked only while a rerun's cut runs or failed (Retry): no step goes on from it.
                 marked = await db.Cells.AsNoTracking().Where(c => c.ProjectId == projectId && c.Rerun && c.Key != Whole).ToListAsync(cancellationToken);
             }
             foreach (var stage in RerunStages.Where(s => marked.Any(c => c.Stage == s)))
@@ -78,12 +77,18 @@ internal sealed partial class PipelineRunner
 
     private async Task AdvanceAsync(Guid projectId, PipelineStage stage, List<CellEntry> marked, CancellationToken cancellationToken)
     {
-        // Each waits for its approval: at its gate, or after a failure for Retry.
-        if (marked.Any(c => c.State != StageState.Approved) || IsAnyBusy(projectId, stage))
+        // Each waits for its approval: at its gate, or after a failure for Retry. A segment's voice or
+        // shots go on alone; the stills wait for every marked shot (or image), to be made in one run.
+        var segmentwise = stage is PipelineStage.Script or PipelineStage.Voice;
+        if (!segmentwise && (marked.Any(c => c.State != StageState.Approved) || IsAnyBusy(projectId, stage)))
         {
             return;
         }
-        var keys = marked.Select(c => c.Key).ToHashSet();
+        var keys = marked.Where(c => c.State == StageState.Approved).Select(c => c.Key).ToHashSet();
+        if (keys.Count == 0)
+        {
+            return;
+        }
         switch (stage)
         {
             case PipelineStage.Script:
@@ -225,15 +230,12 @@ internal sealed partial class PipelineRunner
             return null;
         }
         await using var db = await contextFactory.CreateDbContextAsync(cancellationToken);
-        // Marked while the cut ran, and kept when it failed (or the app closed): a whole run that failed is planned whole again.
-        if (await db.Cells.AsNoTracking().FirstOrDefaultAsync(c => c.ProjectId == projectId && c.Stage == stage && c.Key == Whole, cancellationToken) is not { State: StageState.Failed, Rerun: true })
-        {
-            return null;
-        }
-        var voices = await db.Cells.AsNoTracking()
-            .Where(c => c.ProjectId == projectId && c.Stage == PipelineStage.Voice && c.Rerun && c.State == StageState.Approved)
-            .Select(c => c.Key).ToListAsync(cancellationToken);
-        return voices.Count > 0 ? voices.ToHashSet() : null;
+        // Kept with the cell when the cut failed (or the app closed), whether the rerun goes on or was
+        // stopped: Retry never plans every segment anew in its place. A whole run that failed is planned whole again.
+        return await db.Cells.AsNoTracking().FirstOrDefaultAsync(c => c.ProjectId == projectId && c.Stage == stage && c.Key == Whole, cancellationToken)
+            is { State: StageState.Failed, RerunScope: { Length: > 0 } scope }
+            ? scope.Split(',').ToHashSet()
+            : null;
     }
 
     /// <summary>A cancelled run stops the rerun it was part of: the cell it made, or the segments it cut again.</summary>
@@ -246,7 +248,6 @@ internal sealed partial class PipelineRunner
         else if (job.Scope is { } scope)
         {
             await MarkAsync(job.ProjectId, PipelineStage.Voice, scope, false, CancellationToken.None);
-            await MarkAsync(job.ProjectId, job.Stage, [Whole], false, CancellationToken.None);
         }
     }
 }

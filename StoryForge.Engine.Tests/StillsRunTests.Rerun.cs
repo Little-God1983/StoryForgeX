@@ -2,6 +2,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using Microsoft.EntityFrameworkCore;
 using StoryForge.Client;
+using StoryForge.Engine.References;
 using StoryForge.Engine.Storyboard;
 
 namespace StoryForge.Engine.Tests;
@@ -42,7 +43,7 @@ public sealed partial class StillsRunTests
         var otherStills = made.Stills.Where(s => !s.Key.StartsWith("S02/", StringComparison.Ordinal)).Select(s => (s.Key, s.Version)).ToList();
         Assert.Equal(
             "This remakes S02's voice, its 15 shots and their 15 stills. Other segments stay as they are. It waits at each gate for your approval, as a run does.",
-            await client.GetRerunPlanAsync(project.Id, PipelineStage.Voice, "S02"));
+            (await client.GetRerunPlanAsync(project.Id, PipelineStage.Voice, "S02")).Text);
         _board.Answer(Recut("S02"));
         var runs = StillRuns().Count;
 
@@ -157,7 +158,7 @@ public sealed partial class StillsRunTests
         var written = _script.RewriteRequests.Count;
         Assert.Equal(
             "This keeps your edit of S02's script and remakes its voice, its 15 shots and their 15 stills. Other segments stay as they are. It waits at each gate for your approval, as a run does.",
-            await client.GetRerunPlanAsync(project.Id, PipelineStage.Script, "S02"));
+            (await client.GetRerunPlanAsync(project.Id, PipelineStage.Script, "S02")).Text);
         _board.Answer(Recut("S02"));
 
         await client.RerunFromHereAsync(project.Id, PipelineStage.Script, "S02");
@@ -177,7 +178,7 @@ public sealed partial class StillsRunTests
         var keys = await KeysAsync(client, project.Id);
         Assert.Equal(
             "This remakes the 4 stills that use this image of Soul coin and the 4 that start from them. Other stills stay as they are.",
-            await client.GetRerunPlanAsync(project.Id, PipelineStage.References, "R02/1"));
+            (await client.GetRerunPlanAsync(project.Id, PipelineStage.References, "R02/1")).Text);
         var runs = StillRuns().Count;
 
         await client.RerunFromHereAsync(project.Id, PipelineStage.References, "R02/1");
@@ -270,6 +271,81 @@ public sealed partial class StillsRunTests
     }
 
     [Fact]
+    public async Task Retry_after_a_failed_cut_cuts_that_segment_again_even_after_Stop_rerun()
+    {
+        var client = await StartAsync();
+        var project = await ReferencesApprovedAsync(client);
+        await StillsAsync(client, project.Id);
+        var wrong = Recut("S02") with { Segments = [new SegmentShotsOutput("S03", Recut("S02").Segments[0].Shots)] };
+        _board.Answer(wrong).Answer(wrong).Answer(wrong);
+        await client.RerunFromHereAsync(project.Id, PipelineStage.Voice, "S02");
+        await ScriptRunTests.WaitForAsync(() => client.GetStoryboardAsync(project.Id), v => v.State == StageState.Failed);
+        await client.StopRerunAsync(project.Id);
+        _board.Answer(Recut("S02"));
+
+        await client.RegenerateAsync(project.Id, PipelineStage.Storyboard);
+
+        var board = await CutAsync(client, project.Id, "S02", 10);
+        Assert.Equal(["S02"], _board.Requests[^1].Segments.Select(s => s.Segment.Id));
+        Assert.All(board.Shots, s => Assert.False(s.Rerun));   // stopped: it goes no further
+    }
+
+    [Fact]
+    public async Task One_rerun_waiting_at_its_gate_holds_up_no_other()
+    {
+        var client = await StartAsync();
+        var project = await ReferencesApprovedAsync(client);
+        await StillsAsync(client, project.Id);
+        await GateAsync(project.Id, PipelineStage.Voice);
+        _board.Answer(Recut("S02"));
+        await client.RerunFromHereAsync(project.Id, PipelineStage.Voice, "S02");
+        await client.RerunFromHereAsync(project.Id, PipelineStage.Voice, "S03");
+        await ScriptRunTests.WaitForAsync(() => client.GetVoiceAsync(project.Id), v => v.Segments.Where(s => s.Id is "S02" or "S03").All(s => s.State == StageState.NeedsReview));
+
+        await client.ApproveSegmentAsync(project.Id, PipelineStage.Voice, "S02", 2);
+
+        Assert.Null((await CutAsync(client, project.Id, "S02", 10)).Error);
+        Assert.True((await client.GetVoiceAsync(project.Id)).Segments.Single(s => s.Id == "S03").Rerun);   // still waits for you
+    }
+
+    [Fact]
+    public async Task A_rerun_from_your_own_picture_keeps_it_and_makes_the_still_starting_from_it()
+    {
+        var client = await StartAsync();
+        var project = await ReferencesApprovedAsync(client);
+        await StillsAsync(client, project.Id);
+        var keys = await KeysAsync(client, project.Id);
+        var file = Path.Combine(_engine.DataDirectory, "mine.png");
+        await File.WriteAllBytesAsync(file, BlankCanvas.Png(1920, 1080));
+        await client.ReplaceStillAsync(project.Id, keys["S01·3"], file);
+        var plan = await client.GetRerunPlanAsync(project.Id, PipelineStage.Stills, keys["S01·3"]);
+        Assert.Equal(("This keeps your own picture of S01·3 and remakes the still of S01·4, which starts from it. Other stills stay as they are.", true), (plan.Text, plan.CanRun));
+
+        await client.RerunFromHereAsync(project.Id, PipelineStage.Stills, keys["S01·3"]);
+
+        var stills = await StillsAsync(client, project.Id, v => v.State != StageState.Running && v.Stills.Single(s => s.Key == keys["S01·4"]).Version == 2);
+        Assert.Equal(2, stills.Stills.Single(s => s.Key == keys["S01·3"]).Version);   // yours, untouched
+        Assert.True(stills.Stills.Single(s => s.Key == keys["S01·3"]).Still!.YourFile);
+    }
+
+    [Fact]
+    public async Task A_rerun_with_nothing_to_make_says_so_and_cannot_run()
+    {
+        var client = await StartAsync();
+        var project = await ReferencesApprovedAsync(client);
+        await StillsAsync(client, project.Id);
+        var keys = await KeysAsync(client, project.Id);
+        var file = Path.Combine(_engine.DataDirectory, "mine.png");
+        await File.WriteAllBytesAsync(file, BlankCanvas.Png(1920, 1080));
+        await client.ReplaceStillAsync(project.Id, keys["S01·4"], file);
+
+        var plan = await client.GetRerunPlanAsync(project.Id, PipelineStage.Stills, keys["S01·4"]);
+
+        Assert.Equal(("Your own picture of S01·4 stays, and no still starts from it: nothing is made again.", false), (plan.Text, plan.CanRun));
+        await Assert.ThrowsAsync<InvalidOperationException>(() => client.RerunFromHereAsync(project.Id, PipelineStage.Stills, keys["S01·4"]));
+    }
+
+    [Fact]
     public async Task The_question_says_what_a_rerun_from_a_shot_or_a_still_makes_again()
     {
         var client = await StartAsync();
@@ -279,13 +355,13 @@ public sealed partial class StillsRunTests
 
         Assert.Equal(
             "This remakes shot S01·1, its still and the still of S01·2, which starts from it. Other shots stay as they are.",
-            await client.GetRerunPlanAsync(project.Id, PipelineStage.Storyboard, keys["S01·1"]));
+            (await client.GetRerunPlanAsync(project.Id, PipelineStage.Storyboard, keys["S01·1"])).Text);
         Assert.Equal(
             "This remakes the still of S01·2. Other stills stay as they are.",
-            await client.GetRerunPlanAsync(project.Id, PipelineStage.Stills, keys["S01·2"]));
+            (await client.GetRerunPlanAsync(project.Id, PipelineStage.Stills, keys["S01·2"])).Text);
         Assert.Equal(
             "This remakes the still of S01·3 and the still of S01·4, which starts from it. Other stills stay as they are.",
-            await client.GetRerunPlanAsync(project.Id, PipelineStage.Stills, keys["S01·3"]));
+            (await client.GetRerunPlanAsync(project.Id, PipelineStage.Stills, keys["S01·3"])).Text);
     }
 
     [Fact]

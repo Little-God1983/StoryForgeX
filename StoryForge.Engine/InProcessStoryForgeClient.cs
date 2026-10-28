@@ -172,7 +172,7 @@ internal sealed class InProcessStoryForgeClient(
 
     public Task ContinuePipelineAsync(Guid projectId, CancellationToken cancellationToken = default) => stills.ContinueAsync(projectId, cancellationToken);
 
-    public Task<string> GetRerunPlanAsync(Guid projectId, PipelineStage stage, string key, CancellationToken cancellationToken = default) =>
+    public Task<RerunPlan> GetRerunPlanAsync(Guid projectId, PipelineStage stage, string key, CancellationToken cancellationToken = default) =>
         reruns.PlanAsync(projectId, stage, key, cancellationToken);
 
     public Task RerunFromHereAsync(Guid projectId, PipelineStage stage, string key, CancellationToken cancellationToken = default) =>

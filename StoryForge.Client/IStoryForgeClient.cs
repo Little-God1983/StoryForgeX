@@ -245,7 +245,7 @@ public interface IStoryForgeClient
     /// </summary>
     /// <param name="key">The segment ("S04"), the shot or still (its shot's key), or the reference image ("R01/1").</param>
     /// <exception cref="KeyNotFoundException">No such project, or nothing is made for the cell yet.</exception>
-    Task<string> GetRerunPlanAsync(Guid projectId, PipelineStage stage, string key, CancellationToken cancellationToken = default);
+    Task<RerunPlan> GetRerunPlanAsync(Guid projectId, PipelineStage stage, string key, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Rerun pipeline from here: the cell is made again (your own work stays), then, stage by stage,

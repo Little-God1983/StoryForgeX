@@ -31,6 +31,10 @@ public enum VersionOrigin
 /// <param name="Note">Why it was made again, as you said on Regenerate, e.g. "too long"; null without one.</param>
 public sealed record ResultVersion(int Version, VersionOrigin Origin, DateTimeOffset CreatedAt, int? BasedOn, string? Note = null);
 
+/// <summary>What Rerun pipeline from here on a cell would make again, as the question before it says.</summary>
+/// <param name="CanRun">False when nothing would be made: the text says why, and there is nothing to ask.</param>
+public sealed record RerunPlan(string Text, bool CanRun);
+
 /// <summary>A stage changed: its state, or a new line of activity while it runs.</summary>
 /// <param name="Key">The segment (or later the shot) the update is about; null for the stage as a whole.</param>
 public sealed record StageUpdate(Guid ProjectId, PipelineStage Stage, StageState State, ActivityLine? Activity = null, string? Key = null);

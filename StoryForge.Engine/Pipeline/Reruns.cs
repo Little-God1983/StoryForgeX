@@ -29,8 +29,11 @@ internal sealed class Reruns(
     private sealed record Plan(string Text, bool Keep, IReadOnlyList<string> Stills, bool Nothing);
 
     /// <summary>"This remakes S04's voice, its 4 shots and their 4 stills. Other segments stay as they are."</summary>
-    public async Task<string> PlanAsync(Guid projectId, PipelineStage stage, string key, CancellationToken cancellationToken) =>
-        (await PlanOfAsync(projectId, stage, key, cancellationToken)).Text;
+    public async Task<RerunPlan> PlanAsync(Guid projectId, PipelineStage stage, string key, CancellationToken cancellationToken)
+    {
+        var plan = await PlanOfAsync(projectId, stage, key, cancellationToken);
+        return new RerunPlan(plan.Text, !plan.Nothing);
+    }
 
     /// <exception cref="InvalidOperationException">The cell is being made, or nothing would be made from it.</exception>
     public async Task StartAsync(Guid projectId, PipelineStage stage, string key, CancellationToken cancellationToken)
@@ -42,11 +45,26 @@ internal sealed class Reruns(
         }
         if (stage == PipelineStage.Stills)
         {
-            foreach (var still in plan.Stills)
+            var waiting = await cells.QueuedStillsAsync(projectId, cancellationToken);
+            var queued = new List<string>();
+            try
             {
-                await stillCells.QueueAsync(projectId, still, null, cancellationToken);
+                foreach (var still in plan.Stills)
+                {
+                    await stillCells.QueueAsync(projectId, still, null, cancellationToken);
+                    queued.Add(still);
+                }
+                await stillCells.ContinueAsync(projectId, cancellationToken);
             }
-            await stillCells.ContinueAsync(projectId, cancellationToken);
+            catch
+            {
+                // Not made after all (the references in review, a still being made): out of the batch again, as they were.
+                foreach (var still in queued.Where(k => !waiting.ContainsKey(k)))
+                {
+                    await stillCells.UnqueueAsync(projectId, still, CancellationToken.None);
+                }
+                throw;
+            }
             return;
         }
         segments.RequireIdle(projectId, stage, key);
@@ -162,14 +180,17 @@ internal sealed class Reruns(
 
     private static Plan StillPlan(string key, IReadOnlyDictionary<string, Still> stills, Func<string, string> label)
     {
-        if (stills.GetValueOrDefault(key) is not { } still || still.YourFile)
-        {
-            return new Plan($"Your own picture of {label(key)} stays, and no still starts from it: nothing is made again.", true, [], true);
-        }
         var after = stills.Where(s => !s.Value.YourFile && s.Value.ContinuesFrom == key).Select(s => s.Key).ToList();
-        return new Plan(
-            $"This remakes {Join([$"the still of {label(key)}", .. After(key, stills, label)])}. Other stills stay as they are.",
-            false, [key, .. after], false);
+        if (stills.GetValueOrDefault(key) is not { YourFile: true })
+        {
+            return new Plan(
+                $"This remakes {Join([$"the still of {label(key)}", .. After(key, stills, label)])}. Other stills stay as they are.",
+                false, [key, .. after], false);
+        }
+        // Your own picture stays; what starts from it is made again.
+        return after.Count == 0
+            ? new Plan($"Your own picture of {label(key)} stays, and no still starts from it: nothing is made again.", true, [], true)
+            : new Plan($"This keeps your own picture of {label(key)} and remakes {Join([.. After(key, stills, label)])}. Other stills stay as they are.", true, after, false);
     }
 
     private async Task<Plan> ImagePlanAsync(

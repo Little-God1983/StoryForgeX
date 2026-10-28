@@ -211,7 +211,7 @@ public sealed partial class ScriptMatrixViewModel(
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsRunning), nameof(IsReview), nameof(IsApproved), nameof(IsFailed), nameof(IsNotStarted), nameof(ShowsLog), nameof(HasSegments))]
-    [NotifyCanExecuteChangedFor(nameof(ApproveRemainingCommand), nameof(RegenerateScriptCommand), nameof(CancelCommand), nameof(ApproveSegmentCommand), nameof(RegenerateSegmentCommand), nameof(StartEditCommand),
+    [NotifyCanExecuteChangedFor(nameof(ApproveRemainingCommand), nameof(RegenerateScriptCommand), nameof(CancelCommand), nameof(ApproveSegmentCommand), nameof(RegenerateSegmentCommand), nameof(RerunFromHereCommand), nameof(StartEditCommand),
         nameof(AskNoteCommand), nameof(ApproveRowCommand), nameof(AskNoteRowCommand), nameof(StartEditRowCommand), nameof(ShowRowVersionCommand), nameof(CopyAllCommand))]
     private StageState _state;
 

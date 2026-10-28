@@ -25,7 +25,7 @@ public sealed partial class ScriptMatrixViewModel
     private async Task RerunFromHereAsync()
     {
         var (stage, key) = (SelectedStage, SelectedKey);
-        string plan;
+        RerunPlan plan;
         try
         {
             plan = await client.GetRerunPlanAsync(ProjectId, stage, key);
@@ -36,7 +36,12 @@ public sealed partial class ScriptMatrixViewModel
             ActionError = $"Could not rerun the pipeline from here: {ex.Message}";
             return;
         }
-        if (confirm?.Invoke($"{plan} Go on?") == false)
+        if (!plan.CanRun)
+        {
+            ActionError = plan.Text;   // nothing to ask: nothing would be made
+            return;
+        }
+        if (confirm?.Invoke($"{plan.Text} Go on?") == false)
         {
             return;
         }

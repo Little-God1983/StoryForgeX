@@ -68,8 +68,8 @@ internal sealed class StoryboardStage(IStoryboardAgent agent, CellReader cells, 
     {
         var sheet = await cells.CurrentStoryboardAsync(context.Project.Id, cancellationToken)
             ?? throw new StageFailedException("The storyboard has not been planned yet.");
-        var (all, voices) = await RequestAsync(context, null, cancellationToken);
-        var request = all with { Segments = [.. all.Segments.Where(s => scope.Contains(s.Segment.Id))], Cast = sheet.Cast };
+        var (all, voices) = await RequestAsync(context, null, cancellationToken, scope);
+        var request = all with { Cast = sheet.Cast };
         if (request.Segments.Count == 0)
         {
             throw new StageFailedException($"The script has no segment {string.Join(", ", scope)} to cut again.");
@@ -94,9 +94,8 @@ internal sealed class StoryboardStage(IStoryboardAgent agent, CellReader cells, 
                 // Everyone on the list stays, as they are spelled there; the new shots name them so.
                 var cast = StoryboardCheck.ToCast(output!);
                 var names = StoryboardCheck.Names(cast.Select(c => c.Name));
-                var shots = StoryboardCheck.ToShots(output!, segments, await cells.UsedShotKeysAsync(context.Project.Id, cancellationToken))
-                    .Select(s => s with { Cast = StoryboardCheck.CastOf(s.Cast, names) })
-                    .ToList();
+                // The list's spelling first: the new shots name everyone as it does.
+                var shots = StoryboardCheck.ToShots(output!, segments, await cells.UsedShotKeysAsync(context.Project.Id, cancellationToken));
                 var cutFrom = sheet.VoiceVersions.ToDictionary();
                 foreach (var id in scope.Where(voices.ContainsKey))
                 {
@@ -178,8 +177,9 @@ internal sealed class StoryboardStage(IStoryboardAgent agent, CellReader cells, 
     /// What the model is asked from: the approved segments and their voices (or with
     /// <paramref name="voiceVersions"/>, those versions of the voices), the profile and the pacing.
     /// </summary>
+    /// <param name="only">A rerun's cut: these segments only; the others need no voice.</param>
     private async Task<(StoryboardRequest Request, IReadOnlyDictionary<string, int> Voices)> RequestAsync(
-        StageContext context, IReadOnlyDictionary<string, int>? voiceVersions, CancellationToken cancellationToken)
+        StageContext context, IReadOnlyDictionary<string, int>? voiceVersions, CancellationToken cancellationToken, IReadOnlySet<string>? only = null)
     {
         var setup = context.Project.Setup;
         if (setup.Script.Provider != ResearchStage.ClaudeCli)
@@ -195,7 +195,7 @@ internal sealed class StoryboardStage(IStoryboardAgent agent, CellReader cells, 
         var approved = (await cells.ApprovedVoicesAsync(context.Project.Id, cancellationToken)).ToDictionary(v => v.Clip.SegmentId);
         var segments = new List<StoryboardSegment>();
         var voices = new Dictionary<string, int>();
-        foreach (var (segment, _) in script)
+        foreach (var (segment, _) in script.Where(s => only?.Contains(s.Segment.Id) ?? true))
         {
             VoiceClip? clip = null;
             int version = 0;

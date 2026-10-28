@@ -219,7 +219,7 @@ public sealed partial class ReferencesViewModel
     private async Task RerunFromHereAsync()
     {
         var key = SelectedImage!.Key;
-        string plan;
+        RerunPlan plan;
         try
         {
             plan = await client.GetRerunPlanAsync(ProjectId, PipelineStage.References, key);
@@ -230,7 +230,11 @@ public sealed partial class ReferencesViewModel
             ActionError = $"Could not rerun the stills from here: {ex.Message}";
             return;
         }
-        if (confirm?.Invoke($"{plan} Go on?") != false)
+        if (!plan.CanRun)
+        {
+            ActionError = plan.Text;   // nothing to ask: nothing would be made
+        }
+        else if (confirm?.Invoke($"{plan.Text} Go on?") != false)
         {
             await ActAsync("rerun the stills from here", () => client.RerunFromHereAsync(ProjectId, PipelineStage.References, key));
         }

@@ -50,6 +50,9 @@ namespace StoryForge.Engine.Data.Migrations
                     b.Property<bool>("Rerun")
                         .HasColumnType("INTEGER");
 
+                    b.Property<string>("RerunScope")
+                        .HasColumnType("TEXT");
+
                     b.Property<string>("State")
                         .IsRequired()
                         .HasColumnType("TEXT");
