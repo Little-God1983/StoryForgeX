@@ -45,7 +45,7 @@ internal sealed partial class StillsStage(
     public const int Tries = 3;
 
     /// <summary>Where the shot's prompt goes in the profile's template; without one it goes first.</summary>
-    private static readonly string[] Placeholders = ["{shot.visual}", "{shot.prompt}"];
+    private static readonly string[] Placeholders = ["{shot.visual}", "{shot.prompt}", "{shot.motion}"];
 
     /// <summary>Where the looks of who and what is in the shot go.</summary>
     private const string LooksPlaceholder = "{characters.sheet}";

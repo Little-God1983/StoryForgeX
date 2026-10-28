@@ -107,7 +107,22 @@ internal sealed class FakeImageComfy : IComfyUi
         {
             Workflows.Add(workflow);
         }
-        return [new ComfyFile("images", Saved, [137, 80, 78, 71])];
+        // A video workflow saves a clip, as Video Combine does: with its sound, under its own name.
+        return workflow.ToJsonString().Contains("VHS_VideoCombine", StringComparison.Ordinal)
+            ? [new ComfyFile("gifs", "clip_00001.png", [137, 80, 78, 71]), new ComfyFile("gifs", "clip_00001-audio.mp4", [0, 0, 0, 24])]
+            : [new ComfyFile("images", Saved, [137, 80, 78, 71])];
+    }
+
+    /// <summary>How often ComfyUI was asked to free its memory.</summary>
+    public int Freed { get; private set; }
+
+    /// <summary>While set, freeing the memory fails with it.</summary>
+    public string? FreeFailure { get; set; }
+
+    public Task FreeMemoryAsync(CancellationToken cancellationToken)
+    {
+        Freed++;
+        return FreeFailure is { } reason ? Task.FromException(new StageFailedException(reason)) : Task.CompletedTask;
     }
 
     /// <summary>An API-format image workflow: a picture in, a prompt, a seed, a size, a picture out.</summary>

@@ -242,6 +242,27 @@ internal sealed class Staleness(
                 stale[(PipelineStage.Stills, key)] = why;
             }
         }
+        // A clip, from the approved still it starts from and the length of its shot.
+        var stillCells = Of(PipelineStage.Stills).ToDictionary(c => c.Key);
+        foreach (var cell in Of(PipelineStage.Clips))
+        {
+            if (Current(cell, c => c.CurrentVersion) is not { } version)
+            {
+                continue;
+            }
+            var clip = StoredJson.Read<Clip>(version.OutputJson);
+            var label = labels.GetValueOrDefault(cell.Key, cell.Key);
+            var still = stillCells.GetValueOrDefault(cell.Key);
+            var why = still?.ApprovedVersion is { } approved && approved != clip.StillVersion ? $"The still of {label} changed since the clip was made."
+                : stale.ContainsKey((PipelineStage.Stills, cell.Key)) ? $"The still of {label} is out of date."
+                : stale.ContainsKey((PipelineStage.Storyboard, cell.Key)) ? $"Shot {label} is out of date."
+                : shots.TryGetValue(cell.Key, out var shot) && Math.Abs(clip.Seconds - 2 * clip.Handle - shot.Seconds) > 0.01 ? $"Shot {label} was cut to another length since the clip was made."
+                : null;
+            if (why is not null)
+            {
+                stale[(PipelineStage.Clips, cell.Key)] = why;
+            }
+        }
         return new Result(stamp, stale, Counts(ordered, stills.ToDictionary(s => s.Key, s => s.Value.Still), sheet?.References ?? []));
 
         // What changed since, as far as the dates tell: the still before, the shot, an image in it, or else something it was made from.

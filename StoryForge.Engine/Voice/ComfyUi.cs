@@ -24,6 +24,10 @@ internal interface IComfyUi
     /// <param name="name">What ComfyUI's queue shows for it, e.g. "StoryForge · Soul Coins · S03 part 1 of 2".</param>
     /// <exception cref="StageFailedException">ComfyUI is not reachable, refused the workflow, or it failed.</exception>
     Task<IReadOnlyList<ComfyFile>> RunAsync(JsonObject workflow, string name, IProgress<string> progress, CancellationToken cancellationToken);
+
+    /// <summary>Unloads ComfyUI's models and frees its VRAM, e.g. before the video model loads after the image model.</summary>
+    /// <exception cref="StageFailedException">ComfyUI is not reachable or refused.</exception>
+    Task FreeMemoryAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 }
 
 /// <summary>ComfyUI over its HTTP API, at the host and port in Settings.</summary>
@@ -63,6 +67,19 @@ internal sealed class ComfyUiClient(HttpMessageHandler handler, SettingsStore se
             var subfolder = answer?["subfolder"]?.GetValue<string>() ?? "";
             var stored = answer?["name"]?.GetValue<string>() ?? name;
             return subfolder.Length == 0 ? stored : $"{subfolder}/{stored}";
+        }
+    }
+
+    public async Task FreeMemoryAsync(CancellationToken cancellationToken)
+    {
+        var (http, address) = await ConnectAsync(cancellationToken);
+        using (http)
+        {
+            using var response = await SendAsync(http, address, () => http.PostAsJsonAsync("free", new { unload_models = true, free_memory = true }, cancellationToken));
+            if (!response.IsSuccessStatusCode)
+            {
+                throw new StageFailedException($"ComfyUI would not free its memory (HTTP {(int)response.StatusCode}).");
+            }
         }
     }
 

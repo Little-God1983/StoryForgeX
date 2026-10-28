@@ -32,6 +32,7 @@ internal sealed class InProcessStoryForgeClient(
     ReferenceEdits referenceEdits,
     StillCells stills,
     TestRenders testRenders,
+    Clips.ClipCells clips,
     Reruns reruns,
     ProjectFolders folders) : IStoryForgeClient
 {
@@ -171,6 +172,15 @@ internal sealed class InProcessStoryForgeClient(
     public Task UnqueueStillAsync(Guid projectId, string shotKey, CancellationToken cancellationToken = default) => stills.UnqueueAsync(projectId, shotKey, cancellationToken);
 
     public Task ContinuePipelineAsync(Guid projectId, CancellationToken cancellationToken = default) => stills.ContinueAsync(projectId, cancellationToken);
+
+    public Task<ClipsView> GetClipsAsync(Guid projectId, CancellationToken cancellationToken = default) => clips.GetAsync(projectId, cancellationToken);
+
+    public Task QueueClipAsync(Guid projectId, string shotKey, string? prompt = null, ProfileRef? profile = null, CancellationToken cancellationToken = default) =>
+        clips.QueueAsync(projectId, shotKey, prompt, profile, cancellationToken);
+
+    public Task UnqueueClipAsync(Guid projectId, string shotKey, CancellationToken cancellationToken = default) => clips.UnqueueAsync(projectId, shotKey, cancellationToken);
+
+    public Task MakeClipsAsync(Guid projectId, CancellationToken cancellationToken = default) => clips.MakeAsync(projectId, cancellationToken);
 
     public Task<RerunPlan> GetRerunPlanAsync(Guid projectId, PipelineStage stage, string key, CancellationToken cancellationToken = default) =>
         reruns.PlanAsync(projectId, stage, key, cancellationToken);

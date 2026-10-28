@@ -309,6 +309,72 @@
         </DockPanel>
       </Border>
 
+      <!-- Where the clips stand, once every still is approved. -->
+      <Border Style="{StaticResource BarStyle}" Background="{StaticResource CardBrush}" BorderBrush="{StaticResource BorderBrush}"
+              Visibility="{Binding CanStartClips, Converter={StaticResource Visible}}">
+        <DockPanel>
+          <Button DockPanel.Dock="Right" Content="Make the clips" Style="{StaticResource PrimaryButtonStyle}" MinHeight="36" FontSize="13"
+                  Command="{Binding MakeClipsCommand}" />
+          <TextBlock VerticalAlignment="Center" FontSize="13" Foreground="{StaticResource TextSoftBrush}" TextWrapping="Wrap">
+            Every still is approved. Each shot gets one clip, animated from its still with <Run Text="{Binding ClipsModel, Mode=OneWay}" />.
+          </TextBlock>
+        </DockPanel>
+      </Border>
+      <Border Style="{StaticResource BarStyle}" Background="#172536" BorderBrush="#2B4A6B"
+              Visibility="{Binding IsClipsRunning, Converter={StaticResource Visible}}">
+        <DockPanel>
+          <Button DockPanel.Dock="Right" Content="Cancel" Style="{StaticResource SecondaryButtonStyle}" Command="{Binding CancelClipsCommand}"
+                  AutomationProperties.Name="Cancel the clips" />
+          <TextBlock Text="Making the clips" FontSize="14" FontWeight="SemiBold" Foreground="#6FB3EE" VerticalAlignment="Center" Margin="0,0,14,0" />
+          <TextBlock Text="{Binding ClipsProgress}" VerticalAlignment="Center" FontSize="13" Foreground="#BCD3EA" TextTrimming="CharacterEllipsis"
+                     FontFamily="{StaticResource MonoFont}" AutomationProperties.AutomationId="ClipsProgress" />
+        </DockPanel>
+      </Border>
+      <Border Style="{StaticResource BarStyle}" Background="{StaticResource AccentSoftBrush}" BorderBrush="#5A4520"
+              Visibility="{Binding IsClipsReview, Converter={StaticResource Visible}}">
+        <DockPanel>
+          <Button DockPanel.Dock="Right" Content="Make clips" Style="{StaticResource PrimaryButtonStyle}" MinHeight="36" FontSize="13"
+                  Margin="8,0,0,0" Command="{Binding MakeClipsCommand}" />
+          <Button DockPanel.Dock="Right" Content="Approve remaining" Style="{StaticResource SecondaryButtonStyle}" Command="{Binding ApproveRemainingClipsCommand}"
+                  AutomationProperties.Name="Approve remaining clips" />
+          <TextBlock Text="Gate: Clips" FontSize="14" FontWeight="SemiBold" Foreground="{StaticResource AccentTextBrush}" VerticalAlignment="Center" Margin="0,0,14,0" />
+          <StackPanel VerticalAlignment="Center">
+            <TextBlock Text="{Binding ClipsApprovedSummary}" FontSize="13" Foreground="#D9C9A8" TextWrapping="Wrap" AutomationProperties.AutomationId="ClipsSummary" />
+            <TextBlock Text="{Binding ClipsQueuedSummary}" FontSize="12" Foreground="{StaticResource AccentTextBrush}" TextWrapping="Wrap" Margin="0,2,0,0"
+                       Visibility="{Binding HasQueuedClips, Converter={StaticResource Visible}}" />
+          </StackPanel>
+        </DockPanel>
+      </Border>
+      <Border Style="{StaticResource BarStyle}" Background="{StaticResource PillOkBackBrush}" BorderBrush="#2F5A50"
+              Visibility="{Binding IsClipsApproved, Converter={StaticResource Visible}}">
+        <DockPanel>
+          <Button DockPanel.Dock="Right" Content="Make clips" Style="{StaticResource PrimaryButtonStyle}" MinHeight="36" FontSize="13"
+                  Command="{Binding MakeClipsCommand}" Visibility="{Binding HasQueuedClips, Converter={StaticResource Visible}}" />
+          <TextBlock Text="Clips approved" FontSize="14" FontWeight="SemiBold" Foreground="{StaticResource PillOkTextBrush}" VerticalAlignment="Center" Margin="0,0,14,0" />
+          <StackPanel VerticalAlignment="Center">
+            <TextBlock FontSize="13" Foreground="{StaticResource TextSoftBrush}" TextWrapping="Wrap"
+                       Text="Every clip is approved. Select a Clip cell to watch it; Regenerate there makes it again." />
+            <TextBlock Text="{Binding ClipsQueuedSummary}" FontSize="12" Foreground="{StaticResource AccentTextBrush}" TextWrapping="Wrap" Margin="0,2,0,0"
+                       Visibility="{Binding HasQueuedClips, Converter={StaticResource Visible}}" />
+          </StackPanel>
+        </DockPanel>
+      </Border>
+      <Border Style="{StaticResource BarStyle}" Background="{StaticResource PillErrorBackBrush}" BorderBrush="#6B3A33"
+              Visibility="{Binding IsClipsFailed, Converter={StaticResource Visible}}">
+        <DockPanel>
+          <!-- Make clips makes what is waiting: the clips the run did not get to, and the ones queued; those made stay. -->
+          <Button DockPanel.Dock="Right" Content="Make clips" Style="{StaticResource PrimaryButtonStyle}" MinHeight="36" FontSize="13"
+                  Background="{StaticResource ErrorTextBrush}" Command="{Binding MakeClipsCommand}" AutomationProperties.Name="Make the clips again" />
+          <StackPanel VerticalAlignment="Center" Margin="0,0,14,0">
+            <TextBlock Text="Clips failed" FontSize="14" FontWeight="SemiBold" Foreground="{StaticResource PillErrorTextBrush}" />
+            <TextBlock Text="{Binding ClipsError}" FontSize="13" Foreground="#E2C1BB" TextWrapping="Wrap" Margin="0,2,0,0"
+                       AutomationProperties.AutomationId="ClipsError" />
+            <TextBlock Text="{Binding ClipsQueuedSummary}" FontSize="12" Foreground="#E2C1BB" TextWrapping="Wrap" Margin="0,2,0,0"
+                       Visibility="{Binding HasQueuedClips, Converter={StaticResource Visible}}" />
+          </StackPanel>
+        </DockPanel>
+      </Border>
+
       <Border Background="{StaticResource PillErrorBackBrush}" CornerRadius="8" Padding="12,8" Margin="0,0,0,14"
               Visibility="{Binding ActionError, Converter={views:NullToCollapsedConverter}}">
         <TextBlock Text="{Binding ActionError}" Foreground="{StaticResource PillErrorTextBrush}" FontSize="13" TextWrapping="Wrap" />
@@ -478,10 +544,14 @@
                                  HorizontalAlignment="Center" VerticalAlignment="Center" AutomationProperties.Name="{Binding StillSummaryName}"
                                  Visibility="{Binding ShowsSummary, Converter={StaticResource Visible}}" />
                     </Border>
-                    <Border Grid.Column="5" Style="{StaticResource LaterCellStyle}" />
+                    <Border Grid.Column="5" Style="{StaticResource LaterCellStyle}">
+                      <TextBlock Text="{Binding ClipSummary}" FontFamily="{StaticResource MonoFont}" FontSize="12" Foreground="{StaticResource TextSoftBrush}"
+                                 HorizontalAlignment="Center" VerticalAlignment="Center" AutomationProperties.Name="{Binding ClipSummaryName}"
+                                 Visibility="{Binding ShowsSummary, Converter={StaticResource Visible}}" />
+                    </Border>
                   </Grid>
 
-                  <!-- Its shots, indented: each with its Board and Still cells; Clip arrives with #12. -->
+                  <!-- Its shots, indented: each with its Board, Still and Clip cells. -->
                   <ItemsControl ItemsSource="{Binding Shots}" Focusable="False" AutomationProperties.Name="{Binding Id, StringFormat='Shots of {0}'}"
                                 Visibility="{Binding ShowsShots, Converter={StaticResource Visible}}">
                     <ItemsControl.ItemTemplate>
@@ -512,7 +582,13 @@
                               <TextBlock Text="{Binding StateText}" FontWeight="SemiBold" />
                             </DockPanel>
                           </Button>
-                          <Border Grid.Column="5" Style="{StaticResource LaterCellStyle}" />
+                          <Button Grid.Column="5" DataContext="{Binding Clip}" Style="{StaticResource CellStyle}" Margin="6,0,0,0"
+                                  Command="{Binding SelectCommand}" AutomationProperties.Name="{Binding AccessibleName}">
+                            <DockPanel>
+                              <TextBlock DockPanel.Dock="Right" Text="{Binding VersionText}" FontFamily="{StaticResource MonoFont}" />
+                              <TextBlock Text="{Binding StateText}" FontWeight="SemiBold" />
+                            </DockPanel>
+                          </Button>
                         </Grid>
                       </DataTemplate>
                     </ItemsControl.ItemTemplate>
@@ -572,6 +648,19 @@
                 <Button Content="Take out of the batch" Style="{StaticResource SecondaryButtonStyle}" MinHeight="44" Margin="0,8,0,0" Command="{Binding UnqueueStillCommand}"
                         Visibility="{Binding StillIsQueued, Converter={StaticResource Visible}}" />
               </StackPanel>
+              <StackPanel Visibility="{Binding IsClipPanel, Converter={StaticResource Visible}}">
+                <Button Content="Edit prompt…" Style="{StaticResource SecondaryButtonStyle}" MinHeight="44" Margin="0,8,0,0" Command="{Binding StartEditPromptCommand}"
+                        AutomationProperties.Name="Edit the motion prompt" />
+                <!-- The fallback: this one clip with another video profile, e.g. LTX 2.5. Nothing switches on its own. -->
+                <DockPanel Margin="0,8,0,0" Visibility="{Binding HasClipModels, Converter={StaticResource Visible}}">
+                  <Button DockPanel.Dock="Right" Content="Make with it" Style="{StaticResource SecondaryButtonStyle}" MinHeight="44" Margin="6,0,0,0"
+                          Command="{Binding MakeWithCommand}" AutomationProperties.Name="Make this clip with the video profile picked" />
+                  <ComboBox ItemsSource="{Binding ClipModels}" SelectedItem="{Binding SelectedClipModel}" DisplayMemberPath="Name" VerticalContentAlignment="Center"
+                            AutomationProperties.Name="Video profile to make it with" ToolTip="Make this clip with another video profile" />
+                </DockPanel>
+                <Button Content="Take out of the waiting ones" Style="{StaticResource SecondaryButtonStyle}" MinHeight="44" Margin="0,8,0,0" Command="{Binding UnqueueClipCommand}"
+                        Visibility="{Binding ClipIsQueued, Converter={StaticResource Visible}}" />
+              </StackPanel>
               <Button Content="Cancel" Style="{StaticResource SecondaryButtonStyle}" MinHeight="44" Margin="0,8,0,0" Command="{Binding CancelSegmentCommand}"
                       AutomationProperties.Name="Cancel the segment"
                       Visibility="{Binding SelectedIsRunning, Converter={StaticResource Visible}}" />
@@ -625,6 +714,27 @@
                              TextWrapping="Wrap" Margin="0,0,0,10" Visibility="{Binding StillIsMissing, Converter={StaticResource Visible}}" />
                   <TextBlock Text="{Binding StillQueuedText}" FontSize="13" Foreground="{StaticResource AccentTextBrush}" TextWrapping="Wrap" Margin="0,0,0,10"
                              Visibility="{Binding StillIsQueued, Converter={StaticResource Visible}}" AutomationProperties.AutomationId="StillQueued" />
+                </StackPanel>
+
+                <!-- A Clip cell: the video first, as board 2b draws it. -->
+                <StackPanel Visibility="{Binding IsClipPanel, Converter={StaticResource Visible}}">
+                  <Border CornerRadius="10" Background="#000000" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" Margin="0,0,0,8"
+                          Visibility="{Binding ClipVideo, Converter={views:NullToCollapsedConverter}}">
+                    <MediaElement x:Name="ClipPlayer" Source="{Binding ClipVideo}" LoadedBehavior="Manual" UnloadedBehavior="Stop" Stretch="Uniform" MaxHeight="240"
+                                  ScrubbingEnabled="True" MediaOpened="ClipOpened" MediaEnded="ClipEnded" AutomationProperties.Name="The clip" />
+                  </Border>
+                  <UniformGrid Columns="2" Margin="0,0,0,12" Visibility="{Binding ClipVideo, Converter={views:NullToCollapsedConverter}}">
+                    <Button Content="Play" Style="{StaticResource PrimaryButtonStyle}" MinHeight="36" FontSize="13" Margin="0,0,4,0" Click="PlayClip"
+                            AutomationProperties.Name="Play the clip" />
+                    <Button Content="Pause" Style="{StaticResource SecondaryButtonStyle}" MinHeight="36" Margin="4,0,0,0" Click="PauseClip"
+                            AutomationProperties.Name="Pause the clip" />
+                  </UniformGrid>
+                  <TextBlock Text="The video is gone from the projects folder. Regenerate makes it again." FontSize="13" Foreground="{StaticResource ErrorTextBrush}"
+                             TextWrapping="Wrap" Margin="0,0,0,10" Visibility="{Binding ClipIsMissing, Converter={StaticResource Visible}}" />
+                  <TextBlock Text="{Binding ClipMadeBy}" FontSize="13" FontWeight="SemiBold" Foreground="{StaticResource TextSoftBrush}" Margin="0,0,0,8"
+                             Visibility="{Binding ClipMadeBy, Converter={views:NullToCollapsedConverter}}" AutomationProperties.AutomationId="ClipMadeBy" />
+                  <TextBlock Text="{Binding ClipQueuedText}" FontSize="13" Foreground="{StaticResource AccentTextBrush}" TextWrapping="Wrap" Margin="0,0,0,10"
+                             Visibility="{Binding ClipIsQueued, Converter={StaticResource Visible}}" AutomationProperties.AutomationId="ClipQueued" />
                 </StackPanel>
 
                 <ItemsControl ItemsSource="{Binding SelectedVersions}" Focusable="False" Margin="0,0,0,12" AutomationProperties.Name="Versions">
@@ -723,6 +833,29 @@
                              Margin="0,10,0,0" AutomationProperties.AutomationId="StillDetails" />
                   <TextBlock Text="{Binding StillMadeFrom}" FontSize="12" Foreground="{StaticResource TextMutedBrush}" TextWrapping="Wrap" Margin="0,4,0,0"
                              Visibility="{Binding StillMadeFrom, Converter={views:NullToCollapsedConverter}}" />
+                </StackPanel>
+
+                <!-- A Clip cell: its motion prompt and how it was made. -->
+                <StackPanel Visibility="{Binding IsClipPanel, Converter={StaticResource Visible}}">
+                  <TextBlock Text="{Binding ClipPromptTitle}" Style="{StaticResource FieldLabelStyle}" />
+                  <Border Background="{StaticResource CardBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="8" Padding="12,10"
+                          Visibility="{Binding IsNotEditingAny, Converter={StaticResource Visible}}">
+                    <TextBlock Text="{Binding ClipPrompt}" FontSize="13" TextWrapping="Wrap" LineHeight="20" AutomationProperties.AutomationId="ClipPrompt" />
+                  </Border>
+                  <StackPanel Visibility="{Binding IsEditingPrompt, Converter={StaticResource Visible}}">
+                    <TextBox Text="{Binding EditPrompt, UpdateSourceTrigger=PropertyChanged}" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="110"
+                             VerticalContentAlignment="Top" FontSize="13" Padding="10,8" views:FocusWhenShown.IsEnabled="True" AutomationProperties.Name="Your motion prompt" />
+                    <TextBlock FontSize="12" Foreground="{StaticResource TextMutedBrush}" TextWrapping="Wrap" Margin="0,8,0,8"
+                               Text="Used as it is, not through the profile's template. The clip waits to be made again: Make clips makes it." />
+                    <UniformGrid Columns="2">
+                      <Button Content="Use this prompt" Style="{StaticResource PrimaryButtonStyle}" Margin="0,0,4,0" Command="{Binding QueuePromptCommand}"
+                              AutomationProperties.Name="Use this motion prompt" />
+                      <Button Content="Cancel" Style="{StaticResource SecondaryButtonStyle}" MinHeight="44" Margin="4,0,0,0" Command="{Binding CancelEditPromptCommand}"
+                              AutomationProperties.Name="Cancel the motion prompt" />
+                    </UniformGrid>
+                  </StackPanel>
+                  <TextBlock Text="{Binding ClipDetails}" FontFamily="{StaticResource MonoFont}" FontSize="12" Foreground="{StaticResource TextSoftBrush}" TextWrapping="Wrap"
+                             Margin="0,10,0,0" AutomationProperties.AutomationId="ClipDetails" />
                 </StackPanel>
 
                 <!-- A Board cell: what board 8 drew, as the panel. -->

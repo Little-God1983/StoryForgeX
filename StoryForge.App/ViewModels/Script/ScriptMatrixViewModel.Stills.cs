@@ -271,7 +271,7 @@ public sealed partial class ScriptMatrixViewModel
 
     public bool StillIsQueued => SelectedStill?.Queued == true;
 
-    /// <summary>Edit prompt… is open: your prompt for the still, to queue it with.</summary>
+    /// <summary>Edit prompt… is open: your prompt for the still (or the clip), to queue it with.</summary>
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsNotEditingAny))]
     [NotifyCanExecuteChangedFor(nameof(QueuePromptCommand), nameof(ApproveSegmentCommand), nameof(RegenerateSegmentCommand), nameof(RerunFromHereCommand))]
@@ -283,21 +283,26 @@ public sealed partial class ScriptMatrixViewModel
 
     private bool CanEditStill() => IsStillPanel && SegmentIdle() && !IsEditingPrompt;
 
-    [RelayCommand(CanExecute = nameof(CanEditStill))]
+    private bool CanEditPrompt() => CanEditStill() || CanEditClip();
+
+    [RelayCommand(CanExecute = nameof(CanEditPrompt))]
     private void StartEditPrompt()
     {
-        EditPrompt = SelectedStill?.QueuedPrompt ?? StillPrompt;
+        EditPrompt = IsClipPanel ? SelectedClip?.QueuedPrompt ?? ClipPrompt : SelectedStill?.QueuedPrompt ?? StillPrompt;
         IsEditingPrompt = true;
     }
 
     private bool CanQueuePrompt() => IsEditingPrompt && EditPrompt.Trim().Length > 0;
 
-    /// <summary>"Use this prompt": the still waits in the batch with your prompt.</summary>
+    /// <summary>"Use this prompt": the still (or the clip) waits to be made again with your prompt.</summary>
     [RelayCommand(CanExecute = nameof(CanQueuePrompt))]
     private async Task QueuePromptAsync()
     {
         var key = SelectedShot!.Key;
-        await ActAsync("queue the still", () => client.QueueStillAsync(ProjectId, key, EditPrompt.Trim()));
+        var prompt = EditPrompt.Trim();
+        await (IsClipPanel
+            ? ActAsync("queue the clip", () => client.QueueClipAsync(ProjectId, key, prompt))
+            : ActAsync("queue the still", () => client.QueueStillAsync(ProjectId, key, prompt)));
         if (ActionError is null)
         {
             IsEditingPrompt = false;   // queued; when it was not, your prompt stays to try again
@@ -339,5 +344,9 @@ public sealed partial class ScriptMatrixViewModel
 
     partial void OnStillsStateChanged(StageState value) => RefreshStillPanel();
 
-    partial void OnIsEditingPromptChanged(bool value) => RefreshStillPanel();
+    partial void OnIsEditingPromptChanged(bool value)
+    {
+        RefreshStillPanel();
+        RefreshClipPanel();
+    }
 }

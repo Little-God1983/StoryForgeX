@@ -162,6 +162,26 @@ internal sealed class CellReader(IDbContextFactory<StoryForgeDbContext> contextF
         (await ReadSegmentsAsync(projectId, PipelineStage.Stills, c => c.CurrentVersion, cancellationToken))
             .ToDictionary(v => v.Key, v => StoredJson.Read<Still>(v.OutputJson));
 
+    /// <summary>Every shot's still as approved, with its version, by shot key: what the clips start from.</summary>
+    public async Task<IReadOnlyDictionary<string, (Still Still, int Version)>> ApprovedStillsAsync(Guid projectId, CancellationToken cancellationToken) =>
+        (await ReadSegmentsAsync(projectId, PipelineStage.Stills, c => c.ApprovedVersion, cancellationToken))
+            .ToDictionary(v => v.Key, v => (StoredJson.Read<Still>(v.OutputJson), v.Version));
+
+    /// <summary>Every shot's clip as it stands, each in its current version, by shot key.</summary>
+    public async Task<IReadOnlyDictionary<string, Clip>> CurrentClipsAsync(Guid projectId, CancellationToken cancellationToken) =>
+        (await ReadSegmentsAsync(projectId, PipelineStage.Clips, c => c.CurrentVersion, cancellationToken))
+            .ToDictionary(v => v.Key, v => StoredJson.Read<Clip>(v.OutputJson));
+
+    /// <summary>The clips waiting to be made again, by shot key, with your prompt (null: Claude writes it) and the video profile switched to (null: the project's).</summary>
+    public async Task<IReadOnlyDictionary<string, (string? Prompt, ProfileRef? Profile)>> QueuedClipsAsync(Guid projectId, CancellationToken cancellationToken)
+    {
+        await using var db = await contextFactory.CreateDbContextAsync(cancellationToken);
+        return (await db.Cells.AsNoTracking()
+                .Where(c => c.ProjectId == projectId && c.Stage == PipelineStage.Clips && c.Key != "" && c.Queued)
+                .ToListAsync(cancellationToken))
+            .ToDictionary(c => c.Key, c => (c.QueuedPrompt, c.QueuedProfile is null ? null : StoredJson.Read<ProfileRef>(c.QueuedProfile)));
+    }
+
     /// <summary>The stills waiting in the batch, by shot key, with your prompt for each (null: Claude writes it).</summary>
     public async Task<IReadOnlyDictionary<string, string?>> QueuedStillsAsync(Guid projectId, CancellationToken cancellationToken)
     {

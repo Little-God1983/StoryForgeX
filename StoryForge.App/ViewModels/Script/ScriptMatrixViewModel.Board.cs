@@ -155,7 +155,7 @@ public sealed partial class ScriptMatrixViewModel
                 var shown = row.Shots.FirstOrDefault(s => s.Key == shots[i].Key);
                 if (shown is null)
                 {
-                    row.Shots.Insert(i, new ShotRowViewModel(shots[i], SelectShot, SelectStill));
+                    row.Shots.Insert(i, new ShotRowViewModel(shots[i], SelectShot, SelectStill, SelectClip));
                 }
                 else
                 {

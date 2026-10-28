@@ -150,13 +150,26 @@ public sealed partial class SegmentRowViewModel(SegmentView segment, Action<Segm
     public string StillSummaryName =>
         $"{Id} stills folded: {string.Join(", ", Marks.Where(m => Shots.Any(s => s.Still.DisplayState == m.State)).Select(m => $"{Shots.Count(s => s.Still.DisplayState == m.State)} {m.Word}"))}";
 
+    /// <summary>Folded: what its clips need, e.g. "! 1  ✓ 1"; empty before any clip is made.</summary>
+    public string ClipSummary => Shots.Any(s => s.Clip.HasClip)
+        ? string.Join("  ", Marks.Where(m => Shots.Any(s => s.Clip.DisplayState == m.State)).Select(m => $"{m.Mark} {Shots.Count(s => s.Clip.DisplayState == m.State)}"))
+        : "";
+
+    /// <summary>What screen readers announce for the folded clips.</summary>
+    public string ClipSummaryName =>
+        $"{Id} clips folded: {string.Join(", ", Marks.Where(m => Shots.Any(s => s.Clip.DisplayState == m.State)).Select(m => $"{Shots.Count(s => s.Clip.DisplayState == m.State)} {m.Word}"))}";
+
     [RelayCommand]
     private void Toggle() => IsOpen = !IsOpen;
 
     /// <summary>The shots were brought in line with a new load.</summary>
     internal void ShotsChanged()
     {
-        foreach (var name in new[] { nameof(HasShots), nameof(ShowsShots), nameof(ShowsSummary), nameof(ShotsText), nameof(BoardSummary), nameof(BoardSummaryName), nameof(StillSummary), nameof(StillSummaryName) })
+        foreach (var name in new[]
+        {
+            nameof(HasShots), nameof(ShowsShots), nameof(ShowsSummary), nameof(ShotsText), nameof(BoardSummary), nameof(BoardSummaryName), nameof(StillSummary), nameof(StillSummaryName),
+            nameof(ClipSummary), nameof(ClipSummaryName),
+        })
         {
             OnPropertyChanged(name);
         }
@@ -290,7 +303,7 @@ public sealed partial class ScriptMatrixViewModel(
 
     /// <summary>Which of the selected row's cells the panel shows: Script, Voice, or a shot's Board or Still.</summary>
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(IsVoicePanel), nameof(IsScriptPanel), nameof(IsNotScriptPanel), nameof(IsBoardPanel), nameof(IsStillPanel))]
+    [NotifyPropertyChangedFor(nameof(IsVoicePanel), nameof(IsScriptPanel), nameof(IsNotScriptPanel), nameof(IsBoardPanel), nameof(IsStillPanel), nameof(IsClipPanel))]
     private PipelineStage _selectedStage = PipelineStage.Script;
 
     public bool IsVoicePanel => SelectedStage == PipelineStage.Voice;
@@ -303,12 +316,14 @@ public sealed partial class ScriptMatrixViewModel(
 
     public bool IsStillPanel => SelectedStage == PipelineStage.Stills;
 
-    /// <summary>The shot whose Board or Still cell the panel shows; null for a Script or Voice cell.</summary>
+    public bool IsClipPanel => SelectedStage == PipelineStage.Clips;
+
+    /// <summary>The shot whose Board, Still or Clip cell the panel shows; null for a Script or Voice cell.</summary>
     [ObservableProperty]
     private ShotRowViewModel? _selectedShot;
 
     /// <summary>The key the selected cell goes by: the shot's, else the segment's.</summary>
-    private string SelectedKey => IsBoardPanel || IsStillPanel ? SelectedShot!.Key : Selected!.Id;
+    private string SelectedKey => IsBoardPanel || IsStillPanel || IsClipPanel ? SelectedShot!.Key : Selected!.Id;
 
     public bool HasSelection => Selected is not null;
 
@@ -319,6 +334,7 @@ public sealed partial class ScriptMatrixViewModel(
     public string SelectedHeading => Selected is null ? ""
         : IsBoardPanel && SelectedShot is { } shot ? $"{shot.Label} — Board"
         : IsStillPanel && SelectedShot is { } stillShot ? $"{stillShot.Label} — Still"
+        : IsClipPanel && SelectedShot is { } clipShot ? $"{clipShot.Label} — Clip"
         : $"{Selected.Id} — {(IsVoicePanel ? "Voice" : "Script")}";
 
     /// <summary>"review · version 2 · about 0:48"; for a voice "approved · version 1 · 0:31 · 2 parts".</summary>
@@ -328,6 +344,8 @@ public sealed partial class ScriptMatrixViewModel(
             ? $"{shot.StateText} · version {shot.Shot.Version} · {Seconds(shot.Shot.Shot.Seconds)} s"
         : IsStillPanel && SelectedShot is { } stillShot
             ? $"{stillShot.Still.StateText}{(SelectedStill is { Version: > 0 } still ? $" · version {still.Version}" : "")}{(stillShot.Still.IsQueued ? " · queued" : "")}"
+        : IsClipPanel && SelectedShot is { } clipShot
+            ? $"{clipShot.Clip.StateText}{(SelectedClip is { Version: > 0 } clip ? $" · version {clip.Version}" : "")}{(clipShot.Clip.IsQueued ? " · queued" : "")}"
         : IsVoicePanel
             ? SelectedVoice is { } voice
                 ? $"{Selected.Voice.StateText} · version {voice.Version} · {Clock(voice.Seconds)}{(voice.Parts.Count > 1 ? $" · {voice.Parts.Count} parts" : "")}"
@@ -336,19 +354,21 @@ public sealed partial class ScriptMatrixViewModel(
 
     public string SelectedNarration => Selected?.Segment.Narration ?? "";
 
-    public string? SelectedError => IsBoardPanel ? SelectedShot?.Shot.Error : IsStillPanel ? SelectedStill?.Error : IsVoicePanel ? SelectedVoice?.Error : Selected?.Segment.Error;
+    public string? SelectedError =>
+        IsBoardPanel ? SelectedShot?.Shot.Error : IsStillPanel ? SelectedStill?.Error : IsClipPanel ? SelectedClip?.Error : IsVoicePanel ? SelectedVoice?.Error : Selected?.Segment.Error;
 
     /// <summary>How the selected stale cell comes up to date; what Regenerate here does differs by cell.</summary>
     public string SelectedStaleHint =>
         IsVoicePanel ? "Regenerate speaks it again from the script as it is now."
         : IsBoardPanel ? "Regenerate storyboard cuts the shots again from the voice as it is now. Regenerate here only plans this shot again in its old place."
         : IsStillPanel ? "Bring its shot and references up to date first, if they are out of date too; then Regenerate makes it again from them."
+        : IsClipPanel ? "Bring its still up to date first, if it is out of date too, and approve it; then Regenerate makes the clip again from it."
         : "Regenerate script writes it again from the fact sheet as it is now. Regenerate here keeps to the facts it was written from.";
 
     /// <summary>"Out of date: S04's script changed since it was spoken."; null while the selected cell is up to date.</summary>
     public string? SelectedStale =>
-        (IsBoardPanel ? SelectedShot?.DisplayState : IsStillPanel ? SelectedShot?.Still.DisplayState : IsVoicePanel ? Selected?.Voice.DisplayState : Selected?.DisplayState) == StageState.Stale
-        && (IsBoardPanel ? SelectedShot?.Shot.Stale : IsStillPanel ? SelectedStill?.Stale : IsVoicePanel ? SelectedVoice?.Stale : Selected?.Segment.Stale) is { } why
+        (IsBoardPanel ? SelectedShot?.DisplayState : IsStillPanel ? SelectedShot?.Still.DisplayState : IsClipPanel ? SelectedShot?.Clip.DisplayState : IsVoicePanel ? Selected?.Voice.DisplayState : Selected?.DisplayState) == StageState.Stale
+        && (IsBoardPanel ? SelectedShot?.Shot.Stale : IsStillPanel ? SelectedStill?.Stale : IsClipPanel ? SelectedClip?.Stale : IsVoicePanel ? SelectedVoice?.Stale : Selected?.Segment.Stale) is { } why
             ? $"Out of date: {why}"
             : null;
 
@@ -356,12 +376,14 @@ public sealed partial class ScriptMatrixViewModel(
     /// The selected cell is being made again on its own (written or spoken). A Voice cell still to
     /// come while the whole voice is spoken is not: the stage's bar has the Cancel and the log.
     /// </summary>
-    public bool SelectedIsRunning => SelectedState == StageState.Running && !(IsVoicePanel && IsVoiceRunning) && !(IsBoardPanel && IsBoardRunning) && !(IsStillPanel && IsStillsRunning);
+    public bool SelectedIsRunning =>
+        SelectedState == StageState.Running && !(IsVoicePanel && IsVoiceRunning) && !(IsBoardPanel && IsBoardRunning) && !(IsStillPanel && IsStillsRunning) && !(IsClipPanel && IsClipsRunning);
 
     /// <summary>Its log shows while it is made again, and after that failed.</summary>
     public bool SelectedShowsLog => SelectedIsRunning || (SelectedState == StageState.Failed && SelectedActivity.Count > 0);
 
-    private StageState? SelectedState => IsBoardPanel ? SelectedShot?.State : IsStillPanel ? SelectedStill?.State : IsVoicePanel ? SelectedVoice?.State : Selected?.State;
+    private StageState? SelectedState =>
+        IsBoardPanel ? SelectedShot?.State : IsStillPanel ? SelectedStill?.State : IsClipPanel ? SelectedClip?.State : IsVoicePanel ? SelectedVoice?.State : Selected?.State;
 
     /// <summary>What making the selected cell again did.</summary>
     public ObservableCollection<ActivityLine> SelectedActivity { get; } = [];
@@ -377,6 +399,10 @@ public sealed partial class ScriptMatrixViewModel(
         : IsStillPanel
         ? SelectedStill is { } still
             ? [.. still.Versions.Select(v => new SegmentVersionChoice(v.Version, v.Version == still.Version, v.Version == still.ApprovedVersion))]
+            : []
+        : IsClipPanel
+        ? SelectedClip is { } clip
+            ? [.. clip.Versions.Select(v => new SegmentVersionChoice(v.Version, v.Version == clip.Version, v.Version == clip.ApprovedVersion))]
             : []
         : IsVoicePanel
         ? SelectedVoice is { } voice
@@ -421,11 +447,12 @@ public sealed partial class ScriptMatrixViewModel(
             var voice = await client.GetVoiceAsync(ProjectId);
             var board = await client.GetStoryboardAsync(ProjectId);
             var stills = await client.GetStillsAsync(ProjectId);
+            var clips = await client.GetClipsAsync(ProjectId);
             if (mine != _loads)
             {
                 return;   // a newer load or a live update came in meanwhile; this view is old
             }
-            Apply(view, voice, board, stills);
+            Apply(view, voice, board, stills, clips);
         }
         catch (Exception ex)
         {
@@ -437,8 +464,13 @@ public sealed partial class ScriptMatrixViewModel(
     /// <summary>A change from the engine for this project, already on the UI thread.</summary>
     public async Task ReceiveAsync(StageUpdate update)
     {
-        if (update.ProjectId != ProjectId || update.Stage is not (PipelineStage.Script or PipelineStage.Voice or PipelineStage.Storyboard or PipelineStage.References or PipelineStage.Stills))
+        if (update.ProjectId != ProjectId || update.Stage is not (PipelineStage.Script or PipelineStage.Voice or PipelineStage.Storyboard or PipelineStage.References or PipelineStage.Stills or PipelineStage.Clips))
         {
+            return;
+        }
+        if (update.Stage == PipelineStage.Clips)
+        {
+            await ReceiveClipsAsync(update);
             return;
         }
         if (update.Stage == PipelineStage.Stills)
@@ -540,7 +572,7 @@ public sealed partial class ScriptMatrixViewModel(
         await LoadAsync();
     }
 
-    private void Apply(ScriptView view, VoiceView voice, StoryboardView board, StillsView stills)
+    private void Apply(ScriptView view, VoiceView voice, StoryboardView board, StillsView stills, ClipsView clips)
     {
         _facts = view.Facts.ToDictionary(f => f.Id);
         State = view.State;
@@ -600,7 +632,8 @@ public sealed partial class ScriptMatrixViewModel(
         ApplyVoice(voice);
         ApplyBoard(board);
         ApplyStills(stills);
-        if (Selected is null || !Rows.Contains(Selected) || ((IsBoardPanel || IsStillPanel) && (SelectedShot is null || !Selected.Shots.Contains(SelectedShot))))
+        ApplyClips(clips);
+        if (Selected is null || !Rows.Contains(Selected) || ((IsBoardPanel || IsStillPanel || IsClipPanel) && (SelectedShot is null || !Selected.Shots.Contains(SelectedShot))))
         {
             Select(Rows.FirstOrDefault(), PipelineStage.Script);
         }
@@ -664,6 +697,7 @@ public sealed partial class ScriptMatrixViewModel(
         {
             SelectedShot.IsSelected = false;
             SelectedShot.Still.IsSelected = false;
+            SelectedShot.Clip.IsSelected = false;
         }
         var sameRow = Selected == row;
         SelectedStage = stage;
@@ -678,10 +712,12 @@ public sealed partial class ScriptMatrixViewModel(
         {
             shot.IsSelected = stage == PipelineStage.Storyboard;
             shot.Still.IsSelected = stage == PipelineStage.Stills;
+            shot.Clip.IsSelected = stage == PipelineStage.Clips;
         }
         IsEditing = false;
         IsEditingShot = false;
         IsEditingPrompt = false;
+        SelectedClipModel = null;   // a video profile is picked for one clip, not the next
         CloseNote();
         if (sameRow)
         {
@@ -720,6 +756,7 @@ public sealed partial class ScriptMatrixViewModel(
         ShowVersionCommand.NotifyCanExecuteChanged();
         RefreshBoardPanel();
         RefreshStillPanel();
+        RefreshClipPanel();
         ShowClip();
     }
 
@@ -744,7 +781,7 @@ public sealed partial class ScriptMatrixViewModel(
     /// </param>
     private void ShowSelectedActivity(bool keepLive)
     {
-        var lines = (IsBoardPanel ? SelectedShot?.Shot.Activity : IsStillPanel ? SelectedStill?.Activity : IsVoicePanel ? SelectedVoice?.Activity : Selected?.Segment.Activity) ?? [];
+        var lines = (IsBoardPanel ? SelectedShot?.Shot.Activity : IsStillPanel ? SelectedStill?.Activity : IsClipPanel ? SelectedClip?.Activity : IsVoicePanel ? SelectedVoice?.Activity : Selected?.Segment.Activity) ?? [];
         if (keepLive && SelectedState == StageState.Running && lines.Count < SelectedActivity.Count)
         {
             return;
@@ -761,18 +798,23 @@ public sealed partial class ScriptMatrixViewModel(
         ? SelectedShot is { State: not StageState.Running } && !IsBoardRunning && !IsEditingShot
         : IsStillPanel
         ? SelectedStill is { State: not StageState.Running } && !IsStillsRunning && !IsEditingPrompt
+        : IsClipPanel
+        ? SelectedClip is { State: not StageState.Running } && !IsClipsRunning && !IsEditingPrompt
         : IsVoicePanel
             ? SelectedVoice is { State: not StageState.Running } && !IsVoiceRunning
             : Selected is not null && !IsRunning && Selected.State != StageState.Running;
 
-    private bool CanApproveSegment() => SegmentIdle() && SelectedState != StageState.Approved;
+    // A still or clip never made (its first make failed) has no version to approve.
+    private bool CanApproveSegment() =>
+        SegmentIdle() && SelectedState != StageState.Approved && !(IsClipPanel && SelectedClip is not { Version: > 0 }) && !(IsStillPanel && SelectedStill is not { Version: > 0 });
 
     /// <summary>The selected cell's version shown now.</summary>
-    private int SelectedVersion => IsBoardPanel ? SelectedShot!.Shot.Version : IsStillPanel ? SelectedStill!.Version : IsVoicePanel ? SelectedVoice!.Version : Selected!.Segment.Version;
+    private int SelectedVersion =>
+        IsBoardPanel ? SelectedShot!.Shot.Version : IsStillPanel ? SelectedStill!.Version : IsClipPanel ? SelectedClip!.Version : IsVoicePanel ? SelectedVoice!.Version : Selected!.Segment.Version;
 
     [RelayCommand(CanExecute = nameof(CanApproveSegment))]
     private Task ApproveSegmentAsync() =>
-        ActAsync(IsBoardPanel ? "approve the shot" : IsStillPanel ? "approve the still" : IsVoicePanel ? "approve the voice" : "approve the segment",
+        ActAsync(IsBoardPanel ? "approve the shot" : IsStillPanel ? "approve the still" : IsClipPanel ? "approve the clip" : IsVoicePanel ? "approve the voice" : "approve the segment",
             () => client.ApproveSegmentAsync(ProjectId, SelectedStage, SelectedKey, SelectedVersion));
 
     // With every segment approved and the stage still in review, it settles the stage.
@@ -792,6 +834,12 @@ public sealed partial class ScriptMatrixViewModel(
         {
             var key = SelectedKey;
             await ActAsync("queue the still", () => client.QueueStillAsync(ProjectId, key));
+            return;
+        }
+        if (IsClipPanel)
+        {
+            var key = SelectedKey;
+            await ActAsync("queue the clip", () => client.QueueClipAsync(ProjectId, key));
             return;
         }
         var what = IsBoardPanel ? "plan the shot again" : IsVoicePanel ? "speak the segment again" : "write the segment again";
@@ -851,7 +899,7 @@ public sealed partial class ScriptMatrixViewModel(
 
     [RelayCommand(CanExecute = nameof(SelectedIsRunning))]
     private Task CancelSegmentAsync() =>
-        ActAsync(IsBoardPanel ? "cancel the shot" : IsStillPanel ? "cancel the still" : "cancel the segment", () => client.CancelSegmentAsync(ProjectId, SelectedStage, SelectedKey));
+        ActAsync(IsBoardPanel ? "cancel the shot" : IsStillPanel ? "cancel the still" : IsClipPanel ? "cancel the clip" : "cancel the segment", () => client.CancelSegmentAsync(ProjectId, SelectedStage, SelectedKey));
 
     // A typed note is about the version on screen: switching first would send it against another.
     private bool CanShowVersion(int version) => (SelectedVersions.FirstOrDefault(v => v.Version == version)?.CanPick ?? true) && !HasUnsentNote;

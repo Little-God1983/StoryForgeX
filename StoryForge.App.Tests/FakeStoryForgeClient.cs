@@ -306,6 +306,10 @@ internal sealed class FakeStoryForgeClient : IStoryForgeClient
             {
                 Storyboards[update.ProjectId] = board with { State = StageState.Running, Error = null, Activity = [] };
             }
+            else if (update.Stage == PipelineStage.Clips && Clips.TryGetValue(update.ProjectId, out var clips))
+            {
+                Clips[update.ProjectId] = clips with { State = StageState.Running, Error = null, Activity = [], Clips = [.. clips.Clips.Select(c => c.Queued || c.Clip is null ? c with { State = StageState.Running } : c)] };
+            }
             else if (update.Stage == PipelineStage.Stills && Stills.TryGetValue(update.ProjectId, out var stills))
             {
                 // As the engine has it: only the stills the run makes (in the batch, or with none yet) run.
@@ -454,6 +458,11 @@ internal sealed class FakeStoryForgeClient : IStoryForgeClient
             StillActions.Add(("cancel", segmentId, null));
             return Task.CompletedTask;
         }
+        if (stage == PipelineStage.Clips)
+        {
+            ClipActions.Add(("cancel", segmentId, null));
+            return Task.CompletedTask;
+        }
         CancelledSegments.Add((projectId, segmentId));
         return Task.CompletedTask;
     }
@@ -496,6 +505,12 @@ internal sealed class FakeStoryForgeClient : IStoryForgeClient
             ChangeStill(projectId, segmentId, s => s with { State = StageState.Approved, ApprovedVersion = version });
             return Task.CompletedTask;
         }
+        if (stage == PipelineStage.Clips)
+        {
+            ClipActions.Add(($"approve v{version}", segmentId, null));
+            ChangeClip(projectId, segmentId, c => c with { State = StageState.Approved, ApprovedVersion = version });
+            return Task.CompletedTask;
+        }
         ApprovedSegments.Add((projectId, segmentId, version));
         ChangeSegment(projectId, segmentId, s => s with { State = StageState.Approved, ApprovedVersion = version });
         return Task.CompletedTask;
@@ -517,6 +532,11 @@ internal sealed class FakeStoryForgeClient : IStoryForgeClient
         if (stage == PipelineStage.Stills)
         {
             StillActions.Add(("approve all", "", null));
+            return Task.CompletedTask;
+        }
+        if (stage == PipelineStage.Clips)
+        {
+            ClipActions.Add(("approve all", "", null));
             return Task.CompletedTask;
         }
         ApprovedScripts.Add(projectId);
@@ -543,6 +563,11 @@ internal sealed class FakeStoryForgeClient : IStoryForgeClient
         if (stage == PipelineStage.Stills)
         {
             StillActions.Add(("regenerate now", segmentId, null));
+            return Task.CompletedTask;
+        }
+        if (stage == PipelineStage.Clips)
+        {
+            ClipActions.Add(("regenerate now", segmentId, null));
             return Task.CompletedTask;
         }
         RegeneratedSegments.Add((projectId, segmentId));
@@ -584,6 +609,12 @@ internal sealed class FakeStoryForgeClient : IStoryForgeClient
         {
             StillActions.Add(($"select v{version}", segmentId, null));
             ChangeStill(projectId, segmentId, s => s with { Version = version });
+            return Task.CompletedTask;
+        }
+        if (stage == PipelineStage.Clips)
+        {
+            ClipActions.Add(($"select v{version}", segmentId, null));
+            ChangeClip(projectId, segmentId, c => c with { Version = version });
             return Task.CompletedTask;
         }
         SelectedSegmentVersions.Add((projectId, segmentId, version));
@@ -795,6 +826,45 @@ internal sealed class FakeStoryForgeClient : IStoryForgeClient
         ThrowIfFailing();
         TestRenders.Add((profile, line));
         return TestRenderResult ?? new TestRender(@"C:\Data\test-renders\a.png", line, 184223, new GenerationSize("16:9", 1344, 768), TimeSpan.FromSeconds(41));
+    }
+
+    public Dictionary<Guid, ClipsView> Clips { get; } = [];
+
+    /// <summary>What was done to the clips: ("queue", key, prompt or profile), ("unqueue", key, null), ("make", "", null), and the segment actions.</summary>
+    public List<(string Action, string ShotKey, string? Detail)> ClipActions { get; } = [];
+
+    public Task<ClipsView> GetClipsAsync(Guid projectId, CancellationToken cancellationToken = default) =>
+        Task.FromResult(Clips.GetValueOrDefault(projectId) ?? new ClipsView(projectId, StageState.NotStarted, null, [], [], false, "Minimax H3", []));
+
+    public Task QueueClipAsync(Guid projectId, string shotKey, string? prompt = null, ProfileRef? profile = null, CancellationToken cancellationToken = default)
+    {
+        ThrowIfFailing();
+        ClipActions.Add(("queue", shotKey, profile is null ? prompt : $"profile {profile.ProfileId:N} v{profile.Version}"));
+        ChangeClip(projectId, shotKey, c => c with { Queued = true, QueuedPrompt = string.IsNullOrWhiteSpace(prompt) ? c.QueuedPrompt : prompt, QueuedProfile = profile ?? c.QueuedProfile });
+        return Task.CompletedTask;
+    }
+
+    public Task UnqueueClipAsync(Guid projectId, string shotKey, CancellationToken cancellationToken = default)
+    {
+        ThrowIfFailing();
+        ClipActions.Add(("unqueue", shotKey, null));
+        ChangeClip(projectId, shotKey, c => c with { Queued = false, QueuedPrompt = null, QueuedProfile = null });
+        return Task.CompletedTask;
+    }
+
+    public Task MakeClipsAsync(Guid projectId, CancellationToken cancellationToken = default)
+    {
+        ThrowIfFailing();
+        ClipActions.Add(("make", "", null));
+        return Task.CompletedTask;
+    }
+
+    private void ChangeClip(Guid projectId, string key, Func<ClipView, ClipView> change)
+    {
+        if (Clips.TryGetValue(projectId, out var view))
+        {
+            Clips[projectId] = view with { Clips = [.. view.Clips.Select(c => c.Key == key ? change(c) : c)] };
+        }
     }
 
     private void ChangeStill(Guid projectId, string key, Func<StillView, StillView> change)
