@@ -492,14 +492,19 @@ internal sealed partial class PipelineRunner(
             {
                 // Cancel stops a rerun here: what it would go on to make stays as it is.
                 await StopRerunAsync(job);
-                if (StoredCount(job) is var stored && (stored > 0 || await KeptAsync(job)))
+                if (StoredCount(job) - FailedCount(job) is var stored && (stored > 0 || await KeptAsync(job)))
                 {
                     // Segments of this run are stored already, or what it saved before them: going back to before would hide them.
-                    await FailAsync(job, _workers[job.Stage].CancelledAfter(stored - FailedCount(job)), Snapshot(activity));
+                    await FailAsync(job, _workers[job.Stage].CancelledAfter(stored), Snapshot(activity));
                 }
                 else
                 {
                     await RestoreAsync(job);
+                    if (FailedCount(job) > 0)
+                    {
+                        // Back to where it stood, with the ones that failed meanwhile showing so.
+                        await SettleAsync(job.ProjectId, job.Stage, CancellationToken.None);
+                    }
                 }
             }
         }

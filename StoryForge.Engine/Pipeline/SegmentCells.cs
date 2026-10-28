@@ -30,6 +30,7 @@ internal sealed class SegmentCells(
             RequireVersion(db, cell, version);
             await RequireSameCutAsync(db, cell, version, cancellationToken);
             await RequireMadeAsync(db, cell, version, cancellationToken);
+            Unqueue(cell);
             cell.CurrentVersion = version;
             cell.ApprovedVersion = version;
             cell.State = StageState.Approved;
@@ -91,6 +92,7 @@ internal sealed class SegmentCells(
             approved = [.. segments.Where(s => s.State != StageState.Approved).Select(s => s.Key)];
             foreach (var segment in segments)
             {
+                Unqueue(segment);
                 segment.ApprovedVersion = segment.CurrentVersion;
                 segment.State = StageState.Approved;
                 segment.Error = null;
@@ -156,6 +158,20 @@ internal sealed class SegmentCells(
         }
         runner.Publish(new StageUpdate(projectId, stage, state, Key: segmentId));
         await runner.SettleAsync(projectId, stage, cancellationToken);
+    }
+
+    /// <summary>
+    /// Approving a still or clip whose making again failed keeps the one it has: it is no longer to be
+    /// made again. One that waits and did not fail stays waiting, as you put it there.
+    /// </summary>
+    private static void Unqueue(CellEntry cell)
+    {
+        if (cell.State == StageState.Failed)
+        {
+            cell.Queued = false;
+            cell.QueuedPrompt = null;
+            cell.QueuedProfile = null;
+        }
     }
 
     private static void RequireVersion(StoryForgeDbContext db, CellEntry cell, int version)

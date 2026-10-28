@@ -58,7 +58,10 @@ public sealed record ClipModel(ProfileRef Profile, string Name);
 /// <param name="Clips">One per shot that has a Clip cell, by shot key; a shot without one has no clip yet.</param>
 /// <param name="StillsApproved">Every still is approved, so the clips can be made.</param>
 /// <param name="Model">What the project makes its clips with, e.g. "Minimax H3".</param>
-/// <param name="Others">The other video profiles one clip can be switched to (the fallback); the app never switches on its own.</param>
+/// <param name="Others">
+/// The video profiles one clip can be made with: the project's first (to switch back to), then the
+/// others (the fallback). The app never switches on its own.
+/// </param>
 public sealed record ClipsView(
     Guid ProjectId,
     StageState State,

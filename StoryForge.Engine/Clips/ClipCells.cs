@@ -31,10 +31,14 @@ internal sealed class ClipCells(
         var project = await projects.GetAsync(projectId, cancellationToken);
         var root = await folders.RootAsync(cancellationToken);
         var stillsApproved = await cells.StateAsync(projectId, PipelineStage.Stills, cancellationToken) == StageState.Approved;
-        var others = (await profiles.ListAsync(cancellationToken))
-            .Where(p => p.Kind == ProfileKind.Video && p.Id != project.Setup.Clips.Profile.ProfileId)
-            .Select(p => new ClipModel(new ProfileRef(p.Id, p.LatestVersion), p.Name))
-            .ToList();
+        // The project's own first: a clip switched away goes back to it the same way.
+        List<ClipModel> others =
+        [
+            new(project.Setup.Clips.Profile, project.Setup.Clips.Model),
+            .. (await profiles.ListAsync(cancellationToken))
+                .Where(p => p.Kind == ProfileKind.Video && p.Id != project.Setup.Clips.Profile.ProfileId)
+                .Select(p => new ClipModel(new ProfileRef(p.Id, p.LatestVersion), p.Name)),
+        ];
         await using var db = await contextFactory.CreateDbContextAsync(cancellationToken);
         // The cells first, then their versions: a version is stored with (or before) the cell that points to it.
         var stageCells = await db.Cells.AsNoTracking().Where(c => c.ProjectId == projectId && c.Stage == Stage).ToListAsync(cancellationToken);
@@ -92,24 +96,21 @@ internal sealed class ClipCells(
     {
         prompt = string.IsNullOrWhiteSpace(prompt) ? null : prompt.Trim();
         segments.RequireIdle(projectId, Stage, shotKey);
+        var project = await projects.GetAsync(projectId, cancellationToken);
         if (profile is not null)
         {
-            var project = await projects.GetAsync(projectId, cancellationToken);
             if (profile.ProfileId != project.Setup.Clips.Profile.ProfileId
                 && (await profiles.ListAsync(cancellationToken)).All(p => p.Id != profile.ProfileId || p.Kind != ProfileKind.Video))
             {
                 throw new KeyNotFoundException("There is no such video profile.");
             }
             await profiles.GetVersionAsync(profile.ProfileId, profile.Version, cancellationToken);   // the version exists
-            if (profile == project.Setup.Clips.Profile)
-            {
-                profile = null;   // back to the project's own
-            }
         }
+        var back = profile is not null && profile.ProfileId == project.Setup.Clips.Profile.ProfileId;   // back to the project's own
         await ChangeAsync(projectId, shotKey, cell =>
         {
             cell.QueuedPrompt = prompt ?? (cell.Queued ? cell.QueuedPrompt : null);
-            cell.QueuedProfile = profile is not null ? StoredJson.Write(profile) : cell.Queued ? cell.QueuedProfile : null;
+            cell.QueuedProfile = back ? null : profile is not null ? StoredJson.Write(profile) : cell.Queued ? cell.QueuedProfile : null;
             cell.Queued = true;
         }, cancellationToken);
     }

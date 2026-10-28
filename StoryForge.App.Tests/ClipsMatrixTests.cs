@@ -104,6 +104,17 @@ public sealed class ClipsMatrixTests
     }
 
     [Fact]
+    public async Task A_clip_never_made_cannot_be_approved()
+    {
+        var (matrix, _) = await OpenAsync();
+        var script = matrix.Script!;
+
+        script.Rows[1].Shots[0].Clip.SelectCommand.Execute(null);
+
+        Assert.False(script.ApproveSegmentCommand.CanExecute(null));
+    }
+
+    [Fact]
     public async Task Make_with_another_video_profile_queues_that_one_clip_with_it()
     {
         var (matrix, _) = await OpenAsync();

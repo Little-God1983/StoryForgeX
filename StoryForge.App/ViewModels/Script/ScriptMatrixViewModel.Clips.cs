@@ -105,7 +105,7 @@ public sealed partial class ScriptMatrixViewModel
     [ObservableProperty]
     private string _clipsModel = "";
 
-    /// <summary>The other video profiles a clip can be made with instead (the fallback).</summary>
+    /// <summary>The video profiles a clip can be made with: the project's first, then the others (the fallback).</summary>
     public ObservableCollection<ClipModel> ClipModels { get; } = [];
 
     private bool HasWaitingClips => ClipsState != StageState.NotStarted && ClipCells.Any(c => c.IsWaiting);
@@ -266,8 +266,8 @@ public sealed partial class ScriptMatrixViewModel
 
     public bool ClipIsQueued => SelectedClip?.Queued == true;
 
-    /// <summary>Another video profile can be picked for this clip.</summary>
-    public bool HasClipModels => ClipModels.Count > 0;
+    /// <summary>Another video profile than the project's can be picked for this clip.</summary>
+    public bool HasClipModels => ClipModels.Count > 1;
 
     /// <summary>The video profile picked for Make with….</summary>
     [ObservableProperty]

@@ -804,7 +804,9 @@ public sealed partial class ScriptMatrixViewModel(
             ? SelectedVoice is { State: not StageState.Running } && !IsVoiceRunning
             : Selected is not null && !IsRunning && Selected.State != StageState.Running;
 
-    private bool CanApproveSegment() => SegmentIdle() && SelectedState != StageState.Approved;
+    // A still or clip never made (its first make failed) has no version to approve.
+    private bool CanApproveSegment() =>
+        SegmentIdle() && SelectedState != StageState.Approved && !(IsClipPanel && SelectedClip is not { Version: > 0 }) && !(IsStillPanel && SelectedStill is not { Version: > 0 });
 
     /// <summary>The selected cell's version shown now.</summary>
     private int SelectedVersion =>

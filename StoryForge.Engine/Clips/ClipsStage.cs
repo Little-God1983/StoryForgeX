@@ -70,6 +70,7 @@ internal sealed class ClipsStage(
         var groups = todo.GroupBy(s => queued.GetValueOrDefault(s.Key).Profile ?? own).OrderBy(g => g.Key == own ? 0 : 1).ToList();
         var animators = new Dictionary<ProfileRef, Animator>();
         var failures = new List<string>();
+        var skipped = new HashSet<string>();
         foreach (var group in groups.ToList())
         {
             // Before Claude is asked: the project's profile that cannot make the clips fails at once;
@@ -90,7 +91,22 @@ internal sealed class ClipsStage(
                 groups.Remove(group);
             }
         }
-        todo = [.. groups.SelectMany(g => g)];
+        // A clip that cannot be made fails before Claude writes its prompt.
+        foreach (var group in groups)
+        {
+            foreach (var shot in group.ToList())
+            {
+                if (Problem(animators[group.Key], plan, shot) is { } problem && context.FailSegment is { } fail)
+                {
+                    var reason = $"{plan.Labels[shot.Key]}: {problem}";
+                    Report(context, ActivityKind.Failed, reason);
+                    await fail(shot.Key, reason);
+                    failures.Add(reason);
+                    skipped.Add(shot.Key);
+                }
+            }
+        }
+        todo = [.. groups.SelectMany(g => g).Where(s => !skipped.Contains(s.Key))];
         var asked = todo.Where(s => queued.GetValueOrDefault(s.Key).Prompt is null).ToList();
         var prompts = asked.Count > 0
             ? await PromptsAsync(context, plan, [.. asked.Select(s => (s, animators[queued.GetValueOrDefault(s.Key).Profile ?? own]))], cancellationToken)
@@ -106,7 +122,7 @@ internal sealed class ClipsStage(
         foreach (var group in groups)
         {
             var animator = animators[group.Key];
-            foreach (var shot in group)
+            foreach (var shot in group.Where(s => !skipped.Contains(s.Key)))
             {
                 var label = plan.Labels[shot.Key];
                 Report(context, ActivityKind.Model, $"{label} ({++done} of {todo.Count}) · {animator.Model}");
@@ -330,16 +346,11 @@ internal sealed class ClipsStage(
         var label = plan.Labels[shot.Key];
         try
         {
-            if (shot.Seconds > animator.MaxClipSeconds + 0.001)
+            if (Problem(animator, plan, shot) is { } problem)
             {
-                // A profile switched to may make shorter clips than the storyboard was cut for.
-                throw new StageFailedException(string.Create(System.Globalization.CultureInfo.InvariantCulture,
-                    $"the shot lasts {shot.Seconds:0.##} s, and {animator.Model} makes at most {animator.MaxClipSeconds} s. Make it with the project's model."));
+                throw new StageFailedException(problem);
             }
-            if (!plan.Stills.TryGetValue(shot.Key, out var still) || !File.Exists(Path.Combine(animator.Root, still.Still.File)))
-            {
-                throw new StageFailedException("its approved still is gone from the projects folder. Make the still again first.");
-            }
+            var still = plan.Stills[shot.Key];
             if (!animator.Uploaded.TryGetValue(still.Still.File, out var uploaded))
             {
                 animator.Uploaded[still.Still.File] = uploaded = await comfy.UploadAsync(Path.Combine(animator.Root, still.Still.File), cancellationToken);
@@ -383,6 +394,20 @@ internal sealed class ClipsStage(
         {
             throw new StageFailedException($"{label}: {ex.Message}");   // the bar says which shot
         }
+    }
+
+    /// <summary>Why a clip cannot be made as things stand (its still gone, its shot too long for the model); null when it can.</summary>
+    private static string? Problem(Animator animator, Plan plan, Shot shot)
+    {
+        if (shot.Seconds > animator.MaxClipSeconds + 0.001)
+        {
+            // A profile switched to may make shorter clips than the storyboard was cut for.
+            return string.Create(System.Globalization.CultureInfo.InvariantCulture,
+                $"the shot lasts {shot.Seconds:0.##} s, and {animator.Model} makes at most {animator.MaxClipSeconds} s. Make it with the project's model.");
+        }
+        return !plan.Stills.TryGetValue(shot.Key, out var still) || !File.Exists(Path.Combine(animator.Root, still.Still.File))
+            ? "its approved still is gone from the projects folder. Make the still again first."
+            : null;
     }
 
     private void Report(StageContext context, ActivityKind kind, string text) =>

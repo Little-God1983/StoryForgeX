@@ -243,6 +243,7 @@ internal sealed class Staleness(
             }
         }
         // A clip, from the approved still it starts from and the length of its shot.
+        var stillCells = Of(PipelineStage.Stills).ToDictionary(c => c.Key);
         foreach (var cell in Of(PipelineStage.Clips))
         {
             if (Current(cell, c => c.CurrentVersion) is not { } version)
@@ -251,7 +252,7 @@ internal sealed class Staleness(
             }
             var clip = StoredJson.Read<Clip>(version.OutputJson);
             var label = labels.GetValueOrDefault(cell.Key, cell.Key);
-            var still = Of(PipelineStage.Stills).FirstOrDefault(c => c.Key == cell.Key);
+            var still = stillCells.GetValueOrDefault(cell.Key);
             var why = still?.ApprovedVersion is { } approved && approved != clip.StillVersion ? $"The still of {label} changed since the clip was made."
                 : stale.ContainsKey((PipelineStage.Stills, cell.Key)) ? $"The still of {label} is out of date."
                 : stale.ContainsKey((PipelineStage.Storyboard, cell.Key)) ? $"Shot {label} is out of date."

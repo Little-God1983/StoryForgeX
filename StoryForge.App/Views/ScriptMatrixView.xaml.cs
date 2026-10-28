@@ -9,19 +9,25 @@ public partial class ScriptMatrixView : UserControl
     // Play was clicked for the clip shown; a new clip shows its first frame until it is.
     private bool _playing;
 
+    private static readonly DependencyPropertyDescriptor Source = DependencyPropertyDescriptor.FromProperty(MediaElement.SourceProperty, typeof(MediaElement));
+
     public ScriptMatrixView()
     {
         InitializeComponent();
-        // A manual player opens its media only once told to play or pause: pausing on a new clip
-        // opens it, and shows its first frame.
-        DependencyPropertyDescriptor.FromProperty(MediaElement.SourceProperty, typeof(MediaElement)).AddValueChanged(ClipPlayer, (_, _) =>
+        // Only while shown: the descriptor would otherwise hold the view (and its matrix) for good.
+        Loaded += (_, _) => Source.AddValueChanged(ClipPlayer, SourceChanged);
+        Unloaded += (_, _) => Source.RemoveValueChanged(ClipPlayer, SourceChanged);
+    }
+
+    // A manual player opens its media only once told to play or pause: pausing on a new clip opens
+    // it, and shows its first frame.
+    private void SourceChanged(object? sender, EventArgs e)
+    {
+        _playing = false;
+        if (ClipPlayer.Source is not null)
         {
-            _playing = false;
-            if (ClipPlayer.Source is not null)
-            {
-                ClipPlayer.Pause();
-            }
-        });
+            ClipPlayer.Pause();
+        }
     }
 
     // The Clip panel's player: a view-only matter, so it lives here. It loops while it plays.

@@ -283,7 +283,8 @@ internal sealed class ProfileStore(
             Provider = "ComfyUI",
             Instructions = "Write one motion prompt per shot: what moves and how the camera moves. The still already sets the look.",
             PromptTemplate = "{shot.motion}",
-            Inputs = MediaInputs,
+            // And what the Clips stage fills besides: the still to start from, the frame count, the frame rate.
+            Inputs = [.. MediaInputs, new("image", ""), new("frames", ""), new("fps", "")],
             Sizes = [new("16:9", 1280, 720), new("9:16", 720, 1280)],
             MaxClipSeconds = 20,
         },

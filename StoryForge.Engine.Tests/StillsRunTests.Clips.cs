@@ -156,7 +156,7 @@ public sealed partial class StillsRunTests
         await ClipsAsync(client, project.Id);
         var ltx = await VideoProfileAsync(client, "LTX 2.5", maxClip: 30);
         var keys = await KeysAsync(client, project.Id);
-        Assert.Equal(new ClipModel(ltx, "LTX 2.5"), Assert.Single((await client.GetClipsAsync(project.Id)).Others));
+        Assert.Equal(new ClipModel(ltx, "LTX 2.5"), (await client.GetClipsAsync(project.Id)).Others[^1]);
 
         await client.QueueClipAsync(project.Id, keys["S03·2"], profile: ltx);
         Assert.Equal((true, ltx), (await client.GetClipsAsync(project.Id)).Clips.Single(c => c.Key == keys["S03·2"]) is var waiting ? (waiting.Queued, waiting.QueuedProfile) : default);
@@ -310,6 +310,78 @@ public sealed partial class StillsRunTests
         Assert.Null(view.Error);
         Assert.Equal(60, view.Clips.Count(c => c.Version == 1));
         Assert.Contains(view.Activity, l => l.Text.Contains("could not free ComfyUI's VRAM", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task A_switched_clip_can_be_switched_back_to_the_projects_model()
+    {
+        var client = await StartWithClipsAsync();
+        var project = await StillsApprovedAsync(client);
+        var view = await ClipsAsync(client, project.Id);
+        var ltx = await VideoProfileAsync(client, "LTX 2.5", maxClip: 30);
+        var keys = await KeysAsync(client, project.Id);
+        var own = (await client.GetProjectAsync(project.Id)).Setup.Clips.Profile;
+        Assert.Equal(["Minimax H3", "LTX 2.5"], (await client.GetClipsAsync(project.Id)).Others.Select(m => m.Name));   // the project's first
+
+        await client.QueueClipAsync(project.Id, keys["S03·2"], "Slow pan.", profile: ltx);
+        await client.QueueClipAsync(project.Id, keys["S03·2"], profile: own);
+
+        var clip = (await client.GetClipsAsync(project.Id)).Clips.Single(c => c.Key == keys["S03·2"]);
+        Assert.Equal((true, (ProfileRef?)null, "Slow pan."), (clip.Queued, clip.QueuedProfile, clip.QueuedPrompt));
+    }
+
+    [Fact]
+    public async Task Approving_a_clip_whose_making_again_failed_takes_it_out_of_the_waiting_ones()
+    {
+        var client = await StartWithClipsAsync();
+        var project = await StillsApprovedAsync(client);
+        await ClipsAsync(client, project.Id);
+        var keys = await KeysAsync(client, project.Id);
+        _comfy.Failure = "CUDA out of memory";
+        _comfy.FailFor = "the motion of S01-2,";
+        await client.QueueClipAsync(project.Id, keys["S01·2"]);
+        await client.MakeClipsAsync(project.Id);
+        await ClipsAsync(client, project.Id, v => v.State != StageState.Running && v.Clips.Single(c => c.Key == keys["S01·2"]).State == StageState.Failed);
+
+        await client.ApproveSegmentAsync(project.Id, PipelineStage.Clips, keys["S01·2"], 1);
+
+        var clip = (await client.GetClipsAsync(project.Id)).Clips.Single(c => c.Key == keys["S01·2"]);
+        Assert.Equal((StageState.Approved, false), (clip.State, clip.Queued));
+    }
+
+    [Fact]
+    public async Task Cancelled_after_only_failed_clips_the_stage_says_what_failed_not_what_was_kept()
+    {
+        var client = await StartWithClipsAsync();
+        var project = await StillsApprovedAsync(client);
+        await ClipsAsync(client, project.Id);
+        var keys = await KeysAsync(client, project.Id);
+        var shorter = await VideoProfileAsync(client, "Short", maxClip: 4);
+        await client.QueueClipAsync(project.Id, keys["S01·2"]);
+        await client.QueueClipAsync(project.Id, keys["S03·2"], profile: shorter);
+        _comfy.Hold = new TaskCompletionSource();
+        _comfy.HoldFor = "the motion of S01-2,";
+        await client.MakeClipsAsync(project.Id);
+        await ScriptRunTests.WaitForAsync(() => client.GetClipsAsync(project.Id), v => v.Clips.Single(c => c.Key == keys["S03·2"]).State == StageState.Failed);
+
+        await client.CancelAsync(project.Id, PipelineStage.Clips);
+
+        var view = await ClipsAsync(client, project.Id, v => v.State != StageState.Running);
+        Assert.Equal((StageState.NeedsReview, (string?)null), (view.State, view.Error));
+        Assert.Equal(StageState.Failed, view.Clips.Single(c => c.Key == keys["S03·2"]).State);
+    }
+
+    [Fact]
+    public async Task A_new_video_profile_lists_what_the_clips_stage_fills()
+    {
+        var client = await StartAsync();
+
+        var profile = await client.CreateProfileAsync(ProfileKind.Video, "Fresh");
+        var keys = (await client.GetProfileVersionAsync(profile.Id)).Content.Inputs.Select(i => i.Key).ToList();
+
+        Assert.Contains("image", keys);
+        Assert.Contains("frames", keys);
+        Assert.Contains("fps", keys);
     }
 
     [Theory]
