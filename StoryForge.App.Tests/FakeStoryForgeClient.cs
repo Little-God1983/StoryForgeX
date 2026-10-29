@@ -859,6 +859,32 @@ internal sealed class FakeStoryForgeClient : IStoryForgeClient
         return Task.CompletedTask;
     }
 
+    /// <summary>The Assembly screen per project; by version for a test that switches versions (null key: the current one).</summary>
+    public Dictionary<Guid, AssemblyView> Assembly { get; } = [];
+
+    public Dictionary<(Guid, int), AssemblyView> AssemblyVersions { get; } = [];
+
+    /// <summary>The cut lists Render again sent.</summary>
+    public List<CutList> RenderedCutLists { get; } = [];
+
+    /// <summary>While set, Render again is refused with it, as the engine refuses a cut that does not fit.</summary>
+    public string? CutListRefusal { get; set; }
+
+    public Task<AssemblyView> GetAssemblyAsync(Guid projectId, int? version = null, CancellationToken cancellationToken = default) =>
+        Task.FromResult(version is { } v && AssemblyVersions.TryGetValue((projectId, v), out var old) ? old
+            : Assembly.GetValueOrDefault(projectId) ?? new AssemblyView(projectId, StageState.NotStarted, null, [], null, null, [], null, null, [], false, null));
+
+    public Task RenderCutListAsync(Guid projectId, CutList cutList, CancellationToken cancellationToken = default)
+    {
+        ThrowIfFailing();
+        if (CutListRefusal is { } refusal)
+        {
+            throw new ArgumentException(refusal);
+        }
+        RenderedCutLists.Add(cutList);
+        return Task.CompletedTask;
+    }
+
     private void ChangeClip(Guid projectId, string key, Func<ClipView, ClipView> change)
     {
         if (Clips.TryGetValue(projectId, out var view))

@@ -130,6 +130,10 @@
       <views:ReferencesView DataContext="{Binding References}" Margin="28,20"
                             Visibility="{Binding DataContext.ShowsReferences, RelativeSource={RelativeSource AncestorType=UserControl}, Converter={StaticResource Visible}}" />
 
+      <!-- The Assembly screen (board 10): the video, its cut list, the selected cut. -->
+      <views:AssemblyView DataContext="{Binding Assembly}" Margin="28,20"
+                          Visibility="{Binding DataContext.ShowsAssembly, RelativeSource={RelativeSource AncestorType=UserControl}, Converter={StaticResource Visible}}" />
+
       <!-- The whole script (board 2c): every segment to read, approve or write again. -->
       <views:WholeScriptView DataContext="{Binding Script}" Margin="28,20"
                              Visibility="{Binding DataContext.ShowsWholeScript, RelativeSource={RelativeSource AncestorType=UserControl}, Converter={StaticResource Visible}}" />
