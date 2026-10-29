@@ -70,13 +70,10 @@ public sealed partial class NewProjectPageViewModel : PageViewModel
         ResearchSlot.PropertyChanged += (_, e) => OnSlotChanged(e, ResearchSlot, ApplyResearchProfile);
         StoryboardSlot.PropertyChanged += (_, e) => OnSlotChanged(e, StoryboardSlot,
             (content, _, sameProfile) => Pacing.UseDefault(content, keepCustom: sameProfile));
-        ImageSlot.PropertyChanged += (_, e) => OnSlotChanged(e, ImageSlot,
-            (content, _, sameProfile) => StillSize.UseDefaultFor(Aspect, content, keepCustom: sameProfile));
-        VideoSlot.PropertyChanged += (_, e) => OnSlotChanged(e, VideoSlot, (content, _, sameProfile) =>
-        {
-            ClipSize.UseDefaultFor(Aspect, content, keepCustom: sameProfile);
-            MaxClip.UseDefault(content, keepCustom: sameProfile);
-        });
+        // The sizes follow the delivery, not the profiles; Start still waits for the image profile's defaults.
+        ImageSlot.PropertyChanged += (_, e) => OnSlotChanged(e, ImageSlot, (_, _, _) => { });
+        VideoSlot.PropertyChanged += (_, e) => OnSlotChanged(e, VideoSlot,
+            (content, _, sameProfile) => MaxClip.UseDefault(content, keepCustom: sameProfile));
         foreach (var slot in Cards.SelectMany(c => c.Slots))
         {
             slot.PropertyChanged += (_, _) => UpdateMissing();
@@ -86,7 +83,9 @@ public sealed partial class NewProjectPageViewModel : PageViewModel
             watched.PropertyChanged += (_, _) => UpdateMissing();
         }
 
-        _selectedDelivery = DeliveryChoices[0];
+        _selectedDelivery = DeliveryChoices[1];   // 1080p
+        StillSize.UseDelivery(_selectedDelivery.Value);
+        ClipSize.UseDelivery(_selectedDelivery.Value);
         RunPlan =
         [
             new(PipelineStage.Research, "Research", "Sources + fact sheet", gate: true),
@@ -155,9 +154,9 @@ public sealed partial class NewProjectPageViewModel : PageViewModel
     [ObservableProperty]
     private bool _reviewReferenceList = true;
 
-    public GenerationSizeViewModel StillSize { get; } = new();
+    public GenerationSizeViewModel StillSize { get; } = new("the stills are scaled up for the clips.");
 
-    public GenerationSizeViewModel ClipSize { get; } = new();
+    public GenerationSizeViewModel ClipSize { get; } = new("Assembly scales the clips up.");
 
     public MaxClipViewModel MaxClip { get; } = new();
 
@@ -178,12 +177,15 @@ public sealed partial class NewProjectPageViewModel : PageViewModel
     [ObservableProperty]
     private string _aspect = "16:9";
 
-    /// <summary>Delivery resolutions for the aspect: 1080p, 1440p and 4K tiers.</summary>
+    /// <summary>
+    /// Delivery resolutions for the aspect: 768p, 1080p and 1440p tiers. Stills and clips are made
+    /// at this size, so 4K is left out until we see how 1440p performs.
+    /// </summary>
     public IReadOnlyList<Choice<GenerationSize>> DeliveryChoices => Aspect switch
     {
-        "9:16" => [Delivery("9:16", 1080, 1920), Delivery("9:16", 1440, 2560), Delivery("9:16", 2160, 3840)],
-        "1:1" => [Delivery("1:1", 1080, 1080), Delivery("1:1", 1440, 1440), Delivery("1:1", 2160, 2160)],
-        _ => [Delivery("16:9", 1920, 1080), Delivery("16:9", 2560, 1440), Delivery("16:9", 3840, 2160)],
+        "9:16" => [Delivery("9:16", 768, 1366), Delivery("9:16", 1080, 1920), Delivery("9:16", 1440, 2560)],
+        "1:1" => [Delivery("1:1", 768, 768), Delivery("1:1", 1080, 1080), Delivery("1:1", 1440, 1440)],
+        _ => [Delivery("16:9", 1366, 768), Delivery("16:9", 1920, 1080), Delivery("16:9", 2560, 1440)],
     };
 
     private Choice<GenerationSize> _selectedDelivery;
@@ -194,9 +196,11 @@ public sealed partial class NewProjectPageViewModel : PageViewModel
         get => _selectedDelivery;
         set
         {
-            if (value is not null)
+            if (value is not null && SetProperty(ref _selectedDelivery, value))
             {
-                SetProperty(ref _selectedDelivery, value);
+                StillSize.UseDelivery(value.Value);
+                ClipSize.UseDelivery(value.Value);
+                UpdateMissing();
             }
         }
     }
@@ -360,15 +364,12 @@ public sealed partial class NewProjectPageViewModel : PageViewModel
 
     partial void OnAspectChanged(string value)
     {
-        // The list first, then the pick in it: the same tier (1080p, 1440p, 4K) in the new aspect,
-        // found by the short side, which every aspect's tier shares.
+        // The list first, then the pick in it: the same tier (768p, 1080p, 1440p) in the new aspect,
+        // found by the short side, which every aspect's tier shares. The sizes follow it at once:
+        // nothing to load, so Start never sees sizes for the old aspect.
         OnPropertyChanged(nameof(DeliveryChoices));
         var shortSide = Math.Min(SelectedDelivery.Value.Width, SelectedDelivery.Value.Height);
-        SelectedDelivery = DeliveryChoices.FirstOrDefault(c => Math.Min(c.Value.Width, c.Value.Height) == shortSide) ?? DeliveryChoices[0];
-        // From the content already loaded: nothing to wait for, so Start never sees sizes for the
-        // old aspect, and no late load can bring them back.
-        StillSize.UseDefaultFor(value, _content.GetValueOrDefault(ImageSlot));
-        ClipSize.UseDefaultFor(value, _content.GetValueOrDefault(VideoSlot));
+        SelectedDelivery = DeliveryChoices.FirstOrDefault(c => Math.Min(c.Value.Width, c.Value.Height) == shortSide) ?? DeliveryChoices[1];
         UpdateMissing();
     }
 

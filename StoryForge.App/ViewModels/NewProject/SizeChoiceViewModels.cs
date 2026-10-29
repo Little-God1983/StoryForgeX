@@ -19,33 +19,33 @@ public sealed partial class OptionItem(string label) : ObservableObject
 }
 
 /// <summary>
-/// "Generation size": the profile's size for the project's aspect, or a custom one for this
-/// project. Changing the aspect goes back to the profile's size for the new aspect.
+/// "Generation size": the delivery size, or a custom one for this project. Stills and clips are
+/// made at the delivery size, not upscaled later (#13 was dropped: video upscaling looks poor).
+/// Changing the aspect goes back to the delivery size.
 /// </summary>
-public sealed partial class GenerationSizeViewModel : ObservableValidator
+/// <param name="scaledUp">What a size smaller than the delivery means, e.g. "Assembly scales the clips up."</param>
+public sealed partial class GenerationSizeViewModel(string scaledUp) : ObservableValidator
 {
-    /// <summary>Used when the profile has no size for the aspect.</summary>
-    private static readonly Dictionary<string, GenerationSize> BuiltIn = new()
-    {
-        ["16:9"] = new("16:9", 1344, 768),
-        ["9:16"] = new("9:16", 768, 1344),
-        ["1:1"] = new("1:1", 1024, 1024),
-    };
+    /// <summary>Models take sizes in multiples of 32: a 1920 × 1080 delivery is made at 1920 × 1088 and cropped.</summary>
+    public const int Step = 32;
 
-    private GenerationSize _default = BuiltIn["16:9"];
-    private bool _defaultFromProfile;
+    private GenerationSize _delivery = new("16:9", 1920, 1080);
+    private GenerationSize _default = RoundUp(new("16:9", 1920, 1080));
 
-    public const int ProfileDefaultIndex = 0;
+    public const int DefaultIndex = 0;
     public const int CustomIndex = 1;
 
-    public GenerationSizeViewModel() => Options = [new(DefaultLabel()), new("Custom…")];
+    /// <summary>The two dropdown entries: "1920 × 1088 · delivery size" and "Custom…".</summary>
+    public IReadOnlyList<OptionItem> Options { get; } = [new(DefaultLabel(RoundUp(new("16:9", 1920, 1080)))), new("Custom…")];
 
-    /// <summary>The two dropdown entries: "1344 × 768 · profile default" and "Custom…".</summary>
-    public IReadOnlyList<OptionItem> Options { get; }
+    private static string DefaultLabel(GenerationSize size) => $"{size.Width} × {size.Height} · delivery size";
 
-    private string DefaultLabel() => $"{_default.Width} × {_default.Height} · {(_defaultFromProfile ? "profile" : "built-in")} default";
+    /// <summary>"Smaller than the delivery: Assembly scales the clips up."; null when the size is not smaller.</summary>
+    public string? Warning => Value is { } size && (size.Width < _delivery.Width || size.Height < _delivery.Height)
+        ? $"Smaller than the delivery: {scaledUp}"
+        : null;
 
-    private int _selectedIndex = ProfileDefaultIndex;
+    private int _selectedIndex = DefaultIndex;
 
     /// <summary>Which entry is picked; anything but the two entries (WPF's -1 for "none") is ignored.</summary>
     public int SelectedIndex
@@ -53,7 +53,7 @@ public sealed partial class GenerationSizeViewModel : ObservableValidator
         get => _selectedIndex;
         set
         {
-            if (value is ProfileDefaultIndex or CustomIndex && SetProperty(ref _selectedIndex, value))
+            if (value is DefaultIndex or CustomIndex && SetProperty(ref _selectedIndex, value))
             {
                 OnPropertyChanged(nameof(IsCustom));
                 OnSelectedIndexChanged(value);
@@ -95,24 +95,29 @@ public sealed partial class GenerationSizeViewModel : ObservableValidator
         _ => size.Width == size.Height,
     };
 
+    /// <summary>The delivery rounded up to <see cref="Step"/>: 1366 × 768 → 1376 × 768.</summary>
+    public static GenerationSize RoundUp(GenerationSize delivery) =>
+        delivery with { Width = (delivery.Width + Step - 1) / Step * Step, Height = (delivery.Height + Step - 1) / Step * Step };
+
     /// <summary>
-    /// Takes the profile's size for <paramref name="aspect"/> (or the built-in one). A custom size
-    /// is dropped, unless <paramref name="keepCustom"/> (a new version of the same profile).
+    /// Takes the delivery's size. A custom size stays for another delivery of the same aspect, and
+    /// is dropped for another aspect.
     /// </summary>
-    public void UseDefaultFor(string aspect, ProfileContent? profile, bool keepCustom = false)
+    public void UseDelivery(GenerationSize delivery)
     {
-        var fromProfile = profile?.Sizes.FirstOrDefault(s => s.Aspect == aspect);
-        _defaultFromProfile = fromProfile is not null;
-        _default = fromProfile ?? BuiltIn[aspect];
-        if (!keepCustom || !IsCustom || aspect != (Value ?? Custom())?.Aspect)
+        var aspect = _default.Aspect;
+        _delivery = delivery;
+        _default = RoundUp(delivery);
+        if (delivery.Aspect != aspect)
         {
-            // A custom size typed for another aspect or profile; the next "Custom…" starts from the new default.
+            // A custom size typed for another shape; the next "Custom…" starts from the new default.
             CustomWidth = "";
             CustomHeight = "";
-            SelectedIndex = ProfileDefaultIndex;
+            SelectedIndex = DefaultIndex;
         }
-        Options[ProfileDefaultIndex].Label = DefaultLabel();
+        Options[DefaultIndex].Label = DefaultLabel(_default);
         OnPropertyChanged(nameof(Value));
+        OnPropertyChanged(nameof(Warning));
     }
 
     private void OnSelectedIndexChanged(int value)
@@ -126,11 +131,20 @@ public sealed partial class GenerationSizeViewModel : ObservableValidator
         // The custom fields only count while "Custom…" is picked.
         ValidateAllProperties();
         OnPropertyChanged(nameof(Value));
+        OnPropertyChanged(nameof(Warning));
     }
 
-    partial void OnCustomWidthChanged(string value) => OnPropertyChanged(nameof(Value));
+    partial void OnCustomWidthChanged(string value)
+    {
+        OnPropertyChanged(nameof(Value));
+        OnPropertyChanged(nameof(Warning));
+    }
 
-    partial void OnCustomHeightChanged(string value) => OnPropertyChanged(nameof(Value));
+    partial void OnCustomHeightChanged(string value)
+    {
+        OnPropertyChanged(nameof(Value));
+        OnPropertyChanged(nameof(Warning));
+    }
 
     public static ValidationResult? ValidatePixels(string text, ValidationContext context) =>
         context.ObjectInstance is GenerationSizeViewModel { IsCustom: false }
@@ -160,7 +174,7 @@ public sealed partial class MaxClipViewModel : ObservableValidator
         get => _selectedIndex;
         set
         {
-            if (value is GenerationSizeViewModel.ProfileDefaultIndex or GenerationSizeViewModel.CustomIndex
+            if (value is GenerationSizeViewModel.DefaultIndex or GenerationSizeViewModel.CustomIndex
                 && SetProperty(ref _selectedIndex, value))
             {
                 OnPropertyChanged(nameof(IsCustom));
@@ -191,9 +205,9 @@ public sealed partial class MaxClipViewModel : ObservableValidator
         if (!keepCustom)
         {
             CustomSeconds = "";
-            SelectedIndex = GenerationSizeViewModel.ProfileDefaultIndex;
+            SelectedIndex = GenerationSizeViewModel.DefaultIndex;
         }
-        Options[GenerationSizeViewModel.ProfileDefaultIndex].Label = DefaultLabel();
+        Options[GenerationSizeViewModel.DefaultIndex].Label = DefaultLabel();
         OnPropertyChanged(nameof(Value));
     }
 
@@ -235,7 +249,7 @@ public sealed partial class PacingViewModel : ObservableObject
         get => _selectedIndex;
         set
         {
-            if (value is GenerationSizeViewModel.ProfileDefaultIndex or GenerationSizeViewModel.CustomIndex
+            if (value is GenerationSizeViewModel.DefaultIndex or GenerationSizeViewModel.CustomIndex
                 && SetProperty(ref _selectedIndex, value))
             {
                 if (IsCustom && CustomMin.Length + CustomTypical.Length + CustomMax.Length == 0)
@@ -292,9 +306,9 @@ public sealed partial class PacingViewModel : ObservableObject
         if (!keepCustom)
         {
             (CustomMin, CustomTypical, CustomMax) = ("", "", "");
-            SelectedIndex = GenerationSizeViewModel.ProfileDefaultIndex;
+            SelectedIndex = GenerationSizeViewModel.DefaultIndex;
         }
-        Options[GenerationSizeViewModel.ProfileDefaultIndex].Label = DefaultLabel();
+        Options[GenerationSizeViewModel.DefaultIndex].Label = DefaultLabel();
         OnPropertyChanged(nameof(Effective));
     }
 }
