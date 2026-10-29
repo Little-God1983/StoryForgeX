@@ -193,6 +193,42 @@ public sealed class AssemblyScreenTests
     }
 
     [Fact]
+    public async Task Retry_sends_your_cut_list_with_the_version_it_was_edited_from()
+    {
+        var screen = await OpenAsync(Review(state: StageState.Failed, waiting: Claudes with { ClipSoundDb = -12 }, version: 3) with { WaitingBasedOn = 1 });
+
+        await screen.RetryCommand.ExecuteAsync(null);
+
+        Assert.Equal(1, Assert.Single(_client.RenderedCutLists).EditedFrom);
+    }
+
+    [Fact]
+    public async Task Cancel_while_your_cut_list_renders_keeps_your_edits_on_screen()
+    {
+        var mine = Claudes with { ClipSoundDb = -12 };
+        var screen = await OpenAsync(Review(state: StageState.Running, waiting: mine));
+        _client.Assembly[Id] = Review();   // what the engine shows once the render stopped: the version before, nothing waiting
+
+        await screen.CancelCommand.ExecuteAsync(null);
+
+        Assert.Equal((Id, PipelineStage.Assembly), Assert.Single(_client.Cancelled));
+        Assert.Equal("-12", screen.ClipSound);
+        Assert.True(screen.HasEdits);
+        Assert.True(screen.RenderAgainCommand.CanExecute(null));
+    }
+
+    [Fact]
+    public async Task Activity_lines_of_the_clips_do_not_reload_the_screen()
+    {
+        var screen = await OpenAsync(Review());
+        _client.Assembly[Id] = Review(state: StageState.Stale);
+
+        await screen.ReceiveAsync(new StageUpdate(Id, PipelineStage.Clips, StageState.Running, new ActivityLine(At, ActivityKind.Model, "S02·1: 40%")));
+
+        Assert.Equal(StageState.NeedsReview, screen.State);
+    }
+
+    [Fact]
     public async Task Regenerate_and_Approve_go_to_the_engine_and_an_older_version_can_be_shown()
     {
         var screen = await OpenAsync(Review(version: 2));

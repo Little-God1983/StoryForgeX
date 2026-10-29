@@ -185,9 +185,16 @@ internal sealed class CellReader(IDbContextFactory<StoryForgeDbContext> contextF
             .Where(c => c.ProjectId == projectId && c.Stage == PipelineStage.Assembly && c.Key == "")
             .Select(c => c.CurrentVersion)
             .FirstOrDefaultAsync(cancellationToken);
-        var entry = version is null ? null : await db.CellVersions.AsNoTracking().FirstOrDefaultAsync(
+        return version is { } v && await AssemblyVersionAsync(projectId, v, cancellationToken) is { } video ? (video, v) : null;
+    }
+
+    /// <summary>One version of the Assembly: its cut list and video; null when there is no such version.</summary>
+    public async Task<AssembledVideo?> AssemblyVersionAsync(Guid projectId, int version, CancellationToken cancellationToken)
+    {
+        await using var db = await contextFactory.CreateDbContextAsync(cancellationToken);
+        var entry = await db.CellVersions.AsNoTracking().FirstOrDefaultAsync(
             v => v.ProjectId == projectId && v.Stage == PipelineStage.Assembly && v.Key == "" && v.Version == version, cancellationToken);
-        return entry is null ? null : (StoredJson.Read<AssembledVideo>(entry.OutputJson), entry.Version);
+        return entry is null ? null : StoredJson.Read<AssembledVideo>(entry.OutputJson);
     }
 
     /// <summary>Your cut list waiting to be rendered (Render again), with the version it was edited from; null for none.</summary>

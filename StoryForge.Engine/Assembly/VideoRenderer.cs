@@ -69,7 +69,14 @@ internal sealed class FfmpegVideoRenderer(IProcessRunner processes, SettingsStor
             File.Delete(graphFile);
             if (!rendered)
             {
-                File.Delete(output);   // failed or cancelled: what ffmpeg wrote so far is no video
+                try
+                {
+                    File.Delete(output);   // failed or cancelled: what ffmpeg wrote so far is no video
+                }
+                catch (IOException)
+                {
+                    // ffmpeg, just killed, may still hold it: the failure or Cancel stays what is said.
+                }
             }
         }
     }

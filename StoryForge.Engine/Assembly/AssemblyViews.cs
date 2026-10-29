@@ -58,6 +58,7 @@ internal sealed class AssemblyViews(
         var video = entry is null ? null : StoredJson.Read<AssembledVideo>(entry.OutputJson);
         var path = video is null ? null : Path.Combine(root, video.File);
         var stale = await staleness.GetAsync(projectId, cancellationToken);
+        var waiting = cell.Queued && cell.QueuedPrompt is { } queued ? StoredJson.Read<WaitingCutList>(queued) : null;
         return new AssemblyView(
             projectId,
             cell.State,
@@ -72,9 +73,10 @@ internal sealed class AssemblyViews(
             path is not null && File.Exists(path) ? path : null,
             shots,
             clipsApproved,
-            cell.Queued && cell.QueuedPrompt is { } waiting ? StoredJson.Read<WaitingCutList>(waiting).CutList : null)
+            waiting?.CutList)
         {
             Stale = shown == cell.CurrentVersion ? stale.GetValueOrDefault((Stage, "")) : null,
+            WaitingBasedOn = waiting?.BasedOn,
         };
     }
 
@@ -99,7 +101,7 @@ internal sealed class AssemblyViews(
         var before = basis?.Video.CutList.Cuts.ToDictionary(c => c.After);
         var list = cutList with
         {
-            Cuts = [.. cutList.Cuts.Select(c => before?.GetValueOrDefault(c.After) is { } was && Same(was, c) ? was : c with { Yours = true })],
+            Cuts = [.. cutList.Cuts.Select(c => before?.GetValueOrDefault(c.After) is { } was && was.SameAs(c) ? was : c with { Yours = true })],
             Music = cutList.Music ?? [],
         };
         if (CutPlan.Problems(list, timeline) is { Count: > 0 } problems)
@@ -125,13 +127,8 @@ internal sealed class AssemblyViews(
         }
     }
 
-    private async Task<AssembledVideo> VersionAsync(Guid projectId, int version, CancellationToken cancellationToken)
-    {
-        await using var db = await contextFactory.CreateDbContextAsync(cancellationToken);
-        var entry = await db.CellVersions.AsNoTracking().FirstOrDefaultAsync(v => v.ProjectId == projectId && v.Stage == Stage && v.Key == "" && v.Version == version, cancellationToken)
-            ?? throw new KeyNotFoundException($"The Assembly has no version {version}.");
-        return StoredJson.Read<AssembledVideo>(entry.OutputJson);
-    }
+    private async Task<AssembledVideo> VersionAsync(Guid projectId, int version, CancellationToken cancellationToken) =>
+        await cells.AssemblyVersionAsync(projectId, version, cancellationToken) ?? throw new KeyNotFoundException($"The Assembly has no version {version}.");
 
     /// <summary>Regenerate: Claude writes a new cut list; yours, if one waits, is dropped.</summary>
     public async Task RegenerateAsync(Guid projectId, CancellationToken cancellationToken)
@@ -148,10 +145,16 @@ internal sealed class AssemblyViews(
         await runner.RegenerateAsync(projectId, Stage, cancellationToken);
     }
 
-    private static bool Same(Cut a, Cut b) =>
-        a.Transition == b.Transition && Near(a.Seconds, b.Seconds) && Near(a.Shift, b.Shift) && Near(a.SoundLead, b.SoundLead);
-
-    private static bool Near(double a, double b) => Math.Abs(a - b) < 0.0005;
+    /// <summary>Cancel: the render stops, and your cut list no longer waits to be rendered by a later run unasked.</summary>
+    public async Task CancelAsync(Guid projectId, CancellationToken cancellationToken)
+    {
+        await runner.CancelAsync(projectId, Stage);
+        await ChangeAsync(projectId, cell =>
+        {
+            cell.Queued = false;
+            cell.QueuedPrompt = null;
+        }, cancellationToken, create: false);
+    }
 
     private async Task ChangeAsync(Guid projectId, Action<CellEntry> change, CancellationToken cancellationToken, bool create = true)
     {

@@ -137,6 +137,36 @@ public sealed partial class StillsRunTests
     }
 
     [Fact]
+    public async Task Cancel_while_your_cut_list_renders_leaves_nothing_waiting_to_render_unasked()
+    {
+        var client = await StartWithAssemblyAsync();
+        var project = await ClipsApprovedAsync(client);
+        var first = (await AssemblyAsync(client, project.Id)).Video!.CutList;
+        _renderer.Gate = new TaskCompletionSource().Task;
+        await client.RenderCutListAsync(project.Id, first with { ClipSoundDb = -12 });
+        await AssemblyAsync(client, project.Id, v => v.State == StageState.Running && _renderer.Plans.Count == 2);
+
+        await client.CancelAsync(project.Id, PipelineStage.Assembly);
+
+        var view = await AssemblyAsync(client, project.Id, v => v.State != StageState.Running);
+        Assert.Equal((StageState.NeedsReview, 1, (CutList?)null), (view.State, view.Version, view.Waiting));
+    }
+
+    [Fact]
+    public async Task A_failed_render_says_which_version_your_waiting_cut_list_was_edited_from()
+    {
+        var client = await StartWithAssemblyAsync();
+        var project = await ClipsApprovedAsync(client);
+        var first = (await AssemblyAsync(client, project.Id)).Video!.CutList;
+        _renderer.Failure = "ffmpeg could not render the video.";
+
+        await client.RenderCutListAsync(project.Id, first with { ClipSoundDb = -12 }, editedFrom: 1);
+
+        var failed = await AssemblyAsync(client, project.Id, v => v.State == StageState.Failed);
+        Assert.Equal(1, failed.WaitingBasedOn);
+    }
+
+    [Fact]
     public async Task A_cut_of_yours_that_does_not_fit_is_refused_with_why()
     {
         var client = await StartWithAssemblyAsync();
@@ -219,6 +249,9 @@ public sealed partial class StillsRunTests
         /// <summary>While set, rendering fails with it.</summary>
         public string? Failure { get; set; }
 
+        /// <summary>While set, rendering waits for it (or for Cancel).</summary>
+        public Task? Gate { get; set; }
+
         public async Task RenderAsync(RenderPlan plan, string root, string output, int fps, IProgress<string> progress, CancellationToken cancellationToken)
         {
             lock (Plans)
@@ -228,6 +261,10 @@ public sealed partial class StillsRunTests
             if (Failure is { } reason)
             {
                 throw new StageFailedException(reason);
+            }
+            if (Gate is { } gate)
+            {
+                await gate.WaitAsync(cancellationToken);
             }
             Directory.CreateDirectory(Path.GetDirectoryName(output)!);
             await File.WriteAllBytesAsync(output, [0, 0, 0, 24, 0x66, 0x74, 0x79, 0x70], cancellationToken);

@@ -222,7 +222,8 @@ public sealed partial class AssemblyViewModel(IStoryForgeClient client, Guid pro
 
     public async Task ReceiveAsync(StageUpdate update)
     {
-        if (update.ProjectId == ProjectId && update.Stage is PipelineStage.Assembly or PipelineStage.Clips)
+        // A clip's progress lines change nothing here; a clip made or approved does.
+        if (update.ProjectId == ProjectId && (update.Stage == PipelineStage.Assembly || (update.Stage == PipelineStage.Clips && update.Activity is null)))
         {
             if (update.Stage == PipelineStage.Assembly && update.Activity is { } line && State == StageState.Running)
             {
@@ -395,10 +396,10 @@ public sealed partial class AssemblyViewModel(IStoryForgeClient client, Guid pro
         {
             var cut = EditBlocked is null && i < _draft.Count ? _draft[i] : null;
             Blocks[i].Mark = cut is null ? "" : Mark(cut);
-            Blocks[i].IsYours = cut is not null && (cut.Yours || (shown is not null && i < shown.Cuts.Count && !Same(shown.Cuts[i], cut)));
+            Blocks[i].IsYours = cut is not null && (cut.Yours || (shown is not null && i < shown.Cuts.Count && !shown.Cuts[i].SameAs(cut)));
         }
         var sound = Parse(ClipSound, "the clip sound", report: false);
-        HasEdits = (shown is null ? _draft.Count > 0 : _draft.Count != shown.Cuts.Count || _draft.Where((c, i) => !Same(shown.Cuts[i], c)).Any())
+        HasEdits = (shown is null ? _draft.Count > 0 : _draft.Count != shown.Cuts.Count || _draft.Where((c, i) => !shown.Cuts[i].SameAs(c)).Any())
             || (shown is not null && sound is { } db && Math.Abs(db - shown.ClipSoundDb) > 0.001)
             || (State == StageState.Failed && _view?.Waiting is not null);
         OnPropertyChanged(nameof(ShiftText));
@@ -423,9 +424,6 @@ public sealed partial class AssemblyViewModel(IStoryForgeClient client, Guid pro
             _ => mark,
         };
     }
-
-    private static bool Same(Cut a, Cut b) =>
-        a.Transition == b.Transition && Math.Abs(a.Seconds - b.Seconds) < 0.0005 && Math.Abs(a.Shift - b.Shift) < 0.0005 && Math.Abs(a.SoundLead - b.SoundLead) < 0.0005;
 
     private double? Parse(string text, string what, bool report = true)
     {
@@ -484,12 +482,26 @@ public sealed partial class AssemblyViewModel(IStoryForgeClient client, Guid pro
     private bool CanMakeVideo() => IsNotStarted && ClipsApproved;
 
     [RelayCommand(CanExecute = nameof(IsRunning))]
-    private Task CancelAsync() => ActAsync(() => client.CancelAsync(ProjectId, PipelineStage.Assembly));
+    private async Task CancelAsync()
+    {
+        var (draft, sound, version) = (_draft, ClipSound, _view?.Version);
+        await ActAsync(() => client.CancelAsync(ProjectId, PipelineStage.Assembly));
+        // Your edits stay on screen to render again, as long as the video they were made on is shown and they fit its shots.
+        if (Version == version && _view is { } view && Fits(draft, view.Shots))
+        {
+            _draft = [.. draft];
+            _syncing = true;
+            ClipSound = sound;
+            _syncing = false;
+            OnSelectedCutChanged(SelectedCut);
+            Refresh();
+        }
+    }
 
     /// <summary>Your cut list again when it was yours that failed; else Claude cuts it again.</summary>
     [RelayCommand(CanExecute = nameof(IsFailed))]
     private Task RetryAsync() => _view?.Waiting is { } waiting
-        ? ActAsync(() => client.RenderCutListAsync(ProjectId, waiting))
+        ? ActAsync(() => client.RenderCutListAsync(ProjectId, waiting, _view.WaitingBasedOn))
         : ActAsync(() => client.RegenerateAsync(ProjectId, PipelineStage.Assembly));
 
     private async Task ActAsync(Func<Task> act)

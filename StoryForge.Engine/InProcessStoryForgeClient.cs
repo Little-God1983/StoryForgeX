@@ -98,7 +98,7 @@ internal sealed class InProcessStoryForgeClient(
         stage == PipelineStage.Assembly ? assembly.RegenerateAsync(projectId, cancellationToken) : runner.RegenerateAsync(projectId, stage, cancellationToken);
 
     public Task CancelAsync(Guid projectId, PipelineStage stage, CancellationToken cancellationToken = default) =>
-        runner.CancelAsync(projectId, stage);
+        stage == PipelineStage.Assembly ? assembly.CancelAsync(projectId, cancellationToken) : runner.CancelAsync(projectId, stage);
 
     public Task ApproveAsync(Guid projectId, PipelineStage stage, int version, CancellationToken cancellationToken = default) =>
         runner.ApproveAsync(projectId, stage, version, cancellationToken);

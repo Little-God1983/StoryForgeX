@@ -23,7 +23,14 @@ public enum CutTransition
 /// </param>
 /// <param name="Why">Claude's reason, as the panel shows it; empty for none.</param>
 /// <param name="Yours">You changed it.</param>
-public sealed record Cut(string After, CutTransition Transition, double Seconds, double Shift, double SoundLead, string Why, bool Yours = false);
+public sealed record Cut(string After, CutTransition Transition, double Seconds, double Shift, double SoundLead, string Why, bool Yours = false)
+{
+    /// <summary>The same cut as far as the video goes: the transition and the times, not the reason or whose it is.</summary>
+    public bool SameAs(Cut other) =>
+        Transition == other.Transition && Near(Seconds, other.Seconds) && Near(Shift, other.Shift) && Near(SoundLead, other.SoundLead);
+
+    private static bool Near(double a, double b) => Math.Abs(a - b) < 0.0005;
+}
 
 /// <summary>Where music would go: unused until the music bed exists (#24).</summary>
 public sealed record MusicCue(double Start, double End, string Mood);
@@ -100,4 +107,7 @@ public sealed record AssemblyView(
 {
     /// <summary>Why it is out of date (stale), e.g. "S02·3's clip changed since the video was cut"; null while it is up to date.</summary>
     public string? Stale { get; init; }
+
+    /// <summary>The version your waiting cut list was edited from; null when none waits, or it was the current one.</summary>
+    public int? WaitingBasedOn { get; init; }
 }
