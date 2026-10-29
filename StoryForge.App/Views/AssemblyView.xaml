@@ -233,6 +233,8 @@
         </StackPanel>
         <StackPanel>
           <TextBlock Text="SELECTED CUT" Style="{StaticResource LabelStyle}" />
+          <TextBlock Text="{Binding EditBlocked}" FontSize="13" Foreground="#B4A8F5" TextWrapping="Wrap" Margin="0,0,0,8"
+                     Visibility="{Binding EditBlocked, Converter={views:NullToCollapsedConverter}}" AutomationProperties.AutomationId="EditBlocked" />
           <TextBlock Text="Pick a shot on the cut list to see the cut after it." FontSize="13" Foreground="{StaticResource TextSoftBrush}" TextWrapping="Wrap"
                      Visibility="{Binding HasSelection, Converter={views:FalseToVisibleConverter}}" />
           <StackPanel Visibility="{Binding HasSelection, Converter={StaticResource Visible}}">

@@ -186,8 +186,8 @@ internal sealed class InProcessStoryForgeClient(
     public Task<AssemblyView> GetAssemblyAsync(Guid projectId, int? version = null, CancellationToken cancellationToken = default) =>
         assembly.GetAsync(projectId, version, cancellationToken);
 
-    public Task RenderCutListAsync(Guid projectId, CutList cutList, CancellationToken cancellationToken = default) =>
-        assembly.RenderAsync(projectId, cutList, cancellationToken);
+    public Task RenderCutListAsync(Guid projectId, CutList cutList, int? editedFrom = null, CancellationToken cancellationToken = default) =>
+        assembly.RenderAsync(projectId, cutList, editedFrom, cancellationToken);
 
     public Task<RerunPlan> GetRerunPlanAsync(Guid projectId, PipelineStage stage, string key, CancellationToken cancellationToken = default) =>
         reruns.PlanAsync(projectId, stage, key, cancellationToken);

@@ -61,6 +61,31 @@ public sealed partial class VideoRendererTests : IDisposable
         Assert.False(File.Exists(output + ".filter.txt"));
     }
 
+    [Fact]
+    public async Task A_render_that_fails_leaves_no_half_written_video_behind()
+    {
+        var root = Path.Combine(_engine.DataDirectory, "media");
+        var output = Path.Combine(root, "assembly", "video.mp4");
+        var processes = new FakeProcessRunner().Answer("ffmpeg", arguments =>
+        {
+            if (!arguments.Contains("-filter_complex_script", StringComparison.Ordinal))
+            {
+                return new ProcessRunResult(1, "", "Input #0, mov,mp4\n  Stream #0:0: Video: h264\n");   // the probe: a clip without sound
+            }
+            File.WriteAllBytes(output, new byte[4096]);   // what ffmpeg wrote before it gave up
+            return new ProcessRunResult(1, "", "Error writing trailer: No space left on device\n");
+        });
+        var host = await _engine.StartAsync(services => services.Replace(ServiceDescriptor.Singleton<IProcessRunner>(processes)));
+        var renderer = ActivatorUtilities.CreateInstance<FfmpegVideoRenderer>(host.Services);
+        var timeline = new Timeline([Shot("a", 0, 4), Shot("b", 4, 7)], [("narration.wav", 7)]);
+        var plan = CutPlan.Render(new CutList([new Cut("a", CutTransition.Cut, 0, 0, 0, "")], -20, []), timeline, new GenerationSize("16:9", 320, 180), 24);
+
+        var ex = await Assert.ThrowsAsync<Pipeline.StageFailedException>(() => renderer.RenderAsync(plan, root, output, 24, new Progress<string>(), CancellationToken.None));
+
+        Assert.Equal("ffmpeg could not render the video: Error writing trailer: No space left on device.", ex.Message);
+        Assert.False(File.Exists(output));
+    }
+
     private static CutShot Shot(string key, double start, double end) =>
         new(key, key, "S01", start, end, start - 0.5, end + 0.5, $"clips/{key}.mp4", 1, key, "");
 

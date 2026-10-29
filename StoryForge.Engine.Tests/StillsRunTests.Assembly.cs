@@ -119,6 +119,24 @@ public sealed partial class StillsRunTests
     }
 
     [Fact]
+    public async Task Your_edit_of_an_older_version_is_based_on_it_and_marks_only_what_you_changed_there()
+    {
+        var client = await StartWithAssemblyAsync();
+        var project = await ClipsApprovedAsync(client);
+        var first = (await AssemblyAsync(client, project.Id)).Video!.CutList;
+        _cuts.Answers.Enqueue(r => new CutListOutput([.. FakeCutLists.Good(r).Cuts.Select((c, i) => i == 5 ? c with { Transition = "crossfade", Seconds = 0.4 } : c)]));
+        await client.RegenerateAsync(project.Id, PipelineStage.Assembly);
+        await AssemblyAsync(client, project.Id, v => v.Version == 2 && v.State != StageState.Running);
+
+        // Back on v1, one cut moved: v2's crossfade is not in it, and is not yours either.
+        await client.RenderCutListAsync(project.Id, first with { Cuts = [.. first.Cuts.Select((c, i) => i == 3 ? c with { Shift = 0.1 } : c)] }, editedFrom: 1);
+
+        var view = await AssemblyAsync(client, project.Id, v => v.Version == 3 && v.State != StageState.Running);
+        Assert.Equal(1, view.Video!.BasedOn);
+        Assert.Equal([3], view.Video.CutList.Cuts.Select((c, i) => (c, i)).Where(x => x.c.Yours).Select(x => x.i));
+    }
+
+    [Fact]
     public async Task A_cut_of_yours_that_does_not_fit_is_refused_with_why()
     {
         var client = await StartWithAssemblyAsync();

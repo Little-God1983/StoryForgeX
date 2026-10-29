@@ -137,11 +137,15 @@ public sealed partial class AssemblyViewModel(IStoryForgeClient client, Guid pro
     [NotifyCanExecuteChangedFor(nameof(EarlierCommand), nameof(LaterCommand))]
     private int _selectedCut = -1;
 
-    public bool HasSelection => SelectedCut >= 0 && SelectedCut < _draft.Count;
+    public bool HasSelection => SelectedCut >= 0 && SelectedCut < _draft.Count && SelectedCut + 1 < Blocks.Count;
 
     private Cut? Selected => HasSelection ? _draft[SelectedCut] : null;
 
     /// <summary>"Cut 7 · S02·3 → S03·1".</summary>
+    /// <summary>Why the cuts cannot be edited (the shots changed since the video was cut); null when they can.</summary>
+    [ObservableProperty]
+    private string? _editBlocked;
+
     public string CutHeading => HasSelection ? $"Cut {SelectedCut + 1} · {Blocks[SelectedCut].Shot.Label} → {Blocks[SelectedCut + 1].Shot.Label}" : "";
 
     /// <summary>"…holds a soul." → "The Blood War…": the words either side of the cut.</summary>
@@ -261,8 +265,27 @@ public sealed partial class AssemblyViewModel(IStoryForgeClient client, Guid pro
             ClipSound = Number(list?.ClipSoundDb ?? CutList.DefaultClipSoundDb);
             _syncing = false;
         }
-        SelectedCut = _draft.Count == 0 ? -1 : Math.Clamp(selected < 0 ? 0 : selected, 0, _draft.Count - 1);
+        // Cut for other shots (the storyboard was cut again since): nothing to edit until it is cut again.
+        EditBlocked = _draft.Count > 0 && !Fits(_draft, view.Shots) ? "The shots changed since this video was cut: Regenerate cuts it again for them." : null;
+        var index = EditBlocked is not null || _draft.Count == 0 ? -1 : Math.Clamp(selected < 0 ? 0 : selected, 0, _draft.Count - 1);
+        if (index == SelectedCut)
+        {
+            OnSelectedCutChanged(index);   // the same place, new blocks and maybe other values: the panel follows
+            NotifySelection();
+        }
+        SelectedCut = index;
         Refresh();
+    }
+
+    /// <summary>One cut after every shot but the last, each after its shot: the blocks and the cuts line up.</summary>
+    private static bool Fits(IReadOnlyList<Cut> cuts, IReadOnlyList<AssemblyShot> shots) =>
+        cuts.Count == shots.Count - 1 && cuts.Select((c, i) => c.After == shots[i].Key).All(x => x);
+
+    private void NotifySelection()
+    {
+        OnPropertyChanged(nameof(HasSelection));
+        EarlierCommand.NotifyCanExecuteChanged();
+        LaterCommand.NotifyCanExecuteChanged();
     }
 
     private static string Info(AssemblyView view, AssembledVideo video)
@@ -274,14 +297,14 @@ public sealed partial class AssemblyViewModel(IStoryForgeClient client, Guid pro
 
     private Task ShowVersionAsync(int version)
     {
-        _wanted = version == _view?.Versions.LastOrDefault()?.Version ? null : version;
+        _wanted = version;
         HasEdits = false;
         return LoadAsync();
     }
 
     private void SelectCut(int index)
     {
-        if (_draft.Count == 0)
+        if (_draft.Count == 0 || EditBlocked is not null)
         {
             return;
         }
@@ -370,7 +393,7 @@ public sealed partial class AssemblyViewModel(IStoryForgeClient client, Guid pro
         var shown = _view?.Video?.CutList;
         for (var i = 0; i < Blocks.Count; i++)
         {
-            var cut = i < _draft.Count ? _draft[i] : null;
+            var cut = EditBlocked is null && i < _draft.Count ? _draft[i] : null;
             Blocks[i].Mark = cut is null ? "" : Mark(cut);
             Blocks[i].IsYours = cut is not null && (cut.Yours || (shown is not null && i < shown.Cuts.Count && !Same(shown.Cuts[i], cut)));
         }
@@ -430,10 +453,10 @@ public sealed partial class AssemblyViewModel(IStoryForgeClient client, Guid pro
         {
             return;
         }
-        await ActAsync(() => client.RenderCutListAsync(ProjectId, new CutList(_draft, sound, _view?.Video?.CutList.Music ?? [])));
+        await ActAsync(() => client.RenderCutListAsync(ProjectId, new CutList(_draft, sound, _view?.Video?.CutList.Music ?? []), Version));
     }
 
-    private bool CanRenderAgain() => HasEdits && !IsRunning && ClipsApproved;
+    private bool CanRenderAgain() => HasEdits && !IsRunning && ClipsApproved && EditBlocked is null;
 
     [RelayCommand(CanExecute = nameof(HasEdits))]
     private void Undo()

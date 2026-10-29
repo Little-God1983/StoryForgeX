@@ -45,6 +45,7 @@ internal sealed class FfmpegVideoRenderer(IProcessRunner processes, SettingsStor
         Directory.CreateDirectory(Path.GetDirectoryName(output)!);
         var graphFile = output + ".filter.txt";
         await File.WriteAllTextAsync(graphFile, script, cancellationToken);
+        var rendered = false;
         try
         {
             var arguments = new StringBuilder("-y -hide_banner -loglevel error -nostdin");
@@ -61,10 +62,15 @@ internal sealed class FfmpegVideoRenderer(IProcessRunner processes, SettingsStor
                 var why = result.StandardError.Trim().Split('\n').LastOrDefault()?.Trim();
                 throw new StageFailedException($"ffmpeg could not render the video{(string.IsNullOrEmpty(why) ? "" : $": {why}")}.");
             }
+            rendered = true;
         }
         finally
         {
             File.Delete(graphFile);
+            if (!rendered)
+            {
+                File.Delete(output);   // failed or cancelled: what ffmpeg wrote so far is no video
+            }
         }
     }
 

@@ -148,14 +148,14 @@ internal sealed class AssemblyStage(
     private async Task<CutList> CutListAsync(StageContext context, Timeline timeline, double clipSoundDb, CancellationToken cancellationToken)
     {
         var setup = context.Project.Setup;
+        if (timeline.Shots.Count == 1)
+        {
+            return new CutList([], clipSoundDb, []);   // one shot: nothing to cut, no model to ask
+        }
         if (setup.Script.Provider != ResearchStage.ClaudeCli)
         {
             throw new StageFailedException(
                 $"The cut list is written through Claude CLI for now, and this project uses {setup.Script.Provider}. LM Studio follows with #19.");
-        }
-        if (timeline.Shots.Count == 1)
-        {
-            return new CutList([], clipSoundDb, []);   // one shot: nothing to cut
         }
         var request = new CutListRequest(context.Project.Id, setup.Brief, timeline, setup.Script.Model);
         string? session = null;

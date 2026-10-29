@@ -78,7 +78,7 @@ internal sealed class AssemblyViews(
         };
     }
 
-    public async Task RenderAsync(Guid projectId, CutList cutList, CancellationToken cancellationToken)
+    public async Task RenderAsync(Guid projectId, CutList cutList, int? editedFrom, CancellationToken cancellationToken)
     {
         await projects.GetAsync(projectId, cancellationToken);
         if (runner.IsBusy(projectId, Stage))
@@ -94,9 +94,9 @@ internal sealed class AssemblyViews(
         {
             throw new InvalidOperationException($"{string.Join(", ", missing)} {(missing.Count == 1 ? "has" : "have")} no approved clip.");
         }
-        var current = await cells.CurrentAssemblyAsync(projectId, cancellationToken);
-        // A cut you touched is yours, so the panel can say so; one you left is still Claude's.
-        var before = current?.Video.CutList.Cuts.ToDictionary(c => c.After);
+        // The version you edited: a cut you touched there is yours, so the panel can say so; one you left is still Claude's.
+        var basis = editedFrom is { } from ? (await VersionAsync(projectId, from, cancellationToken), from) : await cells.CurrentAssemblyAsync(projectId, cancellationToken);
+        var before = basis?.Video.CutList.Cuts.ToDictionary(c => c.After);
         var list = cutList with
         {
             Cuts = [.. cutList.Cuts.Select(c => before?.GetValueOrDefault(c.After) is { } was && Same(was, c) ? was : c with { Yours = true })],
@@ -106,12 +106,31 @@ internal sealed class AssemblyViews(
         {
             throw new ArgumentException(string.Join(" ", problems));
         }
+        (bool Queued, string? Prompt) was = default;
         await ChangeAsync(projectId, cell =>
         {
+            was = (cell.Queued, cell.QueuedPrompt);
             cell.Queued = true;
-            cell.QueuedPrompt = StoredJson.Write(new WaitingCutList(list, current?.Version));
+            cell.QueuedPrompt = StoredJson.Write(new WaitingCutList(list, basis?.Version));
         }, cancellationToken);
-        await runner.RegenerateAsync(projectId, Stage, cancellationToken);
+        try
+        {
+            await runner.RegenerateAsync(projectId, Stage, cancellationToken);
+        }
+        catch
+        {
+            // Not queued after all (a run slipped in): yours does not wait to be rendered by a later run unasked.
+            await ChangeAsync(projectId, cell => (cell.Queued, cell.QueuedPrompt) = was, CancellationToken.None, create: false);
+            throw;
+        }
+    }
+
+    private async Task<AssembledVideo> VersionAsync(Guid projectId, int version, CancellationToken cancellationToken)
+    {
+        await using var db = await contextFactory.CreateDbContextAsync(cancellationToken);
+        var entry = await db.CellVersions.AsNoTracking().FirstOrDefaultAsync(v => v.ProjectId == projectId && v.Stage == Stage && v.Key == "" && v.Version == version, cancellationToken)
+            ?? throw new KeyNotFoundException($"The Assembly has no version {version}.");
+        return StoredJson.Read<AssembledVideo>(entry.OutputJson);
     }
 
     /// <summary>Regenerate: Claude writes a new cut list; yours, if one waits, is dropped.</summary>

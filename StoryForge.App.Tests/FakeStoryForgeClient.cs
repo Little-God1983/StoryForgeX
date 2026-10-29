@@ -865,7 +865,7 @@ internal sealed class FakeStoryForgeClient : IStoryForgeClient
     public Dictionary<(Guid, int), AssemblyView> AssemblyVersions { get; } = [];
 
     /// <summary>The cut lists Render again sent.</summary>
-    public List<CutList> RenderedCutLists { get; } = [];
+    public List<(CutList CutList, int? EditedFrom)> RenderedCutLists { get; } = [];
 
     /// <summary>While set, Render again is refused with it, as the engine refuses a cut that does not fit.</summary>
     public string? CutListRefusal { get; set; }
@@ -874,14 +874,14 @@ internal sealed class FakeStoryForgeClient : IStoryForgeClient
         Task.FromResult(version is { } v && AssemblyVersions.TryGetValue((projectId, v), out var old) ? old
             : Assembly.GetValueOrDefault(projectId) ?? new AssemblyView(projectId, StageState.NotStarted, null, [], null, null, [], null, null, [], false, null));
 
-    public Task RenderCutListAsync(Guid projectId, CutList cutList, CancellationToken cancellationToken = default)
+    public Task RenderCutListAsync(Guid projectId, CutList cutList, int? editedFrom = null, CancellationToken cancellationToken = default)
     {
         ThrowIfFailing();
         if (CutListRefusal is { } refusal)
         {
             throw new ArgumentException(refusal);
         }
-        RenderedCutLists.Add(cutList);
+        RenderedCutLists.Add((cutList, editedFrom));
         return Task.CompletedTask;
     }
 

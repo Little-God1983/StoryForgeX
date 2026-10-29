@@ -15,7 +15,13 @@ public partial class AssemblyView : UserControl
     {
         InitializeComponent();
         // Only while shown: the descriptor and the screen's event would otherwise hold the view for good.
-        Loaded += (_, _) => Source.AddValueChanged(Player, SourceChanged);
+        Loaded += (_, _) =>
+        {
+            Source.AddValueChanged(Player, SourceChanged);
+            Watch(DataContext as AssemblyViewModel);
+            // Back on a screen whose video was bound before it loaded: open it, as a new one would be.
+            SourceChanged(Player, EventArgs.Empty);
+        };
         Unloaded += (_, _) =>
         {
             Source.RemoveValueChanged(Player, SourceChanged);

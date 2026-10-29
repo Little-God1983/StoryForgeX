@@ -96,10 +96,53 @@ public sealed class AssemblyScreenTests
         Assert.False(screen.ApproveCommand.CanExecute(null));   // approve what you see, not your unrendered edits
         await screen.RenderAgainCommand.ExecuteAsync(null);
 
-        var sent = Assert.Single(_client.RenderedCutLists);
+        var (sent, from) = Assert.Single(_client.RenderedCutLists);
+        Assert.Equal(1, from);   // the version you edited
         Assert.Equal(new Cut("S01/a", CutTransition.DipToBlack, 0.6, 0.1, 0, "The title eases in."), sent.Cuts[0]);
         Assert.Equal(Claudes.Cuts[1], sent.Cuts[1]);
         Assert.Equal(-30, sent.ClipSoundDb);
+    }
+
+    [Fact]
+    public async Task Undo_brings_the_panel_back_to_the_cut_as_it_was_and_keeps_it_selected()
+    {
+        var screen = await OpenAsync(Review());
+        screen.Blocks[1].SelectCommand.Execute(null);
+        screen.Transition = CutTransition.Crossfade;
+
+        screen.UndoCommand.Execute(null);
+
+        Assert.Equal((CutTransition.Cut, "0", "0.3"), (screen.Transition, screen.TransitionSeconds, screen.SoundLead));
+        Assert.True(screen.Blocks[1].IsSelected);
+        screen.Transition = CutTransition.Crossfade;   // and it can be changed again at once
+        Assert.Equal("◇ 0.4 s · J 0.3", screen.Blocks[1].Mark);
+    }
+
+    [Fact]
+    public async Task With_an_older_version_approved_the_newest_still_opens()
+    {
+        // Approving v1 makes it the current one: v2 is no longer what "current" brings.
+        var screen = await OpenAsync(Review(version: 2) with { Version = 1, ApprovedVersion = 1, State = StageState.Approved });
+        _client.AssemblyVersions[(Id, 2)] = Review(version: 2) with { ApprovedVersion = 1, State = StageState.Approved };
+
+        await screen.Versions[1].ShowCommand.ExecuteAsync(null);
+
+        Assert.Equal(2, screen.Version);
+    }
+
+    [Fact]
+    public async Task A_cut_list_cut_for_other_shots_cannot_be_edited_and_says_why()
+    {
+        // The storyboard was cut again since: three shots now, the video's list has one cut for two others.
+        var old = new CutList([new Cut("S09/x", CutTransition.Cut, 0, 0, 0, "")], -20, []);
+
+        var screen = await OpenAsync(Review(old) with { Stale = "A shot is gone since the video was cut." });
+
+        Assert.False(screen.HasSelection);
+        Assert.Equal("The shots changed since this video was cut: Regenerate cuts it again for them.", screen.EditBlocked);
+        Assert.Equal(["", "", ""], screen.Blocks.Select(b => b.Mark));
+        screen.Blocks[2].SelectCommand.Execute(null);
+        Assert.Equal("", screen.CutHeading);
     }
 
     [Fact]
@@ -143,7 +186,7 @@ public sealed class AssemblyScreenTests
         Assert.Equal("-12", screen.ClipSound);   // yours comes back to edit
         await screen.RetryCommand.ExecuteAsync(null);
 
-        Assert.Equal(-12, Assert.Single(_client.RenderedCutLists).ClipSoundDb);
+        Assert.Equal(-12, Assert.Single(_client.RenderedCutLists).CutList.ClipSoundDb);
         var claudes = await OpenAsync(Review(state: StageState.Failed, error: "The answer had no good cut list after 3 tries."));
         await claudes.RetryCommand.ExecuteAsync(null);
         Assert.Equal((Id, PipelineStage.Assembly), Assert.Single(_client.Regenerated));

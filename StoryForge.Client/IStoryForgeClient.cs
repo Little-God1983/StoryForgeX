@@ -276,10 +276,11 @@ public interface IStoryForgeClient
     /// without asking Claude. It waits as yours until it is rendered, so a failed render is tried
     /// again with it. Regenerate asks Claude for a new cut list instead, and drops yours.
     /// </summary>
-    /// <exception cref="KeyNotFoundException">No such project.</exception>
+    /// <param name="editedFrom">The version you edited it from; null for the current one. A cut that differs from it is marked yours.</param>
+    /// <exception cref="KeyNotFoundException">No such project, or no such version.</exception>
     /// <exception cref="ArgumentException">A cut does not fit the clips (it says which and why), or the list does not match the shots.</exception>
     /// <exception cref="InvalidOperationException">The clips are not all approved, or the Assembly is running.</exception>
-    Task RenderCutListAsync(Guid projectId, CutList cutList, CancellationToken cancellationToken = default);
+    Task RenderCutListAsync(Guid projectId, CutList cutList, int? editedFrom = null, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// What Rerun pipeline from here on this cell would make again, as the question before it says:
