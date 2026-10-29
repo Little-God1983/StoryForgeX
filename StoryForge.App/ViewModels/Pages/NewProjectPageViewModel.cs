@@ -419,7 +419,7 @@ public sealed partial class NewProjectPageViewModel : PageViewModel
     {
         var picked = slot.Selected;
         // The same profile announced again (the pickers are refilled each time the screen opens)
-        // keeps what the user changed since: typed sources, a custom size.
+        // keeps what the user changed since: typed sources, a custom clip length or pacing.
         if (_applied.TryGetValue(slot, out var applied) && applied == picked)
         {
             return;

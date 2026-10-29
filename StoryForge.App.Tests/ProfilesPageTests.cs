@@ -441,7 +441,7 @@ public sealed class ProfilesPageTests
     [InlineData(ProfileKind.Research, true, false, false, false, false)]
     [InlineData(ProfileKind.Script, false, false, false, false, false)]
     [InlineData(ProfileKind.Image, false, true, true, false, false)]
-    [InlineData(ProfileKind.Video, false, true, true, true, false)]
+    [InlineData(ProfileKind.Video, false, true, false, true, false)]
     [InlineData(ProfileKind.Voice, false, true, false, false, true)]
     public async Task Each_kind_shows_its_own_fields(ProfileKind kind, bool sources, bool media, bool sizes, bool clip, bool voice)
     {

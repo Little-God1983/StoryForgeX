@@ -33,7 +33,9 @@ public sealed partial class GenerationSizeViewModel(string scaledUp) : Observabl
     private static readonly GenerationSize FullHd = new("16:9", 1920, 1080);
 
     private GenerationSize _delivery = FullHd;
-    private GenerationSize _default = RoundUp(FullHd);
+
+    /// <summary>The delivery rounded up to <see cref="Step"/>: the size picked when "Custom…" is not.</summary>
+    private GenerationSize Default => RoundUp(_delivery);
 
     public const int DefaultIndex = 0;
     public const int CustomIndex = 1;
@@ -77,17 +79,18 @@ public sealed partial class GenerationSizeViewModel(string scaledUp) : Observabl
     private string _customHeight = "";
 
     /// <summary>The size the project will use; null while a custom size is not valid or not in the video's shape.</summary>
-    public GenerationSize? Value => Problem is null ? IsCustom ? Custom() : _default : null;
+    public GenerationSize? Value => Problem is null ? IsCustom ? Custom() : Default : null;
 
     /// <summary>Why <see cref="Value"/> is null, e.g. "a size that fits 9:16"; null when it is not.</summary>
     public string? Problem => !IsCustom ? null
         : Custom() is not { } custom ? "a valid size"
-        : !FitsAspect(custom) ? $"a size that fits {_default.Aspect}"
+        : !FitsAspect(custom) ? $"a size that fits {_delivery.Aspect}"
+        : custom.Width % Step != 0 || custom.Height % Step != 0 ? $"a size in multiples of {Step} (e.g. {RoundUp(custom).Width} × {RoundUp(custom).Height})"
         : null;
 
     private GenerationSize? Custom() =>
         NumberText.Parse(CustomWidth) is { } w and >= 1 and <= 16384 && NumberText.Parse(CustomHeight) is { } h and >= 1 and <= 16384
-            ? new GenerationSize(_default.Aspect, w, h)
+            ? new GenerationSize(_delivery.Aspect, w, h)
             : null;
 
     /// <summary>Landscape for 16:9, portrait for 9:16, square for 1:1. Models' sizes are not exact ratios (1344 × 768).</summary>
@@ -108,17 +111,22 @@ public sealed partial class GenerationSizeViewModel(string scaledUp) : Observabl
     /// </summary>
     public void UseDelivery(GenerationSize delivery)
     {
-        var aspect = _default.Aspect;
+        var before = Default;
         _delivery = delivery;
-        _default = RoundUp(delivery);
-        if (delivery.Aspect != aspect || !IsCustom)
+        if (delivery.Aspect != before.Aspect || !IsCustom)
         {
             // A custom size typed for another shape, or one not in use; the next "Custom…" starts from the new default.
             CustomWidth = "";
             CustomHeight = "";
             SelectedIndex = DefaultIndex;
         }
-        Options[DefaultIndex].Label = DefaultLabel(_default);
+        else if (Custom() == before)
+        {
+            // Filled in and left as it was: nothing typed to keep.
+            CustomWidth = NumberText.Format(Default.Width);
+            CustomHeight = NumberText.Format(Default.Height);
+        }
+        Options[DefaultIndex].Label = DefaultLabel(Default);
         OnPropertyChanged(nameof(Value));
         OnPropertyChanged(nameof(Warning));
     }
@@ -128,8 +136,8 @@ public sealed partial class GenerationSizeViewModel(string scaledUp) : Observabl
         // A custom size starts from the default, so only the number that differs is typed.
         if (value == CustomIndex && CustomWidth.Length == 0 && CustomHeight.Length == 0)
         {
-            CustomWidth = NumberText.Format(_default.Width);
-            CustomHeight = NumberText.Format(_default.Height);
+            CustomWidth = NumberText.Format(Default.Width);
+            CustomHeight = NumberText.Format(Default.Height);
         }
         // The custom fields only count while "Custom…" is picked.
         ValidateAllProperties();

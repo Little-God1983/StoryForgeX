@@ -45,7 +45,8 @@ public sealed partial class ProfileFormViewModel : ObservableValidator
 
     public bool HasNegativePrompt => Kind is ProfileKind.Image or ProfileKind.Video;
 
-    public bool HasSizes => Kind is ProfileKind.Image or ProfileKind.Video;
+    /// <summary>Only an image profile's Test reads its sizes; projects make stills and clips at the delivery size.</summary>
+    public bool HasSizes => Kind is ProfileKind.Image;
 
     public bool HasSteps => Kind is ProfileKind.Image or ProfileKind.Video;
 

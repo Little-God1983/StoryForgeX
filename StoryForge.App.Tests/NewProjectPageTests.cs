@@ -110,13 +110,42 @@ public sealed class NewProjectPageTests
         var page = await ShownPage();
         page.ClipSize.SelectedIndex = GenerationSizeViewModel.CustomIndex;
         page.ClipSize.CustomWidth = "1600";
-        page.ClipSize.CustomHeight = "900";
+        page.ClipSize.CustomHeight = "896";
 
         page.SelectedDelivery = page.DeliveryChoices[0];
 
         Assert.Equal(new GenerationSize("16:9", 1376, 768), page.StillSize.Value);   // 1366 rounded up to 32
         Assert.Equal("1376 × 768 · delivery size", page.StillSize.Options[0].Label);
-        Assert.Equal(new GenerationSize("16:9", 1600, 900), page.ClipSize.Value);
+        Assert.Equal(new GenerationSize("16:9", 1600, 896), page.ClipSize.Value);
+    }
+
+    [Fact]
+    public async Task Custom_left_as_it_was_filled_in_follows_another_delivery()
+    {
+        AddOneOfEach();
+        var page = await ShownPage();
+        page.ClipSize.SelectedIndex = GenerationSizeViewModel.CustomIndex;   // 1920 × 1088, not touched
+
+        page.SelectedDelivery = page.DeliveryChoices[2];   // 2560 × 1440
+
+        Assert.Equal(new GenerationSize("16:9", 2560, 1440), page.ClipSize.Value);
+        Assert.Equal("2560", page.ClipSize.CustomWidth);
+    }
+
+    [Fact]
+    public async Task A_custom_size_off_the_32_pixel_grid_keeps_start_off()
+    {
+        AddOneOfEach();
+        var page = await ShownPage();
+        FillBrief(page);
+
+        page.ClipSize.SelectedIndex = GenerationSizeViewModel.CustomIndex;
+        page.ClipSize.CustomWidth = "1366";
+        page.ClipSize.CustomHeight = "768";
+
+        Assert.Null(page.ClipSize.Value);
+        Assert.False(page.StartCommand.CanExecute(null));
+        Assert.Contains("multiples of 32", page.MissingText);
     }
 
     [Fact]
@@ -149,7 +178,8 @@ public sealed class NewProjectPageTests
         page.SelectedDelivery = page.DeliveryChoices[0];   // 1366 × 768: still smaller
         Assert.NotNull(page.ClipSize.Warning);
         page.ClipSize.CustomWidth = "1920";
-        page.ClipSize.CustomHeight = "1080";
+        page.ClipSize.CustomHeight = "1088";
+        Assert.NotNull(page.ClipSize.Value);
         Assert.Null(page.ClipSize.Warning);
         Assert.True(page.StillSize.Warning is null);
     }
