@@ -44,7 +44,7 @@ public sealed partial class StillsRunTests
     });
 
     /// <summary>A video profile on the test workflow, as the starter is: Claude's motion prompt in the template.</summary>
-    private static async Task<ProfileRef> VideoProfileAsync(IStoryForgeClient client, string name, int maxClip = 20)
+    private static async Task<ProfileRef> VideoProfileAsync(IStoryForgeClient client, string name, int maxClip = 20, GenerationSize? size = null)
     {
         var profile = await client.CreateProfileAsync(ProfileKind.Video, name);
         var starter = await client.GetProfileVersionAsync(profile.Id);
@@ -54,7 +54,7 @@ public sealed partial class StillsRunTests
             Inputs = VideoInputs,
             PromptTemplate = "{shot.motion}, cinematic",
             MaxClipSeconds = maxClip,
-            Sizes = [new("16:9", 1280, 704)],
+            Sizes = [size ?? new("16:9", 1280, 704)],
         });
         return new ProfileRef(profile.Id, saved.Version);
     }
@@ -154,7 +154,7 @@ public sealed partial class StillsRunTests
         var client = await StartWithClipsAsync();
         var project = await StillsApprovedAsync(client);
         await ClipsAsync(client, project.Id);
-        var ltx = await VideoProfileAsync(client, "LTX 2.5", maxClip: 30);
+        var ltx = await VideoProfileAsync(client, "LTX 2.5", maxClip: 30, size: new("16:9", 768, 448));
         var keys = await KeysAsync(client, project.Id);
         Assert.Equal(new ClipModel(ltx, "LTX 2.5"), (await client.GetClipsAsync(project.Id)).Others[^1]);
 
@@ -165,6 +165,8 @@ public sealed partial class StillsRunTests
         var view = await ClipsAsync(client, project.Id, v => v.State != StageState.Running && v.Clips.Single(c => c.Key == keys["S03·2"]).Version == 2);
         var clip = view.Clips.Single(c => c.Key == keys["S03·2"]);
         Assert.Equal(("LTX 2.5", false, (ProfileRef?)null), (clip.Clip!.Model, clip.Queued, clip.QueuedProfile));
+        // At the project's clip size (the delivery's), not the profile's own: nothing is upscaled later.
+        Assert.Equal(new GenerationSize("16:9", 1280, 704), clip.Clip.Size);
         Assert.Equal("Minimax H3", view.Clips.Single(c => c.Key == keys["S03·3"]).Clip!.Model);   // nothing else switched
         Assert.Equal(61, ClipRuns().Count);
     }

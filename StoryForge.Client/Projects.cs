@@ -62,10 +62,10 @@ public sealed record VoiceSetup(string Provider, string Model, ProfileRef Profil
 /// <param name="ReviewList">The run stops on the proposed reference list before any image is made.</param>
 public sealed record ReferencesSetup(string Provider, string Model, ProfileRef Profile, Consistency Consistency, bool ReviewList = true);
 
-/// <param name="Size">The size stills are generated at (not the delivery size).</param>
+/// <param name="Size">The size stills are generated at: the delivery size rounded up to 32, unless set otherwise.</param>
 public sealed record StillsSetup(string Provider, string Model, ProfileRef Profile, GenerationSize Size);
 
-/// <param name="Size">The size clips are generated at; the finished video is upscaled to delivery.</param>
+/// <param name="Size">The size clips are generated at: the delivery size rounded up to 32 (Assembly crops the rest), unless set otherwise. Nothing is upscaled.</param>
 public sealed record ClipsSetup(string Provider, string Model, ProfileRef Profile, int MaxClipSeconds, GenerationSize Size);
 
 /// <param name="Aspect">"16:9", "9:16" or "1:1".</param>

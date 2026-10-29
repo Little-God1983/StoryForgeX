@@ -105,6 +105,8 @@
           <TextBlock Grid.Column="1" Text="×" Margin="6,0" VerticalAlignment="Center" Foreground="{StaticResource TextMutedBrush}" />
           <TextBox Grid.Column="2" Text="{Binding CustomHeight, UpdateSourceTrigger=PropertyChanged}" AutomationProperties.Name="Custom height" />
         </Grid>
+        <TextBlock Text="{Binding Warning}" Margin="0,4,0,0" FontSize="12" TextWrapping="Wrap" Foreground="{StaticResource NoteTextBrush}"
+                   Visibility="{Binding Warning, Converter={views:NullToCollapsedConverter}}" />
       </StackPanel>
     </DataTemplate>
   </UserControl.Resources>
@@ -325,7 +327,7 @@
         <Border Style="{StaticResource CardStyle}">
           <DockPanel>
             <TextBlock DockPanel.Dock="Right" Width="220" FontSize="12" Foreground="{StaticResource TextMutedBrush}" TextWrapping="Wrap"
-                       VerticalAlignment="Bottom" Text="Stills and clips generate at their own sizes above; the finished clip is upscaled to delivery." />
+                       VerticalAlignment="Bottom" Text="Stills and clips are made at the delivery size, rounded up to a multiple of 32; Assembly crops the rest. Nothing is upscaled." />
             <WrapPanel>
               <StackPanel Margin="0,0,14,0">
                 <TextBlock Text="Aspect" Style="{StaticResource FieldLabelStyle}" />
