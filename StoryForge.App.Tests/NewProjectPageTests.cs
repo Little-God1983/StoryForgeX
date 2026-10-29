@@ -120,6 +120,21 @@ public sealed class NewProjectPageTests
     }
 
     [Fact]
+    public async Task Custom_picked_again_after_another_delivery_starts_from_the_new_size()
+    {
+        AddOneOfEach();
+        var page = await ShownPage();
+        page.ClipSize.SelectedIndex = GenerationSizeViewModel.CustomIndex;   // fills in 1920 × 1088
+        page.ClipSize.SelectedIndex = GenerationSizeViewModel.DefaultIndex;
+
+        page.SelectedDelivery = page.DeliveryChoices[2];   // 2560 × 1440
+        page.ClipSize.SelectedIndex = GenerationSizeViewModel.CustomIndex;
+
+        Assert.Equal(new GenerationSize("16:9", 2560, 1440), page.ClipSize.Value);
+        Assert.Null(page.ClipSize.Warning);
+    }
+
+    [Fact]
     public async Task A_custom_size_smaller_than_the_delivery_says_it_will_be_scaled_up()
     {
         AddOneOfEach();
@@ -290,18 +305,18 @@ public sealed class NewProjectPageTests
     [Fact]
     public async Task Start_waits_for_a_newly_picked_profiles_defaults()
     {
-        // Otherwise the new profile would be saved with the old profile's size.
+        // Otherwise the new profile would be saved with the old profile's clip length.
         AddOneOfEach();
-        _client.AddProfile(ProfileKind.Image, "Photoreal", Empty with { Sizes = [new("16:9", 1920, 1080)] });
+        _client.AddProfile(ProfileKind.Video, "Wan 2.2", Empty with { MaxClipSeconds = 6 });
         var page = await ShownPage();
         FillBrief(page);
         var loading = new TaskCompletionSource();
         _client.ProfileLoadGate = loading.Task;
 
-        page.ImageSlot.Selected = page.ImageSlot.Choices.Single(p => p.Name == "Photoreal");
+        page.VideoSlot.Selected = page.VideoSlot.Choices.Single(p => p.Name == "Wan 2.2");
 
         Assert.False(page.StartCommand.CanExecute(null));
-        Assert.Contains("Photoreal", page.MissingText);
+        Assert.Contains("Wan 2.2", page.MissingText);
         _client.ProfileLoadGate = null;
         loading.SetResult();
         await page.WhenSettled();
@@ -312,6 +327,22 @@ public sealed class NewProjectPageTests
     public async Task Start_stays_off_while_a_picked_profiles_defaults_failed_to_load()
     {
         AddOneOfEach();
+        _client.AddProfile(ProfileKind.Video, "Wan 2.2", Empty with { MaxClipSeconds = 6 });
+        var page = await ShownPage();
+        FillBrief(page);
+        _client.ProfileLoadFailure = new InvalidOperationException("database is locked");
+
+        page.VideoSlot.Selected = page.VideoSlot.Choices.Single(p => p.Name == "Wan 2.2");
+        await page.WhenSettled();
+
+        Assert.False(page.StartCommand.CanExecute(null));
+    }
+
+    [Fact]
+    public async Task An_image_profile_that_cannot_be_read_does_not_hold_up_start()
+    {
+        // Nothing from its content goes into the setup: the sizes follow the delivery.
+        AddOneOfEach();
         _client.AddProfile(ProfileKind.Image, "Photoreal", Empty);
         var page = await ShownPage();
         FillBrief(page);
@@ -320,7 +351,8 @@ public sealed class NewProjectPageTests
         page.ImageSlot.Selected = page.ImageSlot.Choices.Single(p => p.Name == "Photoreal");
         await page.WhenSettled();
 
-        Assert.False(page.StartCommand.CanExecute(null));
+        Assert.True(page.StartCommand.CanExecute(null));
+        Assert.Null(page.Error);
     }
 
     [Fact]

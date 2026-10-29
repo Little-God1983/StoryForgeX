@@ -41,7 +41,7 @@ public sealed partial class NewProjectPageViewModel : PageViewModel
     private readonly List<Task> _pending = [];
     private readonly Dictionary<ProfileSlotViewModel, ProfileSummary?> _applied = [];
 
-    /// <summary>The picked profiles' content, kept so another aspect switches the sizes at once.</summary>
+    /// <summary>The picked profiles' content, kept so research can tell the sources typed from the old profile's.</summary>
     private readonly Dictionary<ProfileSlotViewModel, ProfileContent?> _content = [];
 
     public NewProjectPageViewModel(IStoryForgeClient client)
@@ -70,8 +70,7 @@ public sealed partial class NewProjectPageViewModel : PageViewModel
         ResearchSlot.PropertyChanged += (_, e) => OnSlotChanged(e, ResearchSlot, ApplyResearchProfile);
         StoryboardSlot.PropertyChanged += (_, e) => OnSlotChanged(e, StoryboardSlot,
             (content, _, sameProfile) => Pacing.UseDefault(content, keepCustom: sameProfile));
-        // The sizes follow the delivery, not the profiles; Start still waits for the image profile's defaults.
-        ImageSlot.PropertyChanged += (_, e) => OnSlotChanged(e, ImageSlot, (_, _, _) => { });
+        // The sizes follow the delivery, not the profiles: the image profile has no defaults to load.
         VideoSlot.PropertyChanged += (_, e) => OnSlotChanged(e, VideoSlot,
             (content, _, sameProfile) => MaxClip.UseDefault(content, keepCustom: sameProfile));
         foreach (var slot in Cards.SelectMany(c => c.Slots))
@@ -406,7 +405,7 @@ public sealed partial class NewProjectPageViewModel : PageViewModel
         }
     }
 
-    /// <summary>A picked profile's defaults (sources, sizes, clip length) come from its content, which is loaded here.</summary>
+    /// <summary>A picked profile's defaults (sources, pacing, clip length) come from its content, which is loaded here.</summary>
     private void OnSlotChanged(PropertyChangedEventArgs e, ProfileSlotViewModel slot, Action<ProfileContent?, ProfileContent?, bool> apply)
     {
         if (e.PropertyName == nameof(ProfileSlotViewModel.Selected))
@@ -476,9 +475,9 @@ public sealed partial class NewProjectPageViewModel : PageViewModel
             missing.Add("a brief");
         }
         missing.AddRange(Cards.SelectMany(c => c.Slots).Where(s => s.Selected is null).Select(s => $"a {s.Label.ToLowerInvariant()}"));
-        // A profile's defaults (sizes, sources, clip length) must be in before Start, or the new
+        // A profile's defaults (sources, pacing, clip length) must be in before Start, or the new
         // profile would be saved with the old one's values.
-        missing.AddRange(new[] { ResearchSlot, StoryboardSlot, ImageSlot, VideoSlot }
+        missing.AddRange(new[] { ResearchSlot, StoryboardSlot, VideoSlot }
             .Where(s => s.Selected is not null && _applied.GetValueOrDefault(s) != s.Selected)
             .Select(s => $"the defaults of {s.Selected!.Name} (loading, or they could not be read)"));
         if (StillSize.Problem is { } still)
