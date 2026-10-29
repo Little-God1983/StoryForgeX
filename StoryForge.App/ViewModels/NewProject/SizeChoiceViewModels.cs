@@ -70,11 +70,13 @@ public sealed partial class GenerationSizeViewModel(string scaledUp) : Observabl
 
     [ObservableProperty]
     [NotifyDataErrorInfo]
+    [NotifyPropertyChangedFor(nameof(Value), nameof(Warning))]
     [CustomValidation(typeof(GenerationSizeViewModel), nameof(ValidatePixels))]
     private string _customWidth = "";
 
     [ObservableProperty]
     [NotifyDataErrorInfo]
+    [NotifyPropertyChangedFor(nameof(Value), nameof(Warning))]
     [CustomValidation(typeof(GenerationSizeViewModel), nameof(ValidatePixels))]
     private string _customHeight = "";
 
@@ -85,8 +87,11 @@ public sealed partial class GenerationSizeViewModel(string scaledUp) : Observabl
     public string? Problem => !IsCustom ? null
         : Custom() is not { } custom ? "a valid size"
         : !FitsAspect(custom) ? $"a size that fits {_delivery.Aspect}"
-        : custom.Width % Step != 0 || custom.Height % Step != 0 ? $"a size in multiples of {Step} (e.g. {RoundUp(custom).Width} × {RoundUp(custom).Height})"
+        : custom.Width % Step != 0 || custom.Height % Step != 0 ? $"a size in multiples of {Step}{Example(RoundUp(custom))}"
         : null;
+
+    /// <summary>" (e.g. 1376 × 768)": the rounded size, when it still has the video's shape.</summary>
+    private static string Example(GenerationSize rounded) => FitsAspect(rounded) ? $" (e.g. {rounded.Width} × {rounded.Height})" : "";
 
     private GenerationSize? Custom() =>
         NumberText.Parse(CustomWidth) is { } w and >= 1 and <= 16384 && NumberText.Parse(CustomHeight) is { } h and >= 1 and <= 16384
@@ -127,8 +132,7 @@ public sealed partial class GenerationSizeViewModel(string scaledUp) : Observabl
             CustomHeight = NumberText.Format(Default.Height);
         }
         Options[DefaultIndex].Label = DefaultLabel(Default);
-        OnPropertyChanged(nameof(Value));
-        OnPropertyChanged(nameof(Warning));
+        RaiseValue();
     }
 
     private void OnSelectedIndexChanged(int value)
@@ -141,17 +145,10 @@ public sealed partial class GenerationSizeViewModel(string scaledUp) : Observabl
         }
         // The custom fields only count while "Custom…" is picked.
         ValidateAllProperties();
-        OnPropertyChanged(nameof(Value));
-        OnPropertyChanged(nameof(Warning));
+        RaiseValue();
     }
 
-    partial void OnCustomWidthChanged(string value)
-    {
-        OnPropertyChanged(nameof(Value));
-        OnPropertyChanged(nameof(Warning));
-    }
-
-    partial void OnCustomHeightChanged(string value)
+    private void RaiseValue()
     {
         OnPropertyChanged(nameof(Value));
         OnPropertyChanged(nameof(Warning));

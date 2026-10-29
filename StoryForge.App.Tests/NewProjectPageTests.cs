@@ -145,7 +145,20 @@ public sealed class NewProjectPageTests
 
         Assert.Null(page.ClipSize.Value);
         Assert.False(page.StartCommand.CanExecute(null));
-        Assert.Contains("multiples of 32", page.MissingText);
+        Assert.Contains("multiples of 32 (e.g. 1376 × 768)", page.MissingText);
+    }
+
+    [Fact]
+    public async Task The_size_suggested_for_the_32_pixel_grid_has_the_videos_shape()
+    {
+        AddOneOfEach();
+        var page = await ShownPage();
+
+        page.ClipSize.SelectedIndex = GenerationSizeViewModel.CustomIndex;
+        page.ClipSize.CustomWidth = "1000";
+        page.ClipSize.CustomHeight = "999";   // rounded up: 1024 × 1024, which is no 16:9 size
+
+        Assert.Equal("a size in multiples of 32", page.ClipSize.Problem);
     }
 
     [Fact]
