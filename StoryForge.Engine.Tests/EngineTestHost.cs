@@ -4,6 +4,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
 using StoryForge.Client;
+using StoryForge.Engine.Assembly;
 using StoryForge.Engine.Data;
 using StoryForge.Engine.Pipeline;
 using StoryForge.Engine.Research;
@@ -45,6 +46,8 @@ internal sealed class EngineTestHost : IDisposable
         builder.Services.Replace(ServiceDescriptor.Singleton<IPictureSource>(new NoModel()));
         builder.Services.Replace(ServiceDescriptor.Singleton<IComfyUi>(new NoModel()));
         builder.Services.Replace(ServiceDescriptor.Singleton<IAudioConverter>(new NoModel()));
+        builder.Services.Replace(ServiceDescriptor.Singleton<ICutListAgent>(new NoModel()));
+        builder.Services.Replace(ServiceDescriptor.Singleton<IVideoRenderer>(new NoModel()));
         replace?.Invoke(builder.Services);
         var host = builder.Build();
         await host.StartAsync();
@@ -60,7 +63,7 @@ internal sealed class EngineTestHost : IDisposable
         (await StartAsync(replace)).Services.GetRequiredService<IStoryForgeClient>();
 
     /// <summary>A model (or ComfyUI, or ffmpeg) that is not there: every stage that asks it fails with a plain reason.</summary>
-    private sealed class NoModel : IResearchAgent, IScriptAgent, IStoryboardAgent, IPictureCheck, IPictureSource, IComfyUi, IAudioConverter
+    private sealed class NoModel : IResearchAgent, IScriptAgent, IStoryboardAgent, IPictureCheck, IPictureSource, IComfyUi, IAudioConverter, ICutListAgent, IVideoRenderer
     {
         private const string Reason = "No model in this test.";
 
@@ -98,6 +101,12 @@ internal sealed class EngineTestHost : IDisposable
             throw new StageFailedException(Reason);
 
         public Task ToWavAsync(string source, string target, CancellationToken cancellationToken) => throw new StageFailedException(Reason);
+
+        public Task<ScriptAnswer<CutListOutput>> WriteAsync(CutListRequest request, string? session, IReadOnlyList<string> problems,
+            IProgress<ActivityLine> activity, CancellationToken cancellationToken) => throw new StageFailedException(Reason);
+
+        public Task RenderAsync(RenderPlan plan, string root, string output, int fps, IProgress<string> progress, CancellationToken cancellationToken) =>
+            throw new StageFailedException(Reason);
     }
 
     /// <summary>

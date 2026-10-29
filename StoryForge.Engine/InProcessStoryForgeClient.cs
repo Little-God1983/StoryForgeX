@@ -33,6 +33,7 @@ internal sealed class InProcessStoryForgeClient(
     StillCells stills,
     TestRenders testRenders,
     Clips.ClipCells clips,
+    Assembly.AssemblyViews assembly,
     Reruns reruns,
     ProjectFolders folders) : IStoryForgeClient
 {
@@ -94,7 +95,7 @@ internal sealed class InProcessStoryForgeClient(
         runner.StartRunAsync(projectId, cancellationToken);
 
     public Task RegenerateAsync(Guid projectId, PipelineStage stage, CancellationToken cancellationToken = default) =>
-        runner.RegenerateAsync(projectId, stage, cancellationToken);
+        stage == PipelineStage.Assembly ? assembly.RegenerateAsync(projectId, cancellationToken) : runner.RegenerateAsync(projectId, stage, cancellationToken);
 
     public Task CancelAsync(Guid projectId, PipelineStage stage, CancellationToken cancellationToken = default) =>
         runner.CancelAsync(projectId, stage);
@@ -181,6 +182,12 @@ internal sealed class InProcessStoryForgeClient(
     public Task UnqueueClipAsync(Guid projectId, string shotKey, CancellationToken cancellationToken = default) => clips.UnqueueAsync(projectId, shotKey, cancellationToken);
 
     public Task MakeClipsAsync(Guid projectId, CancellationToken cancellationToken = default) => clips.MakeAsync(projectId, cancellationToken);
+
+    public Task<AssemblyView> GetAssemblyAsync(Guid projectId, int? version = null, CancellationToken cancellationToken = default) =>
+        assembly.GetAsync(projectId, version, cancellationToken);
+
+    public Task RenderCutListAsync(Guid projectId, CutList cutList, CancellationToken cancellationToken = default) =>
+        assembly.RenderAsync(projectId, cutList, cancellationToken);
 
     public Task<RerunPlan> GetRerunPlanAsync(Guid projectId, PipelineStage stage, string key, CancellationToken cancellationToken = default) =>
         reruns.PlanAsync(projectId, stage, key, cancellationToken);

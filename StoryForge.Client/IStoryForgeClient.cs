@@ -266,6 +266,21 @@ public interface IStoryForgeClient
     /// <exception cref="InvalidOperationException">Nothing is waiting, the stills are not approved, or the clips are being made.</exception>
     Task MakeClipsAsync(Guid projectId, CancellationToken cancellationToken = default);
 
+    /// <summary>The Assembly screen: the shots on the narration's timeline, a version's cut list and its video.</summary>
+    /// <param name="version">The version to show; null for the current one.</param>
+    /// <exception cref="KeyNotFoundException">No such project or version.</exception>
+    Task<AssemblyView> GetAssemblyAsync(Guid projectId, int? version = null, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Renders your cut list (Render again after editing cuts or the clip sound) as the next version,
+    /// without asking Claude. It waits as yours until it is rendered, so a failed render is tried
+    /// again with it. Regenerate asks Claude for a new cut list instead, and drops yours.
+    /// </summary>
+    /// <exception cref="KeyNotFoundException">No such project.</exception>
+    /// <exception cref="ArgumentException">A cut does not fit the clips (it says which and why), or the list does not match the shots.</exception>
+    /// <exception cref="InvalidOperationException">The clips are not all approved, or the Assembly is running.</exception>
+    Task RenderCutListAsync(Guid projectId, CutList cutList, CancellationToken cancellationToken = default);
+
     /// <summary>
     /// What Rerun pipeline from here on this cell would make again, as the question before it says:
     /// "This remakes S04's voice, its 4 shots and their 4 stills. Other segments stay as they are."

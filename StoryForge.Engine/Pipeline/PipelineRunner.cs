@@ -579,6 +579,12 @@ internal sealed partial class PipelineRunner(
         cell.ApprovedVersion = gated ? cell.ApprovedVersion : cell.CurrentVersion;
         cell.Error = null;
         cell.ActivityJson = StoredJson.Write(activity);
+        if (job.Stage == PipelineStage.Assembly)
+        {
+            // Your cut list is rendered: no longer waiting. Only now, so a failed render tries it again.
+            cell.Queued = false;
+            cell.QueuedPrompt = null;
+        }
 
         // The shots of a segment whose rerun waits for the storyboard are cut from its new voice now,
         // by a rerun's cut or a whole run alike: the rerun goes on from them (unless it was stopped meanwhile).
