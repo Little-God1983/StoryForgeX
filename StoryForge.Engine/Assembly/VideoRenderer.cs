@@ -66,12 +66,12 @@ internal sealed class FfmpegVideoRenderer(IProcessRunner processes, SettingsStor
         }
         finally
         {
-            File.Delete(graphFile);
-            if (!rendered)
+            // Failed or cancelled: what ffmpeg wrote so far is no video.
+            foreach (var leftover in rendered ? [graphFile] : new[] { graphFile, output })
             {
                 try
                 {
-                    File.Delete(output);   // failed or cancelled: what ffmpeg wrote so far is no video
+                    File.Delete(leftover);
                 }
                 catch (IOException)
                 {

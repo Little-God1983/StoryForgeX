@@ -21,6 +21,7 @@ public sealed partial class CutBlockViewModel(int index, AssemblyShot shot, Acti
 
     /// <summary>"| ", "◇ 0.4 s", "■ 0.6 s", with "· J 0.3" or "· L 0.2"; empty after the last shot.</summary>
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(AccessibleName))]
     private string _mark = "";
 
     /// <summary>The cut after it is yours: changed from the version shown.</summary>
@@ -62,6 +63,7 @@ public sealed partial class AssemblyViewModel(IStoryForgeClient client, Guid pro
     private AssemblyView? _view;
     private int? _wanted;
     private List<Cut> _draft = [];
+    private int? _draftFrom;
     private bool _syncing;
 
     public Guid ProjectId { get; } = projectId;
@@ -201,12 +203,15 @@ public sealed partial class AssemblyViewModel(IStoryForgeClient client, Guid pro
         AssemblyView view;
         try
         {
-            view = await client.GetAssemblyAsync(ProjectId, _wanted);
-        }
-        catch (KeyNotFoundException) when (_wanted is not null)
-        {
-            _wanted = null;   // that version is gone: the current one
-            view = await client.GetAssemblyAsync(ProjectId);
+            try
+            {
+                view = await client.GetAssemblyAsync(ProjectId, _wanted);
+            }
+            catch (KeyNotFoundException) when (_wanted is not null)
+            {
+                _wanted = null;   // that version is gone: the current one
+                view = await client.GetAssemblyAsync(ProjectId);
+            }
         }
         catch (Exception ex)
         {
@@ -260,7 +265,9 @@ public sealed partial class AssemblyViewModel(IStoryForgeClient client, Guid pro
         if (!keepEdits)
         {
             // Your cut list while it renders, or after its render failed (to edit again); else the version shown.
-            var list = view.State is StageState.Failed or StageState.Running && view.Waiting is { } waiting ? waiting : view.Video?.CutList;
+            var yours = view.State is StageState.Failed or StageState.Running && view.Waiting is not null;
+            var list = yours ? view.Waiting : view.Video?.CutList;
+            _draftFrom = yours ? view.WaitingBasedOn ?? view.Version : view.Version;
             _draft = [.. list?.Cuts ?? []];
             _syncing = true;
             ClipSound = Number(list?.ClipSoundDb ?? CutList.DefaultClipSoundDb);
@@ -451,7 +458,8 @@ public sealed partial class AssemblyViewModel(IStoryForgeClient client, Guid pro
         {
             return;
         }
-        await ActAsync(() => client.RenderCutListAsync(ProjectId, new CutList(_draft, sound, _view?.Video?.CutList.Music ?? []), Version));
+        var cuts = _draft.ToList();
+        await ActAsync(() => client.RenderCutListAsync(ProjectId, new CutList(cuts, sound, _view?.Video?.CutList.Music ?? []), _draftFrom));
     }
 
     private bool CanRenderAgain() => HasEdits && !IsRunning && ClipsApproved && EditBlocked is null;
@@ -484,12 +492,13 @@ public sealed partial class AssemblyViewModel(IStoryForgeClient client, Guid pro
     [RelayCommand(CanExecute = nameof(IsRunning))]
     private async Task CancelAsync()
     {
-        var (draft, sound, version) = (_draft, ClipSound, _view?.Version);
+        var (draft, sound, version, from) = (_draft, ClipSound, _view?.Version, _draftFrom);
         await ActAsync(() => client.CancelAsync(ProjectId, PipelineStage.Assembly));
         // Your edits stay on screen to render again, as long as the video they were made on is shown and they fit its shots.
         if (Version == version && _view is { } view && Fits(draft, view.Shots))
         {
             _draft = [.. draft];
+            _draftFrom = from;
             _syncing = true;
             ClipSound = sound;
             _syncing = false;

@@ -203,6 +203,18 @@ public sealed class AssemblyScreenTests
     }
 
     [Fact]
+    public async Task Render_again_after_a_failed_render_keeps_the_version_your_cut_list_was_edited_from()
+    {
+        var screen = await OpenAsync(Review(state: StageState.Failed, waiting: Claudes with { ClipSoundDb = -12 }, version: 3) with { WaitingBasedOn = 1 });
+        screen.Blocks[0].SelectCommand.Execute(null);
+
+        screen.LaterCommand.Execute(null);
+        await screen.RenderAgainCommand.ExecuteAsync(null);
+
+        Assert.Equal(1, Assert.Single(_client.RenderedCutLists).EditedFrom);
+    }
+
+    [Fact]
     public async Task Cancel_while_your_cut_list_renders_keeps_your_edits_on_screen()
     {
         var mine = Claudes with { ClipSoundDb = -12 };
