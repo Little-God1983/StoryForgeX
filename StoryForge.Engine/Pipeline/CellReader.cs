@@ -172,6 +172,42 @@ internal sealed class CellReader(IDbContextFactory<StoryForgeDbContext> contextF
         (await ReadSegmentsAsync(projectId, PipelineStage.Clips, c => c.CurrentVersion, cancellationToken))
             .ToDictionary(v => v.Key, v => StoredJson.Read<Clip>(v.OutputJson));
 
+    /// <summary>Every shot's clip as approved, with its version, by shot key: what the video is cut from.</summary>
+    public async Task<IReadOnlyDictionary<string, (Clip Clip, int Version)>> ApprovedClipsAsync(Guid projectId, CancellationToken cancellationToken) =>
+        (await ReadSegmentsAsync(projectId, PipelineStage.Clips, c => c.ApprovedVersion, cancellationToken))
+            .ToDictionary(v => v.Key, v => (StoredJson.Read<Clip>(v.OutputJson), v.Version));
+
+    /// <summary>The Assembly as it stands: its current version's cut list and video; null before the first.</summary>
+    public async Task<(AssembledVideo Video, int Version)?> CurrentAssemblyAsync(Guid projectId, CancellationToken cancellationToken)
+    {
+        await using var db = await contextFactory.CreateDbContextAsync(cancellationToken);
+        var version = await db.Cells.AsNoTracking()
+            .Where(c => c.ProjectId == projectId && c.Stage == PipelineStage.Assembly && c.Key == "")
+            .Select(c => c.CurrentVersion)
+            .FirstOrDefaultAsync(cancellationToken);
+        return version is { } v && await AssemblyVersionAsync(projectId, v, cancellationToken) is { } video ? (video, v) : null;
+    }
+
+    /// <summary>One version of the Assembly: its cut list and video; null when there is no such version.</summary>
+    public async Task<AssembledVideo?> AssemblyVersionAsync(Guid projectId, int version, CancellationToken cancellationToken)
+    {
+        await using var db = await contextFactory.CreateDbContextAsync(cancellationToken);
+        var entry = await db.CellVersions.AsNoTracking().FirstOrDefaultAsync(
+            v => v.ProjectId == projectId && v.Stage == PipelineStage.Assembly && v.Key == "" && v.Version == version, cancellationToken);
+        return entry is null ? null : StoredJson.Read<AssembledVideo>(entry.OutputJson);
+    }
+
+    /// <summary>Your cut list waiting to be rendered (Render again), with the version it was edited from; null for none.</summary>
+    public async Task<Assembly.WaitingCutList?> WaitingCutListAsync(Guid projectId, CancellationToken cancellationToken)
+    {
+        await using var db = await contextFactory.CreateDbContextAsync(cancellationToken);
+        var json = await db.Cells.AsNoTracking()
+            .Where(c => c.ProjectId == projectId && c.Stage == PipelineStage.Assembly && c.Key == "" && c.Queued)
+            .Select(c => c.QueuedPrompt)
+            .FirstOrDefaultAsync(cancellationToken);
+        return json is null ? null : StoredJson.Read<Assembly.WaitingCutList>(json);
+    }
+
     /// <summary>The clips waiting to be made again, by shot key, with your prompt (null: Claude writes it) and the video profile switched to (null: the project's).</summary>
     public async Task<IReadOnlyDictionary<string, (string? Prompt, ProfileRef? Profile)>> QueuedClipsAsync(Guid projectId, CancellationToken cancellationToken)
     {

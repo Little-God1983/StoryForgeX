@@ -121,6 +121,8 @@ public sealed class ProviderStatusBoardTests
         public Task QueueClipAsync(Guid projectId, string shotKey, string? prompt = null, ProfileRef? profile = null, CancellationToken cancellationToken = default) => _inner.QueueClipAsync(projectId, shotKey, prompt, profile, cancellationToken);
         public Task UnqueueClipAsync(Guid projectId, string shotKey, CancellationToken cancellationToken = default) => _inner.UnqueueClipAsync(projectId, shotKey, cancellationToken);
         public Task MakeClipsAsync(Guid projectId, CancellationToken cancellationToken = default) => _inner.MakeClipsAsync(projectId, cancellationToken);
+        public Task<AssemblyView> GetAssemblyAsync(Guid projectId, int? version = null, CancellationToken cancellationToken = default) => _inner.GetAssemblyAsync(projectId, version, cancellationToken);
+        public Task RenderCutListAsync(Guid projectId, CutList cutList, int? editedFrom = null, CancellationToken cancellationToken = default) => _inner.RenderCutListAsync(projectId, cutList, editedFrom, cancellationToken);
         public Task<RerunPlan> GetRerunPlanAsync(Guid projectId, PipelineStage stage, string key, CancellationToken cancellationToken = default) => _inner.GetRerunPlanAsync(projectId, stage, key, cancellationToken);
         public Task RerunFromHereAsync(Guid projectId, PipelineStage stage, string key, CancellationToken cancellationToken = default) => _inner.RerunFromHereAsync(projectId, stage, key, cancellationToken);
         public Task StopRerunAsync(Guid projectId, CancellationToken cancellationToken = default) => _inner.StopRerunAsync(projectId, cancellationToken);

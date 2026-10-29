@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Globalization;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using StoryForge.App.ViewModels.Assembly;
 using StoryForge.App.ViewModels.References;
 using StoryForge.App.ViewModels.Research;
 using StoryForge.App.ViewModels.Script;
@@ -22,8 +23,8 @@ public sealed record StageChip(PipelineStage Stage, string Name, StageState Stat
     /// <summary>"Research", "Research – review": the chip's text, as on the canvas.</summary>
     public string Label => State is StageState.NotStarted or StageState.Approved ? Name : $"{Name} – {StateText}";
 
-    /// <summary>Research opens the fact sheet; Script, Voice, Board and Stills the matrix; References its own screen; the others arrive with their issues.</summary>
-    public bool CanOpen => Stage is PipelineStage.Research or PipelineStage.Script or PipelineStage.Voice or PipelineStage.Storyboard or PipelineStage.References or PipelineStage.Stills;
+    /// <summary>Research opens the fact sheet; Script, Voice, Board, Stills and Clips the matrix; References and Assembly their own screens; Publish arrives with its issue.</summary>
+    public bool CanOpen => Stage != PipelineStage.Publish;
 
     // What screen readers announce.
     public override string ToString() => $"{Name}: {StateText}";
@@ -91,15 +92,22 @@ public sealed partial class ResultMatrixPageViewModel : PageViewModel
 
     public bool ShowsReferences => References is not null;
 
+    /// <summary>The Assembly screen (board 10), while it is on screen in place of the matrix.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowsAssembly), nameof(ShowsMatrix), nameof(ShowsStageScreen))]
+    private AssemblyViewModel? _assembly;
+
+    public bool ShowsAssembly => Assembly is not null;
+
     /// <summary>The whole script (board 2c), while it is on screen in place of the matrix.</summary>
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ShowsMatrix), nameof(ShowsStageScreen))]
     private bool _showsWholeScript;
 
     /// <summary>A stage's own screen is on, with "← Result matrix" to go back.</summary>
-    public bool ShowsStageScreen => ShowsFactSheet || ShowsReferences || ShowsWholeScript;
+    public bool ShowsStageScreen => ShowsFactSheet || ShowsReferences || ShowsAssembly || ShowsWholeScript;
 
-    public bool ShowsMatrix => HasProject && FactSheet is null && References is null && !ShowsWholeScript;
+    public bool ShowsMatrix => HasProject && FactSheet is null && References is null && Assembly is null && !ShowsWholeScript;
 
     /// <summary>The script of the open project: the matrix's rows and the panel of the selected segment.</summary>
     [ObservableProperty]
@@ -117,6 +125,7 @@ public sealed partial class ResultMatrixPageViewModel : PageViewModel
         Project = project;
         FactSheet = null;
         References = null;
+        Assembly = null;
         ShowsWholeScript = false;
         Breadcrumb = $"Projects / {project.Setup.Name}";
         Script?.Playback.Stop();   // the project before keeps no file open
@@ -165,7 +174,7 @@ public sealed partial class ResultMatrixPageViewModel : PageViewModel
         {
             await ShowFactSheetAsync();
         }
-        else if (chip.Stage is PipelineStage.Script or PipelineStage.Voice or PipelineStage.Storyboard or PipelineStage.Stills)
+        else if (chip.Stage is PipelineStage.Script or PipelineStage.Voice or PipelineStage.Storyboard or PipelineStage.Stills or PipelineStage.Clips)
         {
             ShowMatrix();
         }
@@ -173,14 +182,19 @@ public sealed partial class ResultMatrixPageViewModel : PageViewModel
         {
             await ShowReferencesAsync();
         }
+        else if (chip.Stage == PipelineStage.Assembly)
+        {
+            await ShowAssemblyAsync();
+        }
     }
 
     [RelayCommand]
     private void ShowMatrix()
     {
-        var away = FactSheet is not null || References is not null;
+        var away = FactSheet is not null || References is not null || Assembly is not null;
         FactSheet = null;
         References = null;
+        Assembly = null;
         ShowsWholeScript = false;
         if (Project is not null)
         {
@@ -204,6 +218,7 @@ public sealed partial class ResultMatrixPageViewModel : PageViewModel
         StopPlayback();
         FactSheet = null;
         References = null;
+        Assembly = null;
         ShowsWholeScript = true;
         Breadcrumb = $"Projects / {Project.Setup.Name} / Whole script";
     }
@@ -219,6 +234,7 @@ public sealed partial class ResultMatrixPageViewModel : PageViewModel
         }
         StopPlayback();
         References = null;
+        Assembly = null;
         ShowsWholeScript = false;
         var sheet = new FactSheetViewModel(_client, Project.Id, Project.Setup.ResearchSources, _openUrl);
         // "Approve and continue": back to the matrix, where the script is being written.
@@ -238,10 +254,29 @@ public sealed partial class ResultMatrixPageViewModel : PageViewModel
         }
         StopPlayback();
         FactSheet = null;
+        Assembly = null;
         ShowsWholeScript = false;
         var screen = new ReferencesViewModel(_client, Project.Id, _openUrl, _pickPicture, _confirm);
         References = screen;
         Breadcrumb = $"Projects / {Project.Setup.Name} / References";
+        await screen.LoadAsync();
+    }
+
+    /// <summary>The Assembly screen in place of the matrix (board 10).</summary>
+    [RelayCommand]
+    private async Task ShowAssemblyAsync()
+    {
+        if (Project is null)
+        {
+            return;
+        }
+        StopPlayback();
+        FactSheet = null;
+        References = null;
+        ShowsWholeScript = false;
+        var screen = new AssemblyViewModel(_client, Project.Id);
+        Assembly = screen;
+        Breadcrumb = $"Projects / {Project.Setup.Name} / Assembly";
         await screen.LoadAsync();
     }
 
@@ -277,6 +312,10 @@ public sealed partial class ResultMatrixPageViewModel : PageViewModel
         if (References is not null)
         {
             await References.ReceiveAsync(update);
+        }
+        if (Assembly is not null)
+        {
+            await Assembly.ReceiveAsync(update);
         }
     }
 

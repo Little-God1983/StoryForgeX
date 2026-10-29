@@ -263,6 +263,23 @@ internal sealed class Staleness(
                 stale[(PipelineStage.Clips, cell.Key)] = why;
             }
         }
+        // The video, from the approved clips and the voices it was cut to.
+        if (await cells.CurrentAssemblyAsync(projectId, cancellationToken) is { } assembly)
+        {
+            var video = assembly.Video;
+            var clipCells = Of(PipelineStage.Clips).ToDictionary(c => c.Key);
+            string Label(string key) => labels.GetValueOrDefault(key, key);
+            var why = ordered.FirstOrDefault(s => !video.Clips.ContainsKey(s.Key)) is { } added ? $"Shot {Label(added.Key)} is new since the video was cut."
+                : video.Clips.Keys.FirstOrDefault(k => !shots.ContainsKey(k)) is { } removed ? "A shot is gone since the video was cut."
+                : video.Clips.FirstOrDefault(c => clipCells.GetValueOrDefault(c.Key)?.ApprovedVersion is { } approved && approved != c.Value) is { Key: { } changed } ? $"{Label(changed)}'s clip changed since the video was cut."
+                : video.Clips.Keys.FirstOrDefault(k => stale.ContainsKey((PipelineStage.Clips, k))) is { } outdated ? $"{Label(outdated)}'s clip is out of date."
+                : video.Voices.FirstOrDefault(v => voices.GetValueOrDefault(v.Key) is { } now && now != v.Value) is { Key: { } spoken } ? $"{spoken}'s voice changed since the video was cut."
+                : null;
+            if (why is not null)
+            {
+                stale[(PipelineStage.Assembly, "")] = why;
+            }
+        }
         return new Result(stamp, stale, Counts(ordered, stills.ToDictionary(s => s.Key, s => s.Value.Still), sheet?.References ?? []));
 
         // What changed since, as far as the dates tell: the still before, the shot, an image in it, or else something it was made from.
