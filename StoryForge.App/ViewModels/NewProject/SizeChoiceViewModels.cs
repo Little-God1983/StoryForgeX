@@ -6,8 +6,8 @@ using StoryForge.Client;
 namespace StoryForge.App.ViewModels.NewProject;
 
 /// <summary>
-/// A dropdown entry whose text can change in place ("1344 × 768 · profile default" when another
-/// profile is picked). The entries stay the same objects: swapping the list made WPF drop the
+/// A dropdown entry whose text can change in place ("1376 × 768 · delivery size" when another
+/// delivery is picked). The entries stay the same objects: swapping the list made WPF drop the
 /// selection and show a blank field (seen on screen, 2026-10-07).
 /// </summary>
 public sealed partial class OptionItem(string label) : ObservableObject
@@ -29,14 +29,19 @@ public sealed partial class GenerationSizeViewModel(string scaledUp) : Observabl
     /// <summary>Models take sizes in multiples of 32: a 1920 × 1080 delivery is made at 1920 × 1088 and cropped.</summary>
     public const int Step = 32;
 
-    private GenerationSize _delivery = new("16:9", 1920, 1080);
-    private GenerationSize _default = RoundUp(new("16:9", 1920, 1080));
+    /// <summary>Until the page hands over its delivery.</summary>
+    private static readonly GenerationSize FullHd = new("16:9", 1920, 1080);
+
+    private GenerationSize _delivery = FullHd;
+
+    /// <summary>The delivery rounded up to <see cref="Step"/>: the size picked when "Custom…" is not.</summary>
+    private GenerationSize Default => RoundUp(_delivery);
 
     public const int DefaultIndex = 0;
     public const int CustomIndex = 1;
 
     /// <summary>The two dropdown entries: "1920 × 1088 · delivery size" and "Custom…".</summary>
-    public IReadOnlyList<OptionItem> Options { get; } = [new(DefaultLabel(RoundUp(new("16:9", 1920, 1080)))), new("Custom…")];
+    public IReadOnlyList<OptionItem> Options { get; } = [new(DefaultLabel(RoundUp(FullHd))), new("Custom…")];
 
     private static string DefaultLabel(GenerationSize size) => $"{size.Width} × {size.Height} · delivery size";
 
@@ -65,26 +70,32 @@ public sealed partial class GenerationSizeViewModel(string scaledUp) : Observabl
 
     [ObservableProperty]
     [NotifyDataErrorInfo]
+    [NotifyPropertyChangedFor(nameof(Value), nameof(Warning))]
     [CustomValidation(typeof(GenerationSizeViewModel), nameof(ValidatePixels))]
     private string _customWidth = "";
 
     [ObservableProperty]
     [NotifyDataErrorInfo]
+    [NotifyPropertyChangedFor(nameof(Value), nameof(Warning))]
     [CustomValidation(typeof(GenerationSizeViewModel), nameof(ValidatePixels))]
     private string _customHeight = "";
 
     /// <summary>The size the project will use; null while a custom size is not valid or not in the video's shape.</summary>
-    public GenerationSize? Value => Problem is null ? IsCustom ? Custom() : _default : null;
+    public GenerationSize? Value => Problem is null ? IsCustom ? Custom() : Default : null;
 
     /// <summary>Why <see cref="Value"/> is null, e.g. "a size that fits 9:16"; null when it is not.</summary>
     public string? Problem => !IsCustom ? null
         : Custom() is not { } custom ? "a valid size"
-        : !FitsAspect(custom) ? $"a size that fits {_default.Aspect}"
+        : !FitsAspect(custom) ? $"a size that fits {_delivery.Aspect}"
+        : custom.Width % Step != 0 || custom.Height % Step != 0 ? $"a size in multiples of {Step}{Example(RoundUp(custom))}"
         : null;
+
+    /// <summary>" (e.g. 1376 × 768)": the rounded size, when it still has the video's shape.</summary>
+    private static string Example(GenerationSize rounded) => FitsAspect(rounded) ? $" (e.g. {rounded.Width} × {rounded.Height})" : "";
 
     private GenerationSize? Custom() =>
         NumberText.Parse(CustomWidth) is { } w and >= 1 and <= 16384 && NumberText.Parse(CustomHeight) is { } h and >= 1 and <= 16384
-            ? new GenerationSize(_default.Aspect, w, h)
+            ? new GenerationSize(_delivery.Aspect, w, h)
             : null;
 
     /// <summary>Landscape for 16:9, portrait for 9:16, square for 1:1. Models' sizes are not exact ratios (1344 × 768).</summary>
@@ -100,24 +111,28 @@ public sealed partial class GenerationSizeViewModel(string scaledUp) : Observabl
         delivery with { Width = (delivery.Width + Step - 1) / Step * Step, Height = (delivery.Height + Step - 1) / Step * Step };
 
     /// <summary>
-    /// Takes the delivery's size. A custom size stays for another delivery of the same aspect, and
-    /// is dropped for another aspect.
+    /// Takes the delivery's size. A custom size in use stays for another delivery of the same aspect;
+    /// it is dropped for another aspect, and when "Custom…" is not picked.
     /// </summary>
     public void UseDelivery(GenerationSize delivery)
     {
-        var aspect = _default.Aspect;
+        var before = Default;
         _delivery = delivery;
-        _default = RoundUp(delivery);
-        if (delivery.Aspect != aspect)
+        if (delivery.Aspect != before.Aspect || !IsCustom)
         {
-            // A custom size typed for another shape; the next "Custom…" starts from the new default.
+            // A custom size typed for another shape, or one not in use; the next "Custom…" starts from the new default.
             CustomWidth = "";
             CustomHeight = "";
             SelectedIndex = DefaultIndex;
         }
-        Options[DefaultIndex].Label = DefaultLabel(_default);
-        OnPropertyChanged(nameof(Value));
-        OnPropertyChanged(nameof(Warning));
+        else if (Custom() == before)
+        {
+            // Filled in and left as it was: nothing typed to keep.
+            CustomWidth = NumberText.Format(Default.Width);
+            CustomHeight = NumberText.Format(Default.Height);
+        }
+        Options[DefaultIndex].Label = DefaultLabel(Default);
+        RaiseValue();
     }
 
     private void OnSelectedIndexChanged(int value)
@@ -125,22 +140,15 @@ public sealed partial class GenerationSizeViewModel(string scaledUp) : Observabl
         // A custom size starts from the default, so only the number that differs is typed.
         if (value == CustomIndex && CustomWidth.Length == 0 && CustomHeight.Length == 0)
         {
-            CustomWidth = NumberText.Format(_default.Width);
-            CustomHeight = NumberText.Format(_default.Height);
+            CustomWidth = NumberText.Format(Default.Width);
+            CustomHeight = NumberText.Format(Default.Height);
         }
         // The custom fields only count while "Custom…" is picked.
         ValidateAllProperties();
-        OnPropertyChanged(nameof(Value));
-        OnPropertyChanged(nameof(Warning));
+        RaiseValue();
     }
 
-    partial void OnCustomWidthChanged(string value)
-    {
-        OnPropertyChanged(nameof(Value));
-        OnPropertyChanged(nameof(Warning));
-    }
-
-    partial void OnCustomHeightChanged(string value)
+    private void RaiseValue()
     {
         OnPropertyChanged(nameof(Value));
         OnPropertyChanged(nameof(Warning));

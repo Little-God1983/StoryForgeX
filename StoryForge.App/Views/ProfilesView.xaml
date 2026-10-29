@@ -309,6 +309,9 @@
                       </DataTemplate>
                     </ItemsControl.ItemTemplate>
                   </ItemsControl>
+                  <TextBlock Text="Test renders at the 16:9 size, or the first one. Projects make their stills at the delivery size."
+                             FontSize="12" Foreground="{StaticResource TextMutedBrush}" TextWrapping="Wrap"
+                             Visibility="{Binding Shown.HasSizes, Converter={StaticResource Visible}}" />
                 </StackPanel>
               </Border>
 

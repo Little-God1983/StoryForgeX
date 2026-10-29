@@ -110,13 +110,70 @@ public sealed class NewProjectPageTests
         var page = await ShownPage();
         page.ClipSize.SelectedIndex = GenerationSizeViewModel.CustomIndex;
         page.ClipSize.CustomWidth = "1600";
-        page.ClipSize.CustomHeight = "900";
+        page.ClipSize.CustomHeight = "896";
 
         page.SelectedDelivery = page.DeliveryChoices[0];
 
         Assert.Equal(new GenerationSize("16:9", 1376, 768), page.StillSize.Value);   // 1366 rounded up to 32
         Assert.Equal("1376 × 768 · delivery size", page.StillSize.Options[0].Label);
-        Assert.Equal(new GenerationSize("16:9", 1600, 900), page.ClipSize.Value);
+        Assert.Equal(new GenerationSize("16:9", 1600, 896), page.ClipSize.Value);
+    }
+
+    [Fact]
+    public async Task Custom_left_as_it_was_filled_in_follows_another_delivery()
+    {
+        AddOneOfEach();
+        var page = await ShownPage();
+        page.ClipSize.SelectedIndex = GenerationSizeViewModel.CustomIndex;   // 1920 × 1088, not touched
+
+        page.SelectedDelivery = page.DeliveryChoices[2];   // 2560 × 1440
+
+        Assert.Equal(new GenerationSize("16:9", 2560, 1440), page.ClipSize.Value);
+        Assert.Equal("2560", page.ClipSize.CustomWidth);
+    }
+
+    [Fact]
+    public async Task A_custom_size_off_the_32_pixel_grid_keeps_start_off()
+    {
+        AddOneOfEach();
+        var page = await ShownPage();
+        FillBrief(page);
+
+        page.ClipSize.SelectedIndex = GenerationSizeViewModel.CustomIndex;
+        page.ClipSize.CustomWidth = "1366";
+        page.ClipSize.CustomHeight = "768";
+
+        Assert.Null(page.ClipSize.Value);
+        Assert.False(page.StartCommand.CanExecute(null));
+        Assert.Contains("multiples of 32 (e.g. 1376 × 768)", page.MissingText);
+    }
+
+    [Fact]
+    public async Task The_size_suggested_for_the_32_pixel_grid_has_the_videos_shape()
+    {
+        AddOneOfEach();
+        var page = await ShownPage();
+
+        page.ClipSize.SelectedIndex = GenerationSizeViewModel.CustomIndex;
+        page.ClipSize.CustomWidth = "1000";
+        page.ClipSize.CustomHeight = "999";   // rounded up: 1024 × 1024, which is no 16:9 size
+
+        Assert.Equal("a size in multiples of 32", page.ClipSize.Problem);
+    }
+
+    [Fact]
+    public async Task Custom_picked_again_after_another_delivery_starts_from_the_new_size()
+    {
+        AddOneOfEach();
+        var page = await ShownPage();
+        page.ClipSize.SelectedIndex = GenerationSizeViewModel.CustomIndex;   // fills in 1920 × 1088
+        page.ClipSize.SelectedIndex = GenerationSizeViewModel.DefaultIndex;
+
+        page.SelectedDelivery = page.DeliveryChoices[2];   // 2560 × 1440
+        page.ClipSize.SelectedIndex = GenerationSizeViewModel.CustomIndex;
+
+        Assert.Equal(new GenerationSize("16:9", 2560, 1440), page.ClipSize.Value);
+        Assert.Null(page.ClipSize.Warning);
     }
 
     [Fact]
@@ -134,7 +191,8 @@ public sealed class NewProjectPageTests
         page.SelectedDelivery = page.DeliveryChoices[0];   // 1366 × 768: still smaller
         Assert.NotNull(page.ClipSize.Warning);
         page.ClipSize.CustomWidth = "1920";
-        page.ClipSize.CustomHeight = "1080";
+        page.ClipSize.CustomHeight = "1088";
+        Assert.NotNull(page.ClipSize.Value);
         Assert.Null(page.ClipSize.Warning);
         Assert.True(page.StillSize.Warning is null);
     }
@@ -290,18 +348,18 @@ public sealed class NewProjectPageTests
     [Fact]
     public async Task Start_waits_for_a_newly_picked_profiles_defaults()
     {
-        // Otherwise the new profile would be saved with the old profile's size.
+        // Otherwise the new profile would be saved with the old profile's clip length.
         AddOneOfEach();
-        _client.AddProfile(ProfileKind.Image, "Photoreal", Empty with { Sizes = [new("16:9", 1920, 1080)] });
+        _client.AddProfile(ProfileKind.Video, "Wan 2.2", Empty with { MaxClipSeconds = 6 });
         var page = await ShownPage();
         FillBrief(page);
         var loading = new TaskCompletionSource();
         _client.ProfileLoadGate = loading.Task;
 
-        page.ImageSlot.Selected = page.ImageSlot.Choices.Single(p => p.Name == "Photoreal");
+        page.VideoSlot.Selected = page.VideoSlot.Choices.Single(p => p.Name == "Wan 2.2");
 
         Assert.False(page.StartCommand.CanExecute(null));
-        Assert.Contains("Photoreal", page.MissingText);
+        Assert.Contains("Wan 2.2", page.MissingText);
         _client.ProfileLoadGate = null;
         loading.SetResult();
         await page.WhenSettled();
@@ -312,6 +370,22 @@ public sealed class NewProjectPageTests
     public async Task Start_stays_off_while_a_picked_profiles_defaults_failed_to_load()
     {
         AddOneOfEach();
+        _client.AddProfile(ProfileKind.Video, "Wan 2.2", Empty with { MaxClipSeconds = 6 });
+        var page = await ShownPage();
+        FillBrief(page);
+        _client.ProfileLoadFailure = new InvalidOperationException("database is locked");
+
+        page.VideoSlot.Selected = page.VideoSlot.Choices.Single(p => p.Name == "Wan 2.2");
+        await page.WhenSettled();
+
+        Assert.False(page.StartCommand.CanExecute(null));
+    }
+
+    [Fact]
+    public async Task An_image_profile_that_cannot_be_read_does_not_hold_up_start()
+    {
+        // Nothing from its content goes into the setup: the sizes follow the delivery.
+        AddOneOfEach();
         _client.AddProfile(ProfileKind.Image, "Photoreal", Empty);
         var page = await ShownPage();
         FillBrief(page);
@@ -320,7 +394,8 @@ public sealed class NewProjectPageTests
         page.ImageSlot.Selected = page.ImageSlot.Choices.Single(p => p.Name == "Photoreal");
         await page.WhenSettled();
 
-        Assert.False(page.StartCommand.CanExecute(null));
+        Assert.True(page.StartCommand.CanExecute(null));
+        Assert.Null(page.Error);
     }
 
     [Fact]
