@@ -18,11 +18,18 @@ public sealed class ProjectTests : IDisposable
             if (existing is null)
             {
                 existing = await client.CreateProfileAsync(kind, $"{kind} default");
-                if (kind == ProfileKind.Image)
+                // The ComfyUI stages' profiles name a workflow and say where their values go, or Start refuses them.
+                (string Workflow, WorkflowInput[] Inputs)? runnable = kind switch
                 {
-                    // One that can make reference images: it says where the prompt and the picture go.
+                    ProfileKind.Voice => ("voice.json", [new("text", "#11.text")]),
+                    ProfileKind.Image => ("image.json", [new("prompt", "#6.text"), new("image", "#1.image")]),
+                    ProfileKind.Video => ("video.json", [new("prompt", "#264.prompt"), new("image", "#300.image"), new("frames", "#264.length")]),
+                    _ => null,
+                };
+                if (runnable is { } r)
+                {
                     var starter = await client.GetProfileVersionAsync(existing.Id);
-                    var saved = await client.SaveProfileVersionAsync(existing.Id, starter.Content with { Inputs = [new("prompt", "#6.text"), new("image", "#1.image")] });
+                    var saved = await client.SaveProfileVersionAsync(existing.Id, starter.Content with { WorkflowTemplate = r.Workflow, Inputs = r.Inputs });
                     return new ProfileRef(existing.Id, saved.Version);
                 }
             }
@@ -289,7 +296,7 @@ public sealed class ProjectTests : IDisposable
         var s = await ValidSetup(client);
         var plain = await client.CreateProfileAsync(ProfileKind.Image, "Painted dark fantasy");
         var starter = await client.GetProfileVersionAsync(plain.Id);
-        var saved = await client.SaveProfileVersionAsync(plain.Id, starter.Content with { Inputs = [new("prompt", "#6.text")] });
+        var saved = await client.SaveProfileVersionAsync(plain.Id, starter.Content with { WorkflowTemplate = "image.json", Inputs = [new("prompt", "#6.text")] });
         var textOnly = s with { References = s.References with { Profile = new ProfileRef(plain.Id, saved.Version) } };
 
         var refused = await Assert.ThrowsAsync<ArgumentException>(() => client.CreateProjectAsync(textOnly));
@@ -308,7 +315,7 @@ public sealed class ProjectTests : IDisposable
         var s = await ValidSetup(client);
         var plain = await client.CreateProfileAsync(ProfileKind.Image, "Painted dark fantasy");
         var starter = await client.GetProfileVersionAsync(plain.Id);
-        var saved = await client.SaveProfileVersionAsync(plain.Id, starter.Content with { Inputs = [new("prompt", "#6.text")] });
+        var saved = await client.SaveProfileVersionAsync(plain.Id, starter.Content with { WorkflowTemplate = "image.json", Inputs = [new("prompt", "#6.text")] });
         var plainStills = s with { Stills = s.Stills with { Profile = new ProfileRef(plain.Id, saved.Version) } };
 
         var refused = await Assert.ThrowsAsync<ArgumentException>(() => client.CreateProjectAsync(plainStills));
@@ -318,10 +325,157 @@ public sealed class ProjectTests : IDisposable
         // Stills from text only take no picture: a text-to-image workflow is right for them.
         await client.CreateProjectAsync(plainStills with { References = plainStills.References with { Consistency = Consistency.TextToImageOnly } });
         // The prompt has to go somewhere whatever the stills are made from.
-        var silent = await client.SaveProfileVersionAsync(plain.Id, starter.Content with { Inputs = [new("image", "#1.image")] });
+        var silent = await client.SaveProfileVersionAsync(plain.Id, starter.Content with { WorkflowTemplate = "image.json", Inputs = [new("image", "#1.image")] });
         refused = await Assert.ThrowsAsync<ArgumentException>(() =>
             client.CreateProjectAsync(s with { Stills = s.Stills with { Profile = new ProfileRef(plain.Id, silent.Version) } }));
         Assert.Contains("does not say where the prompt goes", refused.Message);
+    }
+
+    /// <summary>A new version of <paramref name="profile"/>: its content changed by <paramref name="change"/>.</summary>
+    private static async Task<ProfileRef> ChangedAsync(IStoryForgeClient client, ProfileRef profile, Func<ProfileContent, ProfileContent> change)
+    {
+        var current = await client.GetProfileVersionAsync(profile.ProfileId, profile.Version);
+        var saved = await client.SaveProfileVersionAsync(profile.ProfileId, change(current.Content));
+        return new ProfileRef(profile.ProfileId, saved.Version);
+    }
+
+    [Fact]
+    public async Task A_video_profile_that_cannot_make_clips_is_refused_at_the_start()
+    {
+        // 2026-10-30: a video profile saved before Clips existed (no workflow, nothing mapped) let a
+        // run through research, script, voice, storyboard, references and stills, and failed at Clips.
+        var client = await _engine.StartClientAsync();
+        var s = await ValidSetup(client);
+        var name = (await client.GetProfilesAsync()).Single(p => p.Id == s.Clips.Profile.ProfileId).Name;
+
+        var noWorkflow = await ChangedAsync(client, s.Clips.Profile, c => c with { WorkflowTemplate = "" });
+        var refused = await Assert.ThrowsAsync<ArgumentException>(() =>
+            client.CreateProjectAsync(s with { Clips = s.Clips with { Profile = noWorkflow } }));
+        Assert.Equal($"\"{name}\" cannot make clips: it has no workflow. Pick one in Profiles → Video, or pick another video profile.", refused.Message);
+
+        foreach (var key in new[] { "prompt", "image", "frames" })
+        {
+            var unmapped = await ChangedAsync(client, s.Clips.Profile, c => c with { Inputs = [.. c.Inputs.Where(i => i.Key != key)] });
+            refused = await Assert.ThrowsAsync<ArgumentException>(() =>
+                client.CreateProjectAsync(s with { Clips = s.Clips with { Profile = unmapped } }));
+            Assert.Equal($"\"{name}\" cannot make clips: it does not say where '{key}' goes. Map it in the profile, or pick another video profile.", refused.Message);
+        }
+        Assert.Empty(await client.GetRecentProjectsAsync());
+    }
+
+    [Fact]
+    public async Task A_voice_profile_that_cannot_speak_is_refused_at_the_start()
+    {
+        var client = await _engine.StartClientAsync();
+        var s = await ValidSetup(client);
+        var name = (await client.GetProfilesAsync()).Single(p => p.Id == s.Voice.Profile.ProfileId).Name;
+
+        var noWorkflow = await ChangedAsync(client, s.Voice.Profile, c => c with { WorkflowTemplate = "  " });
+        var refused = await Assert.ThrowsAsync<ArgumentException>(() =>
+            client.CreateProjectAsync(s with { Voice = s.Voice with { Profile = noWorkflow } }));
+        Assert.Equal($"\"{name}\" cannot speak the script: it has no workflow. Pick one in Profiles → Voice, or pick another voice profile.", refused.Message);
+
+        var silent = await ChangedAsync(client, s.Voice.Profile, c => c with { Inputs = [.. c.Inputs.Where(i => i.Key != "text")] });
+        refused = await Assert.ThrowsAsync<ArgumentException>(() =>
+            client.CreateProjectAsync(s with { Voice = s.Voice with { Profile = silent } }));
+        Assert.Equal($"\"{name}\" cannot speak the script: it does not say where the text goes. Map 'text' in the profile, or pick another voice profile.", refused.Message);
+    }
+
+    [Fact]
+    public async Task A_still_or_reference_profile_without_a_workflow_is_refused_at_the_start()
+    {
+        var client = await _engine.StartClientAsync();
+        var s = await ValidSetup(client);
+        var name = (await client.GetProfilesAsync()).Single(p => p.Id == s.Stills.Profile.ProfileId).Name;
+        var noWorkflow = await ChangedAsync(client, s.Stills.Profile, c => c with { WorkflowTemplate = "" });
+
+        var refused = await Assert.ThrowsAsync<ArgumentException>(() =>
+            client.CreateProjectAsync(s with { Stills = s.Stills with { Profile = noWorkflow } }));
+        Assert.Equal($"\"{name}\" cannot make stills: it has no workflow. Pick one in Profiles → Image, or pick another still profile.", refused.Message);
+
+        refused = await Assert.ThrowsAsync<ArgumentException>(() =>
+            client.CreateProjectAsync(s with { References = s.References with { Profile = noWorkflow } }));
+        Assert.Equal($"\"{name}\" cannot make reference images: it has no workflow. Pick one in Profiles → Image, or pick another reference profile.", refused.Message);
+        // Without references the reference profile is never used.
+        await client.CreateProjectAsync(s with { References = s.References with { Profile = noWorkflow, Consistency = Consistency.TextToImageOnly } });
+    }
+
+    /// <summary>The stage's cell as a run that failed leaves it.</summary>
+    private async Task FailAsync(Guid projectId, PipelineStage stage)
+    {
+        await using var db = await _engine.DbAsync();
+        db.Cells.Add(new Data.CellEntry { ProjectId = projectId, Stage = stage, State = StageState.Failed, Error = "The video profile has no workflow." });
+        await db.SaveChangesAsync();
+    }
+
+    [Fact]
+    public async Task A_failed_stage_takes_the_newer_version_of_its_own_profile()
+    {
+        // The setup is fixed once started; the one way out of a profile fixed after the start.
+        var client = await _engine.StartClientAsync();
+        var s = await ValidSetup(client);
+        var project = await client.CreateProjectAsync(s);
+        await FailAsync(project.Id, PipelineStage.Clips);
+        var v2 = await ChangedAsync(client, s.Clips.Profile, c => c with { PromptTemplate = "{shot.motion}, slowly" });
+
+        var moved = await client.UseNewerProfileAsync(project.Id, PipelineStage.Clips);
+
+        Assert.Equal(v2, moved.Setup.Clips.Profile);
+        Assert.Equal(v2, (await client.GetProjectAsync(project.Id)).Setup.Clips.Profile);
+        // Nothing else of the setup moves.
+        AssertSameSetup(s with { Clips = s.Clips with { Profile = v2 } }, moved.Setup);
+    }
+
+    [Fact]
+    public async Task Only_a_failed_stage_with_a_newer_runnable_version_moves()
+    {
+        var client = await _engine.StartClientAsync();
+        var s = await ValidSetup(client);
+        var project = await client.CreateProjectAsync(s);
+
+        // Not failed: the stage keeps what it started with.
+        await ChangedAsync(client, s.Voice.Profile, c => c with { PromptTemplate = "newer" });
+        await Assert.ThrowsAsync<InvalidOperationException>(() => client.UseNewerProfileAsync(project.Id, PipelineStage.Voice));
+
+        // Failed, but no newer version.
+        await FailAsync(project.Id, PipelineStage.Clips);
+        await Assert.ThrowsAsync<InvalidOperationException>(() => client.UseNewerProfileAsync(project.Id, PipelineStage.Clips));
+
+        // A newer version that cannot run either is refused like at the start.
+        await ChangedAsync(client, s.Clips.Profile, c => c with { WorkflowTemplate = "" });
+        var refused = await Assert.ThrowsAsync<ArgumentException>(() => client.UseNewerProfileAsync(project.Id, PipelineStage.Clips));
+        Assert.Contains("it has no workflow", refused.Message);
+        Assert.Equal(s.Clips.Profile, (await client.GetProjectAsync(project.Id)).Setup.Clips.Profile);
+
+        // A stage without a ComfyUI profile has nothing to take.
+        await FailAsync(project.Id, PipelineStage.Research);
+        await Assert.ThrowsAsync<ArgumentException>(() => client.UseNewerProfileAsync(project.Id, PipelineStage.Research));
+        await Assert.ThrowsAsync<KeyNotFoundException>(() => client.UseNewerProfileAsync(Guid.NewGuid(), PipelineStage.Clips));
+    }
+
+    [Theory]
+    [InlineData(PipelineStage.Voice)]
+    [InlineData(PipelineStage.References)]
+    [InlineData(PipelineStage.Stills)]
+    public async Task Each_ComfyUI_stage_moves_only_its_own_profile(PipelineStage stage)
+    {
+        var client = await _engine.StartClientAsync();
+        var s = await ValidSetup(client);
+        var project = await client.CreateProjectAsync(s);
+        await FailAsync(project.Id, stage);
+        var own = stage == PipelineStage.Voice ? s.Voice.Profile : stage == PipelineStage.References ? s.References.Profile : s.Stills.Profile;
+        var v2 = await ChangedAsync(client, own, c => c with { PromptTemplate = "newer" });
+
+        var moved = (await client.UseNewerProfileAsync(project.Id, stage)).Setup;
+
+        // References and stills share the image profile here: only the failed stage's slot moves.
+        var expected = stage switch
+        {
+            PipelineStage.Voice => s with { Voice = s.Voice with { Profile = v2 } },
+            PipelineStage.References => s with { References = s.References with { Profile = v2 } },
+            _ => s with { Stills = s.Stills with { Profile = v2 } },
+        };
+        AssertSameSetup(expected, moved);
     }
 
     [Fact]

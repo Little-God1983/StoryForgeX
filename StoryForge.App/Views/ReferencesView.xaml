@@ -217,6 +217,10 @@
         <DockPanel>
           <Button DockPanel.Dock="Right" Content="Retry" Style="{StaticResource PrimaryButtonStyle}" MinHeight="36" FontSize="13"
                   Background="{StaticResource ErrorTextBrush}" Command="{Binding RetryCommand}" AutomationProperties.Name="Retry the references" />
+          <!-- #75: the newer version of the profile the stage started with. -->
+          <Button DockPanel.Dock="Right" Content="{Binding NewerProfile}" Style="{StaticResource SecondaryButtonStyle}" MinHeight="36" FontSize="13" Margin="0,0,8,0"
+                  Command="{Binding UseNewerProfileCommand}" AutomationProperties.Name="{Binding NewerProfile}"
+                  Visibility="{Binding NewerProfile, Converter={views:NullToCollapsedConverter}}" />
           <StackPanel VerticalAlignment="Center" Margin="0,0,14,0">
             <TextBlock Text="References failed" FontSize="14" FontWeight="SemiBold" Foreground="{StaticResource PillErrorTextBrush}" />
             <TextBlock Text="{Binding Error}" FontSize="13" Foreground="#E2C1BB" TextWrapping="Wrap" Margin="0,2,0,0" AutomationProperties.AutomationId="ReferencesError" />

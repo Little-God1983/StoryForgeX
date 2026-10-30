@@ -240,7 +240,8 @@ public sealed partial class ScriptMatrixViewModel(
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsVoiceRunning), nameof(IsVoiceReview), nameof(IsVoiceApproved), nameof(IsVoiceFailed), nameof(CanPlanBoard))]
-    [NotifyCanExecuteChangedFor(nameof(ApproveRemainingVoiceCommand), nameof(RegenerateVoiceCommand), nameof(CancelVoiceCommand), nameof(ApproveSegmentCommand), nameof(RegenerateSegmentCommand), nameof(RerunFromHereCommand))]
+    [NotifyCanExecuteChangedFor(nameof(ApproveRemainingVoiceCommand), nameof(RegenerateVoiceCommand), nameof(CancelVoiceCommand), nameof(ApproveSegmentCommand), nameof(RegenerateSegmentCommand), nameof(RerunFromHereCommand),
+        nameof(UseNewerVoiceProfileCommand))]
     private StageState _voiceState;
 
     public bool IsVoiceRunning => VoiceState == StageState.Running;
@@ -453,6 +454,7 @@ public sealed partial class ScriptMatrixViewModel(
                 return;   // a newer load or a live update came in meanwhile; this view is old
             }
             Apply(view, voice, board, stills, clips);
+            await LoadNewerProfilesAsync();
         }
         catch (Exception ex)
         {
