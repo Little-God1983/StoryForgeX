@@ -87,6 +87,49 @@ public sealed class ProfilesPageTests
     }
 
     [Fact]
+    public async Task A_profile_from_before_a_stage_existed_shows_the_inputs_that_stage_fills()
+    {
+        // #75: "Slow cinematic push" was saved before Clips existed, with the image keys only; the
+        // Clips stage needs 'image' and 'frames', which the form had no row for.
+        _client.AddProfile(ProfileKind.Video, "Slow cinematic push", FakeStoryForgeClient.EmptyContent with
+        {
+            Provider = "ComfyUI",
+            Inputs = [new("prompt", ""), new("negative", ""), new("width", ""), new("height", ""), new("seed", ""), new("steps", "")],
+        });
+        var page = await LoadedPage();
+        await Open(page, "Slow cinematic push");
+        var editor = page.Editor!;
+
+        Assert.Equal(["prompt", "negative", "width", "height", "seed", "steps", "image", "frames", "fps"], editor.Draft.Inputs.Select(i => i.Key));
+        // Rows with nothing in them are no change to save.
+        Assert.Equal("v1 · saved", editor.StateText);
+        Assert.False(editor.SaveCommand.CanExecute(null));
+
+        editor.Draft.WorkflowTemplate = "Minimax H3 Image-to-Video (API).json";
+        editor.Draft.Inputs.Single(i => i.Key == "image").Node = "#300.image";
+        editor.Draft.Inputs.Single(i => i.Key == "frames").Node = "#264.length";
+        await editor.SaveCommand.ExecuteAsync(null);
+
+        var saved = (await _client.GetProfileVersionAsync(editor.Id)).Content;
+        Assert.Equal(("#300.image", "#264.length"), (saved.Inputs.Single(i => i.Key == "image").Node, saved.Inputs.Single(i => i.Key == "frames").Node));
+    }
+
+    [Fact]
+    public async Task An_older_version_shows_only_what_it_was_saved_with()
+    {
+        _client.AddProfile(ProfileKind.Video, "Slow cinematic push",
+            FakeStoryForgeClient.EmptyContent with { Inputs = [new("prompt", "#264.prompt")] },
+            FakeStoryForgeClient.EmptyContent with { Inputs = [new("prompt", "#264.prompt")] });
+        var page = await LoadedPage();
+        await Open(page, "Slow cinematic push");
+
+        page.Editor!.SelectedVersion = 1;
+        await page.Editor.Loading;
+
+        Assert.Equal(["prompt"], page.Editor.Shown.Inputs.Select(i => i.Key));
+    }
+
+    [Fact]
     public async Task Saving_stores_the_next_version_and_keeps_the_old_one_viewable()
     {
         _client.AddProfile(ProfileKind.Image, "Painted", Image());
