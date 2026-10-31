@@ -67,6 +67,7 @@ public sealed partial class ScriptMatrixViewModel
         {
             Debug.WriteLine($"Could not use {named}: {ex}");
             ActionError = $"Could not use {named}: {ex.Message}";
+            await LoadAsync();   // a move made elsewhere meanwhile takes its offer off the line
             return;
         }
         try

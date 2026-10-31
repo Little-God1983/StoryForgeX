@@ -339,6 +339,7 @@ public sealed partial class ReferencesViewModel(IStoryForgeClient client, Guid p
         // stage then will not start.
         if (!await ActAsync($"use {named}", () => client.UseNewerProfileAsync(ProjectId, PipelineStage.References)))
         {
+            await LoadAsync();   // a move made elsewhere meanwhile takes its offer off the line
             return;
         }
         try

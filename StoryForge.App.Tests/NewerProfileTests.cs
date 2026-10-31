@@ -81,6 +81,30 @@ public sealed class NewerProfileTests
         await main.PageShowing;
 
         Assert.Equal("Use Slow cinematic push v3", matrix.Script!.ClipsNewerProfile);
+
+        // Round 3: by way of Settings after saving, too.
+        main.SelectedNavItem = main.NavItems.Single(item => item.Title == "Profiles");
+        await main.PageShowing;
+        await _client.SaveProfileVersionAsync(project.Setup.Clips.Profile.ProfileId, FakeStoryForgeClient.EmptyContent with { Provider = "ComfyUI", PromptTemplate = "fixed again" });
+        main.SelectedNavItem = main.NavItems.Single(item => item.Title == "Settings");
+        main.SelectedNavItem = main.NavItems.Single(item => item.Page == matrix);
+        await main.PageShowing;
+        Assert.Equal("Use Slow cinematic push v4", matrix.Script!.ClipsNewerProfile);
+    }
+
+    /// <summary>Review of #75, round 3: a refused move (already moved elsewhere) reloads, so the
+    /// offer it refused does not stay on its button.</summary>
+    [Fact]
+    public async Task A_refused_move_reloads_so_a_gone_offer_goes()
+    {
+        var (page, project) = await OpenAsync(clips: StageState.Failed);
+        await _client.UseNewerProfileAsync(project.Id, PipelineStage.Clips);   // moved from another window
+        _client.UseNewerProfileFailure = new InvalidOperationException("The Clips profile has no version newer than 2.");
+
+        await page.Script!.UseNewerClipsProfileCommand.ExecuteAsync(null);
+
+        Assert.Equal("Could not use Slow cinematic push v2: The Clips profile has no version newer than 2.", page.Script.ActionError);
+        Assert.Null(page.Script.ClipsNewerProfile);
     }
 
     [Fact]
