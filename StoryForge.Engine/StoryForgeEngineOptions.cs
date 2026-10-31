@@ -17,6 +17,9 @@ public sealed class StoryForgeEngineOptions
     /// <summary>The research MCP server's exe; empty means the one next to the app.</summary>
     public string ResearchServerPath { get; set; } = "";
 
+    /// <summary>Closes DaVinci Resolve's Software Update windows and says how many (#71); the app passes one, as it needs UI Automation.</summary>
+    public Func<int>? CloseResolveUpdateDialogs { get; set; }
+
     internal string DatabasePath => Path.Combine(DataDirectory, "storyforge.db");
 
     internal string EffectiveResearchServerPath =>

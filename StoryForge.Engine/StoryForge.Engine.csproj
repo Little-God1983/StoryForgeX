@@ -25,4 +25,9 @@
     <InternalsVisibleTo Include="StoryForge.Engine.Tests" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- Send to Resolve (#71) runs it in Resolve's own Python, so it has to sit beside the app as a file. -->
+    <None Update="Resolve\send_to_resolve.py" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
 </Project>

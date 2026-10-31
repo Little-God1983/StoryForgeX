@@ -107,6 +107,9 @@ internal sealed class EngineTestHost : IDisposable
 
         public Task RenderAsync(RenderPlan plan, string root, string output, int fps, IProgress<string> progress, CancellationToken cancellationToken) =>
             throw new StageFailedException(Reason);
+
+        public Task WriteTimelineAsync(RenderPlan plan, string root, string output, int fps, string name, CancellationToken cancellationToken) =>
+            throw new StageFailedException(Reason);
     }
 
     /// <summary>

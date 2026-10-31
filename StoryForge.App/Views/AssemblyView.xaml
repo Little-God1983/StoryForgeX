@@ -171,6 +171,37 @@
               <TextBox Text="{Binding ClipSound, UpdateSourceTrigger=PropertyChanged}" FontFamily="{StaticResource MonoFont}" AutomationProperties.Name="Clip sound in dB" />
             </DockPanel>
             <TextBlock Text="Minimax's own sound, as a quiet bed under the voice. Changing it renders again." FontSize="12" Foreground="{StaticResource TextMutedBrush}" TextWrapping="Wrap" />
+
+            <!-- #71: the same cut as a timeline, and Send to Resolve. -->
+            <TextBlock Text="RESOLVE" Style="{StaticResource LabelStyle}" Margin="0,14,0,6" />
+            <TextBlock Text="This version has no timeline file. Render it again with &quot;Also export timeline&quot; on in Settings → FFmpeg."
+                       FontSize="12" Foreground="{StaticResource TextMutedBrush}" TextWrapping="Wrap"
+                       Visibility="{Binding HasTimeline, Converter={views:FalseToVisibleConverter}}" />
+            <StackPanel Visibility="{Binding HasTimeline, Converter={StaticResource Visible}}">
+              <DockPanel Margin="0,0,0,6">
+                <Button DockPanel.Dock="Right" Content="Open folder" Style="{StaticResource SmallButtonStyle}" Margin="6,0,0,0"
+                        Command="{Binding OpenTimelineFolderCommand}" AutomationProperties.Name="Open the timeline's folder" />
+                <TextBlock Text="{Binding TimelinePath, Converter={views:FileNameConverter}}" ToolTip="{Binding TimelinePath}" FontSize="12"
+                           FontFamily="{StaticResource MonoFont}" Foreground="{StaticResource TextSoftBrush}" TextTrimming="CharacterEllipsis"
+                           VerticalAlignment="Center" AutomationProperties.AutomationId="TimelineFile" />
+              </DockPanel>
+              <TextBlock Text="Project name in Resolve" FontSize="12" Foreground="{StaticResource TextSoftBrush}" Margin="0,0,0,3" />
+              <TextBox Text="{Binding ResolveProjectName, UpdateSourceTrigger=PropertyChanged}" AutomationProperties.Name="Resolve project name" Margin="0,0,0,6" />
+              <Button Content="Send to Resolve" Style="{StaticResource SecondaryButtonStyle}" MinHeight="34" HorizontalAlignment="Stretch"
+                      Command="{Binding SendToResolveCommand}" AutomationProperties.Name="Send to Resolve" />
+              <TextBlock Text="{Binding ResolveText}" FontSize="12" TextWrapping="Wrap" Margin="0,6,0,0" AutomationProperties.AutomationId="ResolveText">
+                <TextBlock.Style>
+                  <Style TargetType="TextBlock">
+                    <Setter Property="Foreground" Value="{StaticResource TextSoftBrush}" />
+                    <Style.Triggers>
+                      <DataTrigger Binding="{Binding ResolveFailed}" Value="True">
+                        <Setter Property="Foreground" Value="{StaticResource ErrorTextBrush}" />
+                      </DataTrigger>
+                    </Style.Triggers>
+                  </Style>
+                </TextBlock.Style>
+              </TextBlock>
+            </StackPanel>
           </StackPanel>
         </Grid>
 

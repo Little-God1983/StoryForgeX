@@ -274,7 +274,7 @@ public sealed partial class ResultMatrixPageViewModel : PageViewModel
         FactSheet = null;
         References = null;
         ShowsWholeScript = false;
-        var screen = new AssemblyViewModel(_client, Project.Id);
+        var screen = new AssemblyViewModel(_client, Project.Id, Project.Setup.Name, _openUrl);
         Assembly = screen;
         Breadcrumb = $"Projects / {Project.Setup.Name} / Assembly";
         await screen.LoadAsync();

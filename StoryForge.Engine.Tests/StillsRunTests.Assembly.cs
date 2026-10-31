@@ -246,6 +246,26 @@ public sealed partial class StillsRunTests
     {
         public List<RenderPlan> Plans { get; } = [];
 
+        /// <summary>The timelines written: the full path and the name.</summary>
+        public List<(string Output, string Name)> Timelines { get; } = [];
+
+        /// <summary>While set, writing the timeline fails with it.</summary>
+        public string? TimelineFailure { get; set; }
+
+        public async Task WriteTimelineAsync(RenderPlan plan, string root, string output, int fps, string name, CancellationToken cancellationToken)
+        {
+            if (TimelineFailure is { } reason)
+            {
+                throw new StageFailedException(reason);
+            }
+            lock (Timelines)
+            {
+                Timelines.Add((output, name));
+            }
+            Directory.CreateDirectory(Path.GetDirectoryName(output)!);
+            await File.WriteAllTextAsync(output, "<fcpxml/>", cancellationToken);
+        }
+
         /// <summary>While set, rendering fails with it.</summary>
         public string? Failure { get; set; }
 

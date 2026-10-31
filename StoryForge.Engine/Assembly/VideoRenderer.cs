@@ -14,6 +14,11 @@ internal interface IVideoRenderer
     /// <param name="output">The video to write, a full path.</param>
     /// <exception cref="StageFailedException">ffmpeg is missing, or could not render the video.</exception>
     Task RenderAsync(RenderPlan plan, string root, string output, int fps, IProgress<string> progress, CancellationToken cancellationToken);
+
+    /// <summary>The same plan as an FCPXML timeline for an editor (#71); <paramref name="output"/> is a full path.</summary>
+    /// <param name="name">The timeline's name in the editor.</param>
+    /// <exception cref="StageFailedException">ffmpeg is missing, or could not read a clip or a voice file.</exception>
+    Task WriteTimelineAsync(RenderPlan plan, string root, string output, int fps, string name, CancellationToken cancellationToken);
 }
 
 /// <summary>
@@ -79,6 +84,29 @@ internal sealed class FfmpegVideoRenderer(IProcessRunner processes, SettingsStor
                 }
             }
         }
+    }
+
+    public async Task WriteTimelineAsync(RenderPlan plan, string root, string output, int fps, string name, CancellationToken cancellationToken)
+    {
+        var ffmpeg = (await settings.LoadAsync(cancellationToken)).Ffmpeg.Executable;
+        var media = new Dictionary<string, MediaInfo>();
+        foreach (var file in plan.Pictures.Select(p => p.File).Concat(plan.Narration).Distinct())
+        {
+            media[file] = await ProbeAsync(ffmpeg, Path.Combine(root, file), cancellationToken);
+        }
+        var xml = FcpxmlTimeline.Build(plan, media, root, fps, name);
+        Directory.CreateDirectory(Path.GetDirectoryName(output)!);
+        // Written whole, then moved into place: an editor never opens half a timeline.
+        var partial = output + ".partial";
+        await File.WriteAllTextAsync(partial, xml, new System.Text.UTF8Encoding(encoderShouldEmitUTF8Identifier: false), cancellationToken);
+        File.Move(partial, output, overwrite: true);
+    }
+
+    private async Task<MediaInfo> ProbeAsync(string ffmpeg, string file, CancellationToken cancellationToken)
+    {
+        var result = await RunAsync(ffmpeg, $"-hide_banner -nostdin -i \"{file}\"", ProbeTimeout, cancellationToken);
+        return MediaInfo.Parse(result.StandardError)
+            ?? throw new StageFailedException($"ffmpeg could not read '{Path.GetFileName(file)}': {result.StandardError.Trim().Split('\n').LastOrDefault()?.Trim()}");
     }
 
     /// <summary>The filter graph: inputs are the clips in <paramref name="clips"/> order, then the narration files.</summary>

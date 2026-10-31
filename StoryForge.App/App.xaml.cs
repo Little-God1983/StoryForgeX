@@ -46,6 +46,7 @@ public partial class App : Application
             builder.Services.AddStoryForgeEngine(options =>
             {
                 options.DataDirectory = DataDirectory();
+                options.CloseResolveUpdateDialogs = ResolveUpdateDialog.CloseAll;
                 options.DefaultProjectsFolder = Path.Combine(
                     Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "StoryForge X");
             });

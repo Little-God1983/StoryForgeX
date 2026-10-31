@@ -6,14 +6,16 @@ public sealed record EngineSettings(
     LmStudioSettings LmStudio,
     ComfyUiSettings ComfyUi,
     FfmpegSettings Ffmpeg,
-    PathSettings Paths)
+    PathSettings Paths,
+    ResolveSettings Resolve)
 {
     public static EngineSettings Defaults { get; } = new(
         new ClaudeCliSettings("claude", "-p --output-format json", TimeoutSeconds: 600, MaxParallel: 2),
         new LmStudioSettings("http://localhost:1234/v1", Model: "", StructuredOutputMode.JsonSchema, WebResearchMode.ViaResearchProvider),
         new ComfyUiSettings("127.0.0.1", Port: 8188, WorkflowTemplatesFolder: "", GpuSlots: 1, FreeVramBetweenStages: true),
         new FfmpegSettings("ffmpeg", TimelineExport.Fcpxml),
-        new PathSettings(ProjectsFolder: ""));
+        new PathSettings(ProjectsFolder: ""),
+        new ResolveSettings(ResolveExe: "", ResolvePython: ""));
 }
 
 /// <param name="Executable">A path, or a name found on PATH (e.g. "claude").</param>
@@ -49,6 +51,9 @@ public sealed record FfmpegSettings(string Executable, TimelineExport TimelineEx
 
 /// <param name="ProjectsFolder">Where project media goes; empty means the engine's default folder.</param>
 public sealed record PathSettings(string ProjectsFolder);
+
+/// <summary>DaVinci Resolve Studio 21.1+ for Send to Resolve; an empty path means the standard install.</summary>
+public sealed record ResolveSettings(string ResolveExe, string ResolvePython);
 
 /// <summary>Secrets the engine keeps in the OS credential store, never in settings.</summary>
 public enum SecretKey

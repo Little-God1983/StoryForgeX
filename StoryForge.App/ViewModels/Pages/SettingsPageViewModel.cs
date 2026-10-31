@@ -37,7 +37,8 @@ public sealed partial class SettingsPageViewModel : PageViewModel
         LmStudio = new LmStudioCardViewModel(client);
         ComfyUi = new ComfyUiCardViewModel();
         Ffmpeg = new FfmpegCardViewModel();
-        Cards = [ClaudeCli, LmStudio, ComfyUi, Ffmpeg];
+        Resolve = new ResolveCardViewModel();
+        Cards = [ClaudeCli, LmStudio, ComfyUi, Ffmpeg, Resolve];
         foreach (var card in Cards)
         {
             card.Edited += (_, _) => ScheduleSave();
@@ -49,7 +50,7 @@ public sealed partial class SettingsPageViewModel : PageViewModel
         [
             Providers,
             new("Storage", "Content Automator X comes with issue #15."),
-            new("Assembly & export", "DaVinci Resolve comes with issue #17. FFmpeg is set up under Providers."),
+            new("Assembly & export", "DaVinci Resolve and FFmpeg are set up under Providers."),
             PathsAndCache,
             new("Engine host", "The engine runs inside the app. Server mode is phase 2 (issue #36)."),
         ];
@@ -72,6 +73,8 @@ public sealed partial class SettingsPageViewModel : PageViewModel
     public ComfyUiCardViewModel ComfyUi { get; }
 
     public FfmpegCardViewModel Ffmpeg { get; }
+
+    public ResolveCardViewModel Resolve { get; }
 
     public IReadOnlyList<ProviderCardViewModel> Cards { get; }
 

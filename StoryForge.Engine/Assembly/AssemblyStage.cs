@@ -3,6 +3,7 @@ using StoryForge.Engine.Clips;
 using StoryForge.Engine.Pipeline;
 using StoryForge.Engine.Projects;
 using StoryForge.Engine.Research;
+using StoryForge.Engine.Settings;
 using StoryForge.Engine.Storyboard;
 
 namespace StoryForge.Engine.Assembly;
@@ -73,6 +74,7 @@ internal sealed class AssemblyStage(
     AssemblyTimeline timelines,
     CellReader cells,
     ProjectFolders folders,
+    SettingsStore settings,
     TimeProvider clock) : IStageWorker
 {
     /// <summary>The first answer and two corrections.</summary>
@@ -127,9 +129,10 @@ internal sealed class AssemblyStage(
         await renderer.RenderAsync(plan, root, Path.Combine(root, file), ClipsStage.FramesPerSecond,
             new Progress(line => Report(context, ActivityKind.Model, line)), cancellationToken);
         Report(context, ActivityKind.Check, $"video rendered · {ShotTiming.Seconds(timeline.Seconds)} s · {size.Width}×{size.Height}");
+        var timelineFile = await TimelineAsync(context, plan, root, Path.ChangeExtension(file, ".fcpxml"), cancellationToken);
 
         var clips = timeline.Shots.ToDictionary(s => s.Key, s => s.ClipVersion);
-        var video = new AssembledVideo(list, file, Math.Round(timeline.Seconds, 3), size, clips, voices, waiting?.BasedOn);
+        var video = new AssembledVideo(list, file, Math.Round(timeline.Seconds, 3), size, clips, voices, waiting?.BasedOn, timelineFile);
         return new StageResult(StoredJson.Write(video), AssembledVideo.SchemaVersion, Hash(project.Setup, clips, voices, list));
     }
 
@@ -181,6 +184,30 @@ internal sealed class AssemblyStage(
             }
         }
         throw new StageFailedException($"The answer had no good cut list after {tries} {(tries == 1 ? "try" : "tries")}. Last problem: {problems[0]}");
+    }
+
+    /// <summary>
+    /// The same cut as an FCPXML timeline beside the video, unless Settings → FFmpeg says not to (#71).
+    /// The video is what the stage delivers: a timeline that cannot be written is said, never a failure.
+    /// </summary>
+    /// <returns>The timeline, relative to the projects folder; null when none was written.</returns>
+    private async Task<string?> TimelineAsync(StageContext context, RenderPlan plan, string root, string file, CancellationToken cancellationToken)
+    {
+        if ((await settings.LoadAsync(cancellationToken)).Ffmpeg.TimelineExport == TimelineExport.None)
+        {
+            return null;
+        }
+        try
+        {
+            await renderer.WriteTimelineAsync(plan, root, Path.Combine(root, file), ClipsStage.FramesPerSecond, context.Project.Setup.Name, cancellationToken);
+            Report(context, ActivityKind.Check, "timeline written for Resolve (FCPXML)");
+            return file;
+        }
+        catch (Exception ex) when (ex is StageFailedException or IOException or UnauthorizedAccessException)
+        {
+            Report(context, ActivityKind.Check, $"the timeline file could not be written: {ex.Message}");
+            return null;
+        }
     }
 
     private void Report(StageContext context, ActivityKind kind, string text) =>
