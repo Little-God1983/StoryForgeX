@@ -174,9 +174,9 @@
 
             <!-- #71: the same cut as a timeline, and Send to Resolve. -->
             <TextBlock Text="RESOLVE" Style="{StaticResource LabelStyle}" Margin="0,14,0,6" />
-            <TextBlock Text="This version has no timeline file. Render it again with &quot;Also export timeline&quot; on in Settings → FFmpeg."
+            <TextBlock Text="This version was rendered without a timeline file. With &quot;Also export timeline&quot; on in Settings → FFmpeg, the next render writes one."
                        FontSize="12" Foreground="{StaticResource TextMutedBrush}" TextWrapping="Wrap"
-                       Visibility="{Binding HasTimeline, Converter={views:FalseToVisibleConverter}}" />
+                       Visibility="{Binding MissesTimeline, Converter={StaticResource Visible}}" />
             <StackPanel Visibility="{Binding HasTimeline, Converter={StaticResource Visible}}">
               <DockPanel Margin="0,0,0,6">
                 <Button DockPanel.Dock="Right" Content="Open folder" Style="{StaticResource SmallButtonStyle}" Margin="6,0,0,0"

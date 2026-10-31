@@ -117,6 +117,7 @@ public sealed partial class AssemblyViewModel(IStoryForgeClient client, Guid pro
 
     /// <summary>The version shown; null before the first.</summary>
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(MissesTimeline))]
     [NotifyCanExecuteChangedFor(nameof(ApproveCommand), nameof(SendToResolveCommand))]
     private int? _version;
 

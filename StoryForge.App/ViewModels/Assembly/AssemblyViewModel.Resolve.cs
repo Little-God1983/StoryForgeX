@@ -12,11 +12,14 @@ public sealed partial class AssemblyViewModel
 {
     /// <summary>The shown version's FCPXML timeline; null when none was written or the file is gone.</summary>
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(HasTimeline))]
+    [NotifyPropertyChangedFor(nameof(HasTimeline), nameof(MissesTimeline))]
     [NotifyCanExecuteChangedFor(nameof(OpenTimelineFolderCommand), nameof(SendToResolveCommand))]
     private string? _timelinePath;
 
     public bool HasTimeline => TimelinePath is not null;
+
+    /// <summary>A version is shown and has no timeline file; before the first video there is nothing to miss.</summary>
+    public bool MissesTimeline => Version is not null && TimelinePath is null;
 
     /// <summary>The new Resolve project's name.</summary>
     [ObservableProperty]
@@ -46,16 +49,19 @@ public sealed partial class AssemblyViewModel
     private async Task SendToResolveAsync()
     {
         var name = ResolveProjectName.Trim();
+        var version = Version!.Value;
         IsSending = true;
         ResolveFailed = false;
         ResolveText = "Sending… this can take a minute if Resolve is not open yet.";
         try
         {
-            var sent = await client.SendToResolveAsync(ProjectId, Version!.Value, name);
+            var sent = await client.SendToResolveAsync(ProjectId, version, name);
             ResolveFailed = !sent.Ok;
-            ResolveText = sent.Ok
+            var answer = sent.Ok
                 ? $"In Resolve as \"{name}\": timeline \"{sent.TimelineName ?? name}\" with {sent.Clips} clips.{(sent.Problem is { } note ? " " + note : "")}"
                 : sent.Problem ?? $"Resolve stopped at \"{sent.Stage}\".";
+            // Another version was picked while it sent: say which one went.
+            ResolveText = Version == version ? answer : $"Version {version}: {answer}";
         }
         catch (Exception ex) when (ex is ArgumentException or KeyNotFoundException or InvalidOperationException)
         {

@@ -40,7 +40,7 @@ internal sealed class ResolveExport(CellReader cells, ProjectStore projects, Pro
         if (video.Timeline is null || !File.Exists(Path.Combine(root, video.Timeline)))
         {
             return new SentToResolve(false, "timeline",
-                $"Version {version} has no timeline file. Render it again with \"Also export timeline\" on in Settings → FFmpeg.", null, 0);
+                $"Version {version} was rendered without a timeline file. With \"Also export timeline\" on in Settings → FFmpeg, the next render writes one.", null, 0);
         }
         var saved = (await settings.LoadAsync(cancellationToken)).Resolve;
         var install = ResolveInstall.Locate(saved.ResolveExe, saved.ResolvePython);

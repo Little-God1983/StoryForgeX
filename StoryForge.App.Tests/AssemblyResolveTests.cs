@@ -99,6 +99,46 @@ public sealed class AssemblyResolveTests
         Assert.Equal((1, "", false), (screen.Version, screen.ResolveText, screen.ResolveFailed));
     }
 
+    /// <summary>Review of #71, round 2: a send that comes back after another version was picked
+    /// says which version it sent.</summary>
+    [Fact]
+    public async Task A_send_that_finishes_under_another_version_names_the_version_it_sent()
+    {
+        var two = Review() with
+        {
+            Version = 2,
+            Versions = [new ResultVersion(1, VersionOrigin.Generated, DateTimeOffset.UnixEpoch, null), new ResultVersion(2, VersionOrigin.Generated, DateTimeOffset.UnixEpoch, null)],
+        };
+        var screen = await OpenAsync(two);
+        _client.AssemblyVersions[(Id, 1)] = two with { Version = 1 };
+        var gate = new TaskCompletionSource();
+        _client.ResolveGate = gate.Task;
+        _client.ResolveAnswer = new SentToResolve(true, "done", null, "Dark Eye – DSA lore", 11);
+
+        var sending = screen.SendToResolveCommand.ExecuteAsync(null);
+        await screen.Versions[0].ShowCommand.ExecuteAsync(null);
+        Assert.Equal("Sending… this can take a minute if Resolve is not open yet.", screen.ResolveText);
+        gate.SetResult();
+        await sending;
+
+        Assert.Equal("Version 2: In Resolve as \"Dark Eye – DSA lore\": timeline \"Dark Eye – DSA lore\" with 11 clips.", screen.ResolveText);
+    }
+
+    /// <summary>Review of #71, round 2: "no timeline file" only for a version that has none, and
+    /// worded for what can be done (Render again needs an edit).</summary>
+    [Fact]
+    public async Task Only_a_version_without_a_timeline_says_it_has_none()
+    {
+        var before = await OpenAsync(Review() with { Version = null, Versions = [], Video = null, Path = null, State = StageState.NotStarted, TimelinePath = null });
+        Assert.False(before.MissesTimeline);
+
+        var without = await OpenAsync(Review(timeline: null));
+        Assert.True(without.MissesTimeline);
+
+        var with = await OpenAsync(Review());
+        Assert.False(with.MissesTimeline);
+    }
+
     [Fact]
     public async Task While_it_sends_it_says_so_and_cannot_be_sent_twice()
     {
