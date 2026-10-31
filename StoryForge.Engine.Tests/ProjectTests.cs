@@ -453,6 +453,35 @@ public sealed class ProjectTests : IDisposable
         await Assert.ThrowsAsync<KeyNotFoundException>(() => client.UseNewerProfileAsync(Guid.NewGuid(), PipelineStage.Clips));
     }
 
+    /// <summary>
+    /// Review of #75: the move checked the whole setup, so a project started before #75 with a video
+    /// profile that cannot run (Dark Eye's) could never move its failed stills to a fixed image profile.
+    /// Only the slot that moves is checked.
+    /// </summary>
+    [Fact]
+    public async Task A_stage_moves_although_another_stages_profile_cannot_run()
+    {
+        var client = await _engine.StartClientAsync();
+        var s = await ValidSetup(client);
+        var project = await client.CreateProjectAsync(s);
+        var broken = await ChangedAsync(client, s.Clips.Profile, c => c with { WorkflowTemplate = "" });
+        await using (var db = await _engine.DbAsync())
+        {
+            // Started before #75: nothing refused the broken video profile then.
+            var entry = db.Projects.Single(p => p.Id == project.Id);
+            var setup = System.Text.Json.Nodes.JsonNode.Parse(entry.SetupJson)!;
+            setup["Clips"]!["Profile"]!["Version"] = broken.Version;
+            entry.SetupJson = setup.ToJsonString();
+            await db.SaveChangesAsync();
+        }
+        await FailAsync(project.Id, PipelineStage.Stills);
+        var v2 = await ChangedAsync(client, s.Stills.Profile, c => c with { PromptTemplate = "newer" });
+
+        var moved = (await client.UseNewerProfileAsync(project.Id, PipelineStage.Stills)).Setup;
+
+        Assert.Equal((v2, broken), (moved.Stills.Profile, moved.Clips.Profile));
+    }
+
     [Theory]
     [InlineData(PipelineStage.Voice)]
     [InlineData(PipelineStage.References)]

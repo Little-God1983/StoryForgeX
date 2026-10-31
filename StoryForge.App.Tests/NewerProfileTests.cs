@@ -117,6 +117,21 @@ public sealed class NewerProfileTests
         Assert.Empty(_client.ClipActions);
     }
 
+    /// <summary>Review of #75: when the move went through but the stage would not start again, the
+    /// screen kept offering the move it had just made, under "Could not use …".</summary>
+    [Fact]
+    public async Task Moved_but_not_started_again_shows_the_new_version_and_says_what_did_not_start()
+    {
+        var (page, project) = await OpenAsync(clips: StageState.Failed);
+        _client.StageFailure = new InvalidOperationException("A clip is still being made.");
+
+        await page.Script!.UseNewerClipsProfileCommand.ExecuteAsync(null);
+
+        Assert.Equal(2, (await _client.GetProjectAsync(project.Id)).Setup.Clips.Profile.Version);
+        Assert.Null(page.Script.ClipsNewerProfile);
+        Assert.Equal("Now on Slow cinematic push v2, but it did not start again: A clip is still being made.", page.Script.ActionError);
+    }
+
     [Fact]
     public async Task Failed_references_offer_the_newer_image_profile_and_try_again()
     {
@@ -135,5 +150,26 @@ public sealed class NewerProfileTests
 
         Assert.Equal([(project.Id, PipelineStage.References)], _client.NewerProfileUses);
         Assert.Equal(("make images", ""), Assert.Single(_client.ReferenceActions));
+    }
+
+    [Fact]
+    public async Task References_moved_but_not_started_again_say_so()
+    {
+        var setup = Setup();
+        var project = await _client.CreateProjectAsync(setup);
+        _client.Scripts[project.Id] = new ScriptView(project.Id, StageState.Approved, null, [], [StoryboardMatrixTests.Segment("S01", "Hook")], "", 10, 60, []);
+        _client.References[project.Id] = new ReferencesView(project.Id, StageState.Failed, "The image profile has no workflow.", [], ReferencePhase.Images, [], [], [], false, new Dictionary<string, string>(), 0);
+        var page = new ResultMatrixPageViewModel(_client, _ => { });
+        page.Show(project);
+        await page.ScriptLoading;
+        await page.OpenStageCommand.ExecuteAsync(page.Stages.Single(s => s.Stage == PipelineStage.References));
+        var screen = page.References!;
+        _client.StageFailure = new InvalidOperationException("The references are busy.");
+
+        await screen.UseNewerProfileCommand.ExecuteAsync(null);
+
+        Assert.Equal(2, (await _client.GetProjectAsync(project.Id)).Setup.References.Profile.Version);
+        Assert.Null(screen.NewerProfile);
+        Assert.Equal("Now on Painted dark fantasy v2, but it did not start again: The references are busy.", screen.ActionError);
     }
 }

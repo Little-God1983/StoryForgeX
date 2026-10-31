@@ -331,12 +331,26 @@ public sealed partial class ReferencesViewModel(IStoryForgeClient client, Guid p
 
     /// <summary>Moves the references to the newer profile version, then tries again as Retry does; nothing runs when the move does not go through.</summary>
     [RelayCommand(CanExecute = nameof(CanUseNewerProfile))]
-    private Task UseNewerProfileAsync() =>
-        ActAsync($"use {NewerProfileOffer.Named(NewerProfile!)}", async () =>
+    private async Task UseNewerProfileAsync()
+    {
+        var named = NewerProfileOffer.Named(NewerProfile!);
+        var listPhase = IsListPhase;
+        // The move reloads the screen when it goes through, so it shows the new version also when the
+        // stage then will not start.
+        if (!await ActAsync($"use {named}", () => client.UseNewerProfileAsync(ProjectId, PipelineStage.References)))
         {
-            await client.UseNewerProfileAsync(ProjectId, PipelineStage.References);
-            await (IsListPhase ? client.RegenerateAsync(ProjectId, PipelineStage.References) : client.MakeReferenceImagesAsync(ProjectId));
-        });
+            return;
+        }
+        try
+        {
+            await (listPhase ? client.RegenerateAsync(ProjectId, PipelineStage.References) : client.MakeReferenceImagesAsync(ProjectId));
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"{named} did not start: {ex}");
+            ActionError = $"Now on {named}, but it did not start again: {ex.Message}";
+        }
+    }
 
     private bool CanApproveTextOnly() => (TextOnly || NothingToMake) && IsReview && !_acting;
 

@@ -110,7 +110,7 @@ internal sealed class ProjectStore(IDbContextFactory<StoryForgeDbContext> contex
             PipelineStage.Stills => setup with { Stills = setup.Stills with { Profile = newer } },
             _ => setup with { Clips = setup.Clips with { Profile = newer } },
         };
-        await RequireRunnableAsync(db, moved, cancellationToken);
+        await RequireRunnableAsync(db, moved, cancellationToken, only: stage);
         entry.SetupJson = JsonSerializer.Serialize(moved, Json);
         entry.UpdatedAt = clock.GetUtcNow();
         await db.SaveChangesAsync(cancellationToken);
@@ -309,13 +309,20 @@ internal sealed class ProjectStore(IDbContextFactory<StoryForgeDbContext> contex
     /// needs go. The setup never changes once started (bar a newer version of the same profile), so one
     /// that cannot would be found out only after research, script and storyboard.
     /// </summary>
-    internal static async Task RequireRunnableAsync(StoryForgeDbContext db, ProjectSetup s, CancellationToken cancellationToken)
+    /// <param name="only">Just this stage's profile: a move checks the slot it moves, not the others a project
+    /// started before the check may still hold.</param>
+    internal static async Task RequireRunnableAsync(StoryForgeDbContext db, ProjectSetup s, CancellationToken cancellationToken, PipelineStage? only = null)
     {
-        var (voice, voiceProfile) = await ContentAsync(db, s.Voice.Profile, cancellationToken);
-        RequireWorkflow(voice, voiceProfile, "speak the script", "Voice", "voice");
-        Require(WorkflowTemplate.Maps(voiceProfile.Inputs, VoiceStage.TextKey),
-            $"\"{voice}\" cannot speak the script: it does not say where the text goes. Map '{VoiceStage.TextKey}' in the profile, or pick another voice profile.");
-        if (s.References.Consistency == Consistency.ReferenceImages)
+        bool Checks(PipelineStage stage) => only is null || only == stage;
+
+        if (Checks(PipelineStage.Voice))
+        {
+            var (voice, voiceProfile) = await ContentAsync(db, s.Voice.Profile, cancellationToken);
+            RequireWorkflow(voice, voiceProfile, "speak the script", "Voice", "voice");
+            Require(WorkflowTemplate.Maps(voiceProfile.Inputs, VoiceStage.TextKey),
+                $"\"{voice}\" cannot speak the script: it does not say where the text goes. Map '{VoiceStage.TextKey}' in the profile, or pick another voice profile.");
+        }
+        if (Checks(PipelineStage.References) && s.References.Consistency == Consistency.ReferenceImages)
         {
             var (name, reference) = await ContentAsync(db, s.References.Profile, cancellationToken);
             RequireWorkflow(name, reference, "make reference images", "Image", "reference");
@@ -324,13 +331,20 @@ internal sealed class ProjectStore(IDbContextFactory<StoryForgeDbContext> contex
             Require(WorkflowTemplate.Maps(reference.Inputs, ReferencesStage.ImageKey) || WorkflowTemplate.Maps(reference.Inputs, ReferencesStage.ImagesKey),
                 $"\"{name}\" cannot make reference images: it does not say where the picture goes. Map '{ReferencesStage.ImageKey}' (or '{ReferencesStage.ImagesKey}') in the profile, or pick another reference profile.");
         }
-        var (still, stillProfile) = await ContentAsync(db, s.Stills.Profile, cancellationToken);
-        RequireWorkflow(still, stillProfile, "make stills", "Image", "still");
-        Require(WorkflowTemplate.Maps(stillProfile.Inputs, ReferencesStage.PromptKey),
-            $"\"{still}\" cannot make stills: it does not say where the prompt goes. Map '{ReferencesStage.PromptKey}' in the profile, or pick another still profile.");
-        Require(s.References.Consistency != Consistency.ReferenceImages
-            || WorkflowTemplate.Maps(stillProfile.Inputs, ReferencesStage.ImageKey) || WorkflowTemplate.Maps(stillProfile.Inputs, ReferencesStage.ImagesKey),
-            $"\"{still}\" cannot make stills from the reference images: it does not say where they go. Map '{ReferencesStage.ImageKey}' (or '{ReferencesStage.ImagesKey}') in the profile, pick another still profile, or make the stills from text only.");
+        if (Checks(PipelineStage.Stills))
+        {
+            var (still, stillProfile) = await ContentAsync(db, s.Stills.Profile, cancellationToken);
+            RequireWorkflow(still, stillProfile, "make stills", "Image", "still");
+            Require(WorkflowTemplate.Maps(stillProfile.Inputs, ReferencesStage.PromptKey),
+                $"\"{still}\" cannot make stills: it does not say where the prompt goes. Map '{ReferencesStage.PromptKey}' in the profile, or pick another still profile.");
+            Require(s.References.Consistency != Consistency.ReferenceImages
+                || WorkflowTemplate.Maps(stillProfile.Inputs, ReferencesStage.ImageKey) || WorkflowTemplate.Maps(stillProfile.Inputs, ReferencesStage.ImagesKey),
+                $"\"{still}\" cannot make stills from the reference images: it does not say where they go. Map '{ReferencesStage.ImageKey}' (or '{ReferencesStage.ImagesKey}') in the profile, pick another still profile, or make the stills from text only.");
+        }
+        if (!Checks(PipelineStage.Clips))
+        {
+            return;
+        }
         var (video, videoProfile) = await ContentAsync(db, s.Clips.Profile, cancellationToken);
         RequireWorkflow(video, videoProfile, "make clips", "Video", "video");
         // What ClipsStage needs to put the still, its prompt and its length into the workflow.

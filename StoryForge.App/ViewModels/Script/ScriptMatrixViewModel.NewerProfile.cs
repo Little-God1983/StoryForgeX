@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using StoryForge.Client;
@@ -51,11 +52,33 @@ public sealed partial class ScriptMatrixViewModel
     private Task UseNewerClipsProfileAsync() =>
         UseNewerAsync(ClipsNewerProfile!, PipelineStage.Clips, () => client.MakeClipsAsync(ProjectId));
 
-    /// <summary>Nothing runs again when the move does not go through: the newer version may not run either.</summary>
-    private Task UseNewerAsync(string offer, PipelineStage stage, Func<Task> runAgain) =>
-        ActAsync($"use {NewerProfileOffer.Named(offer)}", async () =>
+    /// <summary>
+    /// Nothing runs again when the move does not go through: the newer version may not run either.
+    /// Once it went through the screen shows it, also when the stage then would not start.
+    /// </summary>
+    private async Task UseNewerAsync(string offer, PipelineStage stage, Func<Task> runAgain)
+    {
+        var named = NewerProfileOffer.Named(offer);
+        try
         {
             await client.UseNewerProfileAsync(ProjectId, stage);
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"Could not use {named}: {ex}");
+            ActionError = $"Could not use {named}: {ex.Message}";
+            return;
+        }
+        try
+        {
             await runAgain();
-        });
+            ActionError = null;
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"{named} did not start: {ex}");
+            ActionError = $"Now on {named}, but it did not start again: {ex.Message}";
+        }
+        await LoadAsync();
+    }
 }
