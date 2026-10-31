@@ -209,6 +209,10 @@ public sealed partial class MainViewModel : ObservableObject
             // Profiles made or saved since the screen was last open show up in its pickers.
             PageShowing = _newProject.ShowAsync();
         }
+        else if (newValue == _matrix && oldValue == _profiles)
+        {
+            PageShowing = _matrix.RefreshAsync();
+        }
     }
 
     /// <summary>

@@ -1,3 +1,4 @@
+using StoryForge.App.ViewModels;
 using StoryForge.App.ViewModels.Pages;
 using StoryForge.Client;
 
@@ -31,6 +32,17 @@ public sealed class NewerProfileTests
     private async Task<(ResultMatrixPageViewModel Page, Project Project)> OpenAsync(
         StageState voice = StageState.Approved, StageState stills = StageState.Approved, StageState clips = StageState.NeedsReview, bool newer = true)
     {
+        var project = await SeedAsync(voice, stills, clips, newer);
+        var page = new ResultMatrixPageViewModel(_client, _ => { });
+        page.Show(project);
+        await page.ScriptLoading;
+        return (page, project);
+    }
+
+    /// <summary>A started project whose stages stand as given.</summary>
+    private async Task<Project> SeedAsync(
+        StageState voice = StageState.Approved, StageState stills = StageState.Approved, StageState clips = StageState.NeedsReview, bool newer = true)
+    {
         var setup = Setup();
         if (!newer)
         {
@@ -46,10 +58,29 @@ public sealed class NewerProfileTests
         _client.Stills[project.Id] = new StillsView(project.Id, stills, stills == StageState.Failed ? "The image profile has no workflow." : null, [], [], true);
         _client.Clips[project.Id] = new ClipsView(project.Id, clips, clips == StageState.Failed ? "The video profile has no workflow. Pick one in Profiles → Video." : null,
             [], [], stills == StageState.Approved, "Minimax H3", []);
-        var page = new ResultMatrixPageViewModel(_client, _ => { });
-        page.Show(project);
-        await page.ScriptLoading;
-        return (page, project);
+        return project;
+    }
+
+    /// <summary>Review of #75, round 2: the main way through: clips fail, the video profile is fixed
+    /// in Profiles, and back on the matrix the fixed version is offered (it was not reloaded).</summary>
+    [Fact]
+    public async Task A_profile_fixed_in_Profiles_is_offered_on_coming_back_to_the_matrix()
+    {
+        var main = new MainViewModel(_client, new ProviderStatusBoard(_client), TimeSpan.Zero);
+        await main.LoadAsync();
+        var project = await SeedAsync(clips: StageState.Failed, newer: false);
+        await main.OpenRecentProjectCommand.ExecuteAsync(new ProjectSummary(project.Id, project.Setup.Name, "Clips: failed"));
+        var matrix = (ResultMatrixPageViewModel)main.SelectedNavItem!.Page;
+        await matrix.ScriptLoading;
+        Assert.Null(matrix.Script!.ClipsNewerProfile);
+
+        main.SelectedNavItem = main.NavItems.Single(item => item.Title == "Profiles");
+        await main.PageShowing;
+        await _client.SaveProfileVersionAsync(project.Setup.Clips.Profile.ProfileId, FakeStoryForgeClient.EmptyContent with { Provider = "ComfyUI", PromptTemplate = "fixed" });
+        main.SelectedNavItem = main.NavItems.Single(item => item.Page == matrix);
+        await main.PageShowing;
+
+        Assert.Equal("Use Slow cinematic push v3", matrix.Script!.ClipsNewerProfile);
     }
 
     [Fact]

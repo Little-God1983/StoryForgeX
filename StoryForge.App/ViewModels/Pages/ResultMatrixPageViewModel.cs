@@ -134,6 +134,21 @@ public sealed partial class ResultMatrixPageViewModel : PageViewModel
     }
 
     /// <summary>Opens a project from Recent projects.</summary>
+    /// <summary>Back from Profiles: a profile fixed there is offered on a failed stage's line (#75).</summary>
+    public async Task RefreshAsync()
+    {
+        if (Script is null)
+        {
+            return;
+        }
+        ScriptLoading = Script.LoadAsync();
+        await ScriptLoading;
+        if (References is { } references)
+        {
+            await references.LoadAsync();
+        }
+    }
+
     public async Task OpenAsync(Guid projectId)
     {
         try
