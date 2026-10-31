@@ -252,11 +252,18 @@ public sealed partial class StillsRunTests
         /// <summary>While set, writing the timeline fails with it.</summary>
         public string? TimelineFailure { get; set; }
 
+        /// <summary>While set, writing the timeline throws it as it is.</summary>
+        public Exception? TimelineCrash { get; set; }
+
         public async Task WriteTimelineAsync(RenderPlan plan, string root, string output, int fps, string name, CancellationToken cancellationToken)
         {
             if (TimelineFailure is { } reason)
             {
                 throw new StageFailedException(reason);
+            }
+            if (TimelineCrash is { } crash)
+            {
+                throw crash;
             }
             lock (Timelines)
             {

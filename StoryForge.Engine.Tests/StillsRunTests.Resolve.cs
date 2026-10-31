@@ -74,6 +74,22 @@ public sealed partial class StillsRunTests
         Assert.Contains(view.Activity, line => line.Text == "the timeline file could not be written: ffmpeg could not read 'S01-voice.wav': Invalid data");
     }
 
+    /// <summary>Review of #71: only file errors were caught, so a name XML cannot hold (a pasted
+    /// control character) failed the whole stage after the video had rendered.</summary>
+    [Fact]
+    public async Task Any_failure_writing_the_timeline_leaves_the_video_standing()
+    {
+        _renderer.TimelineCrash = new ArgumentException("'\u0001', hexadecimal value 0x01, is an invalid character.");
+        var client = await StartWithResolveAsync();
+        var project = await ClipsApprovedAsync(client);
+
+        var view = await AssemblyAsync(client, project.Id);
+
+        Assert.Equal((StageState.NeedsReview, (string?)null), (view.State, view.Error));
+        Assert.Null(view.Video!.Timeline);
+        Assert.Contains(view.Activity, line => line.Text.StartsWith("the timeline file could not be written: ", StringComparison.Ordinal));
+    }
+
     [Fact]
     public async Task Send_to_Resolve_hands_the_versions_timeline_over_under_the_name_given_at_the_videos_rate()
     {

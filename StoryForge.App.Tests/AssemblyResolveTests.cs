@@ -78,6 +78,27 @@ public sealed class AssemblyResolveTests
             (screen.ResolveText, screen.ResolveFailed));
     }
 
+    /// <summary>Review of #71: the last send's answer stayed on screen under another version.</summary>
+    [Fact]
+    public async Task The_answer_of_a_send_belongs_to_its_version_and_goes_when_another_is_shown()
+    {
+        var two = Review() with
+        {
+            Version = 2,
+            Versions = [new ResultVersion(1, VersionOrigin.Generated, DateTimeOffset.UnixEpoch, null), new ResultVersion(2, VersionOrigin.Generated, DateTimeOffset.UnixEpoch, null)],
+        };
+        var screen = await OpenAsync(two);
+        _client.AssemblyVersions[(Id, 1)] = two with { Version = 1 };
+        _client.ResolveAnswer = new SentToResolve(false, "create", "There is already a project called 'Dark Eye – DSA lore' in Resolve - nothing was created.", null, 0);
+        await screen.SendToResolveCommand.ExecuteAsync(null);
+
+        await screen.LoadAsync();   // the same version again: the answer stays
+        Assert.True(screen.ResolveFailed);
+
+        await screen.Versions[0].ShowCommand.ExecuteAsync(null);
+        Assert.Equal((1, "", false), (screen.Version, screen.ResolveText, screen.ResolveFailed));
+    }
+
     [Fact]
     public async Task While_it_sends_it_says_so_and_cannot_be_sent_twice()
     {

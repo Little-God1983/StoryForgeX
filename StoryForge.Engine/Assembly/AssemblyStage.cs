@@ -203,7 +203,7 @@ internal sealed class AssemblyStage(
             Report(context, ActivityKind.Check, "timeline written for Resolve (FCPXML)");
             return file;
         }
-        catch (Exception ex) when (ex is StageFailedException or IOException or UnauthorizedAccessException)
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
             Report(context, ActivityKind.Check, $"the timeline file could not be written: {ex.Message}");
             return null;

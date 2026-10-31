@@ -245,6 +245,12 @@ public sealed partial class AssemblyViewModel(IStoryForgeClient client, Guid pro
     private void Apply(AssemblyView view)
     {
         var keepEdits = HasEdits && _view?.Version == view.Version && _view?.Shots.Count == view.Shots.Count;
+        if (_view?.Version != view.Version && !IsSending)
+        {
+            // What came of a send belongs to the version sent, not to the one shown now.
+            ResolveText = "";
+            ResolveFailed = false;
+        }
         _view = view;
         State = view.State;
         ClipsApproved = view.ClipsApproved;

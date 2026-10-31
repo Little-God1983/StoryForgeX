@@ -143,7 +143,9 @@ internal static class FcpxmlTimeline
             var info = media[file];
             var at = Math.Min(total, (long)Math.Round(heard * fps, MidpointRounding.AwayFromZero));
             heard += info.Seconds;
-            var until = Math.Min(total, (long)Math.Round(heard * fps, MidpointRounding.AwayFromZero));
+            // Never past the file's last whole frame: rounded from the running total, a piece could be a
+            // frame longer than its file, and Resolve cuts that back on import.
+            var until = Math.Min(Math.Min(total, (long)Math.Round(heard * fps, MidpointRounding.AwayFromZero)), at + (long)Math.Floor(info.Seconds * fps));
             if (until <= at || !info.HasAudio)
             {
                 continue;

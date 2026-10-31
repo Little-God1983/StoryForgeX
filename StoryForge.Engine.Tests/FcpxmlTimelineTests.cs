@@ -152,6 +152,25 @@ public sealed class FcpxmlTimelineTests
         Assert.Equal("168/24s", (string?)Spine(doc).First().Elements("asset-clip").Last().Attribute("duration"));
     }
 
+    /// <summary>
+    /// Found in the first send (#71): rounded to frames from the running total, a piece could come
+    /// out a frame longer than its file (S02: 237 frames for 9.84 s), and Resolve cut it back on
+    /// import. A piece never runs past its file now.
+    /// </summary>
+    [Fact]
+    public void A_narration_piece_is_never_longer_than_its_file()
+    {
+        var media = Media();
+        media[@"p\voice\S01.wav"] = Voice with { Seconds = 3.004 };
+        media[@"p\voice\S02.wav"] = Voice with { Seconds = 3.026 };
+
+        var voices = Spine(XElement.Parse(FcpxmlTimeline.Build(Plan(), media, Root, Fps, "x"))).First().Elements("asset-clip").ToList();
+
+        // The second starts at 3.004 s, frame 72, and would end at 6.03 s, frame 145: 73 frames for a
+        // file of 72.6. It keeps the 72 whole frames its file has.
+        Assert.Equal(["72/24s", "72/24s"], voices.Select(v => (string)v.Attribute("duration")!));
+    }
+
     [Theory]
     [InlineData("  Duration: 00:00:07.29, start: 0.000000, bitrate: 10762 kb/s\n  Stream #0:0[0x1](und): Video: h264 (High) (avc1 / 0x31637661), yuv420p(tv, bt709, progressive), 1920x1088, 10624 kb/s, 24 fps\n  Stream #0:1[0x2](und): Audio: aac (LC) (mp4a / 0x6134706D), 32000 Hz, stereo, fltp, 127 kb/s (default)",
         7.29, 1920, 1088, 32000, 2)]
