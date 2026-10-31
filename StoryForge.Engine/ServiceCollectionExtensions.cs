@@ -48,6 +48,7 @@ public static class ServiceCollectionExtensions
             o.DefaultProjectsFolder = options.DefaultProjectsFolder;
             o.CredentialTargetPrefix = options.CredentialTargetPrefix;
             o.ResearchServerPath = options.ResearchServerPath;
+            o.CloseResolveUpdateDialogs = options.CloseResolveUpdateDialogs;
         });
         services.AddDbContextFactory<StoryForgeDbContext>((provider, db) =>
         {
@@ -101,6 +102,8 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<Assembly.IVideoRenderer, Assembly.FfmpegVideoRenderer>();
         services.AddSingleton<Assembly.AssemblyTimeline>();
         services.AddSingleton<IStageWorker, Assembly.AssemblyStage>();
+        services.AddSingleton<Resolve.IResolveSenders, Resolve.ResolveSenders>();
+        services.AddSingleton<Resolve.ResolveExport>();
         services.AddSingleton<Assembly.AssemblyViews>();
         services.AddSingleton<Reruns>();
         // After DatabaseInitializer: hosted services start in order, and the runner reads the database.

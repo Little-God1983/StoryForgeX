@@ -56,8 +56,11 @@ public sealed partial class AssemblyVersionViewModel(ResultVersion version, bool
 /// change its transition or its J/L, and render again. Approve, Regenerate (Claude cuts it anew)
 /// and Cancel are in the bar.
 /// </summary>
-public sealed partial class AssemblyViewModel(IStoryForgeClient client, Guid projectId) : ObservableObject
+/// <param name="projectName">What Send to Resolve names the Resolve project to start with.</param>
+/// <param name="open">Opens a folder in Explorer; tests pass their own.</param>
+public sealed partial class AssemblyViewModel(IStoryForgeClient client, Guid projectId, string projectName = "", Action<string>? open = null) : ObservableObject
 {
+    private readonly Action<string> _open = open ?? (path => Process.Start(new ProcessStartInfo(path) { UseShellExecute = true }));
     // Counts loads and live updates; a load that finds the count moved on drops its view.
     private int _loads;
     private AssemblyView? _view;
@@ -73,7 +76,7 @@ public sealed partial class AssemblyViewModel(IStoryForgeClient client, Guid pro
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsRunning), nameof(IsReview), nameof(IsApproved), nameof(IsFailed), nameof(IsNotStarted), nameof(BarText))]
-    [NotifyCanExecuteChangedFor(nameof(ApproveCommand), nameof(RegenerateCommand), nameof(RenderAgainCommand), nameof(CancelCommand), nameof(RetryCommand), nameof(MakeVideoCommand))]
+    [NotifyCanExecuteChangedFor(nameof(ApproveCommand), nameof(RegenerateCommand), nameof(RenderAgainCommand), nameof(CancelCommand), nameof(RetryCommand), nameof(MakeVideoCommand), nameof(SendToResolveCommand))]
     private StageState _state;
 
     public bool IsRunning => State == StageState.Running;
@@ -114,7 +117,8 @@ public sealed partial class AssemblyViewModel(IStoryForgeClient client, Guid pro
 
     /// <summary>The version shown; null before the first.</summary>
     [ObservableProperty]
-    [NotifyCanExecuteChangedFor(nameof(ApproveCommand))]
+    [NotifyPropertyChangedFor(nameof(MissesTimeline))]
+    [NotifyCanExecuteChangedFor(nameof(ApproveCommand), nameof(SendToResolveCommand))]
     private int? _version;
 
     public ObservableCollection<AssemblyVersionViewModel> Versions { get; } = [];
@@ -242,6 +246,12 @@ public sealed partial class AssemblyViewModel(IStoryForgeClient client, Guid pro
     private void Apply(AssemblyView view)
     {
         var keepEdits = HasEdits && _view?.Version == view.Version && _view?.Shots.Count == view.Shots.Count;
+        if (_view?.Version != view.Version && !IsSending)
+        {
+            // What came of a send belongs to the version sent, not to the one shown now.
+            ResolveText = "";
+            ResolveFailed = false;
+        }
         _view = view;
         State = view.State;
         ClipsApproved = view.ClipsApproved;
@@ -249,6 +259,7 @@ public sealed partial class AssemblyViewModel(IStoryForgeClient client, Guid pro
         Error = view.Error;
         Activity = view.Activity.LastOrDefault()?.Text;
         VideoPath = view.Path;
+        TimelinePath = view.TimelinePath;
         Version = view.Version;
         VideoInfo = view.Video is { } video ? Info(view, video) : "";
         Versions.Clear();

@@ -77,6 +77,7 @@ internal sealed class AssemblyViews(
         {
             Stale = shown == cell.CurrentVersion ? stale.GetValueOrDefault((Stage, "")) : null,
             WaitingBasedOn = waiting?.BasedOn,
+            TimelinePath = video?.Timeline is { } fcpxml && File.Exists(Path.Combine(root, fcpxml)) ? Path.Combine(root, fcpxml) : null,
         };
     }
 

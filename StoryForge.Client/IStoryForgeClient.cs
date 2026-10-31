@@ -283,6 +283,15 @@ public interface IStoryForgeClient
     Task RenderCutListAsync(Guid projectId, CutList cutList, int? editedFrom = null, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Send to Resolve: a new Resolve project named <paramref name="projectName"/> with the version's
+    /// timeline, opened on the Edit page; Resolve is started when it is not running. A name Resolve
+    /// already has is refused, nothing is overwritten. Every failure comes back as a result, not thrown.
+    /// </summary>
+    /// <exception cref="KeyNotFoundException">No such project or version.</exception>
+    /// <exception cref="ArgumentException">The project name is empty.</exception>
+    Task<SentToResolve> SendToResolveAsync(Guid projectId, int version, string projectName, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// What Rerun pipeline from here on this cell would make again, as the question before it says:
     /// "This remakes S04's voice, its 4 shots and their 4 stills. Other segments stay as they are."
     /// </summary>

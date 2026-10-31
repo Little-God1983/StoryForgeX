@@ -874,6 +874,24 @@ internal sealed class FakeStoryForgeClient : IStoryForgeClient
         Task.FromResult(version is { } v && AssemblyVersions.TryGetValue((projectId, v), out var old) ? old
             : Assembly.GetValueOrDefault(projectId) ?? new AssemblyView(projectId, StageState.NotStarted, null, [], null, null, [], null, null, [], false, null));
 
+    public List<(Guid ProjectId, int Version, string Name)> ResolveSends { get; } = [];
+
+    /// <summary>What Send to Resolve answers; ok with a 3-clip timeline when not set.</summary>
+    public SentToResolve? ResolveAnswer { get; set; }
+
+    /// <summary>While set, Send to Resolve waits for it.</summary>
+    public Task? ResolveGate { get; set; }
+
+    public async Task<SentToResolve> SendToResolveAsync(Guid projectId, int version, string projectName, CancellationToken cancellationToken = default)
+    {
+        ResolveSends.Add((projectId, version, projectName));
+        if (ResolveGate is { } gate)
+        {
+            await gate;
+        }
+        return ResolveAnswer ?? new SentToResolve(true, "done", null, projectName, 3);
+    }
+
     public Task RenderCutListAsync(Guid projectId, CutList cutList, int? editedFrom = null, CancellationToken cancellationToken = default)
     {
         ThrowIfFailing();

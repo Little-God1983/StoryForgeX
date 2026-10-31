@@ -168,6 +168,25 @@
         </StackPanel>
       </Border>
     </DataTemplate>
+    <DataTemplate DataType="{x:Type settings:ResolveCardViewModel}">
+      <Border Style="{StaticResource CardStyle}">
+        <StackPanel>
+          <ContentPresenter Content="{Binding ValidatesOnNotifyDataErrors=False}" ContentTemplate="{StaticResource CardHeaderTemplate}" />
+          <UniformGrid Columns="2">
+            <StackPanel Style="{StaticResource FieldCellStyle}">
+              <TextBlock Text="Resolve.exe (empty: standard install)" Style="{StaticResource FieldLabelStyle}" />
+              <TextBox Text="{Binding ResolveExe, UpdateSourceTrigger=PropertyChanged}" AutomationProperties.Name="Resolve executable" />
+            </StackPanel>
+            <StackPanel Style="{StaticResource FieldCellStyle}">
+              <TextBlock Text="ResolvePython.exe (empty: standard install)" Style="{StaticResource FieldLabelStyle}" />
+              <TextBox Text="{Binding ResolvePython, UpdateSourceTrigger=PropertyChanged}" AutomationProperties.Name="Resolve Python executable" />
+            </StackPanel>
+          </UniformGrid>
+          <TextBlock Text="Needs DaVinci Resolve Studio 21.1 or newer, with Preferences → System → General → External scripting set to Local."
+                     FontSize="12" Foreground="{StaticResource TextMutedBrush}" TextWrapping="Wrap" Margin="0,6,0,0" />
+        </StackPanel>
+      </Border>
+    </DataTemplate>
   </UserControl.Resources>
 
   <Grid>
@@ -227,11 +246,13 @@
           <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
           </Grid.RowDefinitions>
           <ContentControl Grid.Row="0" Grid.Column="0" Content="{Binding ClaudeCli, ValidatesOnNotifyDataErrors=False}" Focusable="False" />
           <ContentControl Grid.Row="0" Grid.Column="1" Content="{Binding LmStudio, ValidatesOnNotifyDataErrors=False}" Focusable="False" />
           <ContentControl Grid.Row="1" Grid.Column="0" Content="{Binding ComfyUi, ValidatesOnNotifyDataErrors=False}" Focusable="False" />
           <ContentControl Grid.Row="1" Grid.Column="1" Content="{Binding Ffmpeg, ValidatesOnNotifyDataErrors=False}" Focusable="False" />
+          <ContentControl Grid.Row="2" Grid.Column="0" Content="{Binding Resolve, ValidatesOnNotifyDataErrors=False}" Focusable="False" />
         </Grid>
 
         <!-- Paths & cache: where project media goes. -->

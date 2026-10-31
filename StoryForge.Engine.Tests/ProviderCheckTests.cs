@@ -37,12 +37,51 @@ public sealed class ProviderCheckTests : IDisposable
     }
 
     [Fact]
-    public async Task Content_automator_and_resolve_are_not_set_up_until_their_cards_exist()
+    public async Task Content_automator_is_not_set_up_until_its_card_exists()
     {
         var client = await ClientAsync();
 
         Assert.Equal(ProviderState.NotSetUp, (await StatusOf(client, ProviderId.ContentAutomatorX)).State);
-        Assert.Equal(ProviderState.NotSetUp, (await StatusOf(client, ProviderId.DavinciResolve)).State);
+    }
+
+    // --- Resolve (#71): its program and its Python, where Settings → Resolve says ---
+
+    private async Task<IStoryForgeClient> ResolveAtAsync(string exe, string python)
+    {
+        var client = await ClientAsync();
+        var settings = await client.GetSettingsAsync();
+        await client.SaveSettingsAsync(settings with { Resolve = new ResolveSettings(exe, python) });
+        return client;
+    }
+
+    [Fact]
+    public async Task Resolve_is_ok_when_its_program_and_its_python_are_found()
+    {
+        var folder = Directory.CreateTempSubdirectory("storyforge-resolve-").FullName;
+        try
+        {
+            var (exe, python) = (Path.Combine(folder, "Resolve.exe"), Path.Combine(folder, "ResolvePython.exe"));
+            await File.WriteAllTextAsync(exe, "");
+            await File.WriteAllTextAsync(python, "");
+
+            var status = await StatusOf(await ResolveAtAsync(exe, python), ProviderId.DavinciResolve);
+
+            Assert.Equal((ProviderState.Ok, "Resolve and its Python found"), (status.State, status.Detail));
+        }
+        finally
+        {
+            Directory.Delete(folder, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task Resolve_set_to_a_path_that_is_not_there_is_an_error_naming_it()
+    {
+        var python = Path.Combine(Path.GetTempPath(), $"no-resolve-{Guid.NewGuid():N}", "ResolvePython.exe");
+
+        var status = await StatusOf(await ResolveAtAsync(@"C:\Windows\notepad.exe", python), ProviderId.DavinciResolve);
+
+        Assert.Equal((ProviderState.Error, $"not found: {python}"), (status.State, status.Detail));
     }
 
     // --- Claude CLI and FFmpeg: run the executable with its version flag ---

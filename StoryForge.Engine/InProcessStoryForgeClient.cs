@@ -34,6 +34,7 @@ internal sealed class InProcessStoryForgeClient(
     TestRenders testRenders,
     Clips.ClipCells clips,
     Assembly.AssemblyViews assembly,
+    Resolve.ResolveExport resolve,
     Reruns reruns,
     ProjectFolders folders) : IStoryForgeClient
 {
@@ -188,6 +189,9 @@ internal sealed class InProcessStoryForgeClient(
 
     public Task RenderCutListAsync(Guid projectId, CutList cutList, int? editedFrom = null, CancellationToken cancellationToken = default) =>
         assembly.RenderAsync(projectId, cutList, editedFrom, cancellationToken);
+
+    public Task<SentToResolve> SendToResolveAsync(Guid projectId, int version, string projectName, CancellationToken cancellationToken = default) =>
+        resolve.SendAsync(projectId, version, projectName, cancellationToken);
 
     public Task<RerunPlan> GetRerunPlanAsync(Guid projectId, PipelineStage stage, string key, CancellationToken cancellationToken = default) =>
         reruns.PlanAsync(projectId, stage, key, cancellationToken);
