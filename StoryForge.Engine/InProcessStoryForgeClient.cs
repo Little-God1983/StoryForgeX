@@ -91,6 +91,9 @@ internal sealed class InProcessStoryForgeClient(
     public Task<Project> GetProjectAsync(Guid projectId, CancellationToken cancellationToken = default) =>
         projects.GetAsync(projectId, cancellationToken);
 
+    public Task<Project> UseNewerProfileAsync(Guid projectId, PipelineStage stage, CancellationToken cancellationToken = default) =>
+        projects.UseNewerProfileAsync(projectId, stage, cancellationToken);
+
     public Task StartRunAsync(Guid projectId, CancellationToken cancellationToken = default) =>
         runner.StartRunAsync(projectId, cancellationToken);
 

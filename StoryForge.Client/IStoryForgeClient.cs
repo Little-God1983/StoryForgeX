@@ -56,6 +56,15 @@ public interface IStoryForgeClient
     Task<Project> GetProjectAsync(Guid projectId, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Moves a failed stage to the newest version of the profile it was started with: the one change
+    /// a started setup takes, for a profile fixed after the start. Voice, References, Stills and Clips only.
+    /// </summary>
+    /// <exception cref="KeyNotFoundException">No such project.</exception>
+    /// <exception cref="ArgumentException">The stage has no ComfyUI profile, or the newer version cannot run either.</exception>
+    /// <exception cref="InvalidOperationException">The stage has not failed, or its profile has no newer version.</exception>
+    Task<Project> UseNewerProfileAsync(Guid projectId, PipelineStage stage, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// A stage changed state or reported activity, for any project. Raised on an engine thread;
     /// the UI moves it to its own.
     /// </summary>

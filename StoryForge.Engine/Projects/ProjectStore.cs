@@ -3,6 +3,7 @@ using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
 using Microsoft.EntityFrameworkCore;
 using StoryForge.Client;
+using StoryForge.Engine.Clips;
 using StoryForge.Engine.Data;
 using StoryForge.Engine.Profiles;
 using StoryForge.Engine.References;
@@ -68,6 +69,52 @@ internal sealed class ProjectStore(IDbContextFactory<StoryForgeDbContext> contex
             .Select(c => new StageStatus(c.Stage, c.State))
             .ToListAsync(cancellationToken);
         return ToProject(entry, cells);
+    }
+
+    /// <summary>
+    /// A failed stage on the newest version of the profile it started with. Only that stage's slot
+    /// moves (references and stills may share one image profile), and only to a version that can run.
+    /// </summary>
+    public async Task<Project> UseNewerProfileAsync(Guid projectId, PipelineStage stage, CancellationToken cancellationToken)
+    {
+        await using var db = await contextFactory.CreateDbContextAsync(cancellationToken);
+        var entry = await db.Projects.FirstOrDefaultAsync(p => p.Id == projectId, cancellationToken)
+            ?? throw new KeyNotFoundException($"There is no project {projectId}.");
+        var setup = ToProject(entry, []).Setup;
+        var own = stage switch
+        {
+            PipelineStage.Voice => setup.Voice.Profile,
+            PipelineStage.References => setup.References.Profile,
+            PipelineStage.Stills => setup.Stills.Profile,
+            PipelineStage.Clips => setup.Clips.Profile,
+            _ => throw new ArgumentException($"{stage} has no ComfyUI profile to move.", nameof(stage)),
+        };
+        var state = await db.Cells.AsNoTracking()
+            .Where(c => c.ProjectId == projectId && c.Stage == stage && c.Key == "")
+            .Select(c => (StageState?)c.State)
+            .FirstOrDefaultAsync(cancellationToken);
+        if (state != StageState.Failed)
+        {
+            throw new InvalidOperationException($"{stage} has not failed: it keeps the profile it started with.");
+        }
+        var newest = await db.ProfileVersions.AsNoTracking().Where(v => v.ProfileId == own.ProfileId).MaxAsync(v => (int?)v.Version, cancellationToken);
+        if (newest is not { } version || version <= own.Version)
+        {
+            throw new InvalidOperationException($"The {stage} profile has no version newer than {own.Version}.");
+        }
+        var newer = own with { Version = version };
+        var moved = stage switch
+        {
+            PipelineStage.Voice => setup with { Voice = setup.Voice with { Profile = newer } },
+            PipelineStage.References => setup with { References = setup.References with { Profile = newer } },
+            PipelineStage.Stills => setup with { Stills = setup.Stills with { Profile = newer } },
+            _ => setup with { Clips = setup.Clips with { Profile = newer } },
+        };
+        await RequireRunnableAsync(db, moved, cancellationToken, only: stage);
+        entry.SetupJson = JsonSerializer.Serialize(moved, Json);
+        entry.UpdatedAt = clock.GetUtcNow();
+        await db.SaveChangesAsync(cancellationToken);
+        return await GetAsync(projectId, cancellationToken);
     }
 
     /// <summary>
@@ -254,34 +301,74 @@ internal sealed class ProjectStore(IDbContextFactory<StoryForgeDbContext> contex
                 v => v.ProfileId == profileRef!.ProfileId && v.Version == profileRef.Version, cancellationToken);
             Require(versionExists, $"\"{profile.Name}\" has no version {profileRef!.Version}.");
         }
-        // The setup never changes once started: a reference (or still) profile whose workflow takes no
-        // picture would leave the references or the stills unmakeable, found out only after research,
-        // script and storyboard.
-        if (s.References.Consistency == Consistency.ReferenceImages)
-        {
-            var (name, inputs) = await InputsAsync(db, s.References.Profile, cancellationToken);
-            Require(WorkflowTemplate.Maps(inputs, ReferencesStage.PromptKey),
-                $"\"{name}\" cannot make reference images: it does not say where the prompt goes. Map '{ReferencesStage.PromptKey}' in the profile, or pick another reference profile.");
-            Require(WorkflowTemplate.Maps(inputs, ReferencesStage.ImageKey) || WorkflowTemplate.Maps(inputs, ReferencesStage.ImagesKey),
-                $"\"{name}\" cannot make reference images: it does not say where the picture goes. Map '{ReferencesStage.ImageKey}' (or '{ReferencesStage.ImagesKey}') in the profile, or pick another reference profile.");
-        }
-        var (still, stillInputs) = await InputsAsync(db, s.Stills.Profile, cancellationToken);
-        Require(WorkflowTemplate.Maps(stillInputs, ReferencesStage.PromptKey),
-            $"\"{still}\" cannot make stills: it does not say where the prompt goes. Map '{ReferencesStage.PromptKey}' in the profile, or pick another still profile.");
-        Require(s.References.Consistency != Consistency.ReferenceImages
-            || WorkflowTemplate.Maps(stillInputs, ReferencesStage.ImageKey) || WorkflowTemplate.Maps(stillInputs, ReferencesStage.ImagesKey),
-            $"\"{still}\" cannot make stills from the reference images: it does not say where they go. Map '{ReferencesStage.ImageKey}' (or '{ReferencesStage.ImagesKey}') in the profile, pick another still profile, or make the stills from text only.");
+        await RequireRunnableAsync(db, s, cancellationToken);
     }
 
-    /// <summary>A profile version's name and workflow inputs.</summary>
-    private static async Task<(string Name, IReadOnlyList<WorkflowInput> Inputs)> InputsAsync(StoryForgeDbContext db, ProfileRef profile, CancellationToken cancellationToken)
+    /// <summary>
+    /// The ComfyUI stages' profiles can run: each names a workflow and says where the values its stage
+    /// needs go. The setup never changes once started (bar a newer version of the same profile), so one
+    /// that cannot would be found out only after research, script and storyboard.
+    /// </summary>
+    /// <param name="only">Just this stage's profile: a move checks the slot it moves, not the others a project
+    /// started before the check may still hold.</param>
+    internal static async Task RequireRunnableAsync(StoryForgeDbContext db, ProjectSetup s, CancellationToken cancellationToken, PipelineStage? only = null)
+    {
+        bool Checks(PipelineStage stage) => only is null || only == stage;
+
+        if (Checks(PipelineStage.Voice))
+        {
+            var (voice, voiceProfile) = await ContentAsync(db, s.Voice.Profile, cancellationToken);
+            RequireWorkflow(voice, voiceProfile, "speak the script", "Voice", "voice");
+            Require(WorkflowTemplate.Maps(voiceProfile.Inputs, VoiceStage.TextKey),
+                $"\"{voice}\" cannot speak the script: it does not say where the text goes. Map '{VoiceStage.TextKey}' in the profile, or pick another voice profile.");
+        }
+        if (Checks(PipelineStage.References) && s.References.Consistency == Consistency.ReferenceImages)
+        {
+            var (name, reference) = await ContentAsync(db, s.References.Profile, cancellationToken);
+            RequireWorkflow(name, reference, "make reference images", "Image", "reference");
+            Require(WorkflowTemplate.Maps(reference.Inputs, ReferencesStage.PromptKey),
+                $"\"{name}\" cannot make reference images: it does not say where the prompt goes. Map '{ReferencesStage.PromptKey}' in the profile, or pick another reference profile.");
+            Require(WorkflowTemplate.Maps(reference.Inputs, ReferencesStage.ImageKey) || WorkflowTemplate.Maps(reference.Inputs, ReferencesStage.ImagesKey),
+                $"\"{name}\" cannot make reference images: it does not say where the picture goes. Map '{ReferencesStage.ImageKey}' (or '{ReferencesStage.ImagesKey}') in the profile, or pick another reference profile.");
+        }
+        if (Checks(PipelineStage.Stills))
+        {
+            var (still, stillProfile) = await ContentAsync(db, s.Stills.Profile, cancellationToken);
+            RequireWorkflow(still, stillProfile, "make stills", "Image", "still");
+            Require(WorkflowTemplate.Maps(stillProfile.Inputs, ReferencesStage.PromptKey),
+                $"\"{still}\" cannot make stills: it does not say where the prompt goes. Map '{ReferencesStage.PromptKey}' in the profile, or pick another still profile.");
+            Require(s.References.Consistency != Consistency.ReferenceImages
+                || WorkflowTemplate.Maps(stillProfile.Inputs, ReferencesStage.ImageKey) || WorkflowTemplate.Maps(stillProfile.Inputs, ReferencesStage.ImagesKey),
+                $"\"{still}\" cannot make stills from the reference images: it does not say where they go. Map '{ReferencesStage.ImageKey}' (or '{ReferencesStage.ImagesKey}') in the profile, pick another still profile, or make the stills from text only.");
+        }
+        if (!Checks(PipelineStage.Clips))
+        {
+            return;
+        }
+        var (video, videoProfile) = await ContentAsync(db, s.Clips.Profile, cancellationToken);
+        RequireWorkflow(video, videoProfile, "make clips", "Video", "video");
+        // What ClipsStage needs to put the still, its prompt and its length into the workflow.
+        foreach (var key in new[] { ReferencesStage.PromptKey, ReferencesStage.ImageKey, ClipsStage.FramesKey })
+        {
+            Require(WorkflowTemplate.Maps(videoProfile.Inputs, key),
+                $"\"{video}\" cannot make clips: it does not say where '{key}' goes. Map it in the profile, or pick another video profile.");
+        }
+    }
+
+    /// <summary>"…cannot make clips: it has no workflow. Pick one in Profiles → Video, or pick another video profile."</summary>
+    private static void RequireWorkflow(string name, ProfileContent profile, string task, string page, string slot) =>
+        Require(!string.IsNullOrWhiteSpace(profile.WorkflowTemplate),
+            $"\"{name}\" cannot {task}: it has no workflow. Pick one in Profiles → {page}, or pick another {slot} profile.");
+
+    /// <summary>A profile version's name and content.</summary>
+    private static async Task<(string Name, ProfileContent Content)> ContentAsync(StoryForgeDbContext db, ProfileRef profile, CancellationToken cancellationToken)
     {
         var name = (await db.Profiles.AsNoTracking().FirstAsync(p => p.Id == profile.ProfileId, cancellationToken)).Name;
         var json = await db.ProfileVersions.AsNoTracking()
             .Where(v => v.ProfileId == profile.ProfileId && v.Version == profile.Version)
             .Select(v => v.Json)
             .FirstAsync(cancellationToken);
-        return (name, ProfileStore.Read(json).Inputs);
+        return (name, ProfileStore.Read(json));
     }
 
     private static void Require(bool condition, string message)

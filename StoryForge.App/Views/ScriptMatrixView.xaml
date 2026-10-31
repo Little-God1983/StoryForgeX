@@ -174,6 +174,10 @@
         <DockPanel>
           <Button DockPanel.Dock="Right" Content="Retry" Style="{StaticResource PrimaryButtonStyle}" MinHeight="36" FontSize="13"
                   Background="{StaticResource ErrorTextBrush}" Command="{Binding RegenerateVoiceCommand}" AutomationProperties.Name="Retry the voice" />
+          <!-- #75: the newer version of the profile the stage started with. -->
+          <Button DockPanel.Dock="Right" Content="{Binding VoiceNewerProfile}" Style="{StaticResource SecondaryButtonStyle}" MinHeight="36" FontSize="13" Margin="0,0,8,0"
+                  Command="{Binding UseNewerVoiceProfileCommand}" AutomationProperties.Name="{Binding VoiceNewerProfile}"
+                  Visibility="{Binding VoiceNewerProfile, Converter={views:NullToCollapsedConverter}}" />
           <StackPanel VerticalAlignment="Center" Margin="0,0,14,0">
             <TextBlock Text="Voice failed" FontSize="14" FontWeight="SemiBold" Foreground="{StaticResource PillErrorTextBrush}" />
             <TextBlock Text="{Binding VoiceError}" FontSize="13" Foreground="#E2C1BB" TextWrapping="Wrap" Margin="0,2,0,0"
@@ -299,6 +303,10 @@
           <!-- Continue pipeline makes what is waiting: the stills the run did not get to, and the batch; those made stay. -->
           <Button DockPanel.Dock="Right" Content="Continue pipeline" Style="{StaticResource PrimaryButtonStyle}" MinHeight="36" FontSize="13"
                   Background="{StaticResource ErrorTextBrush}" Command="{Binding ContinuePipelineCommand}" AutomationProperties.Name="Continue the stills" />
+          <!-- #75: the newer version of the profile the stage started with. -->
+          <Button DockPanel.Dock="Right" Content="{Binding StillsNewerProfile}" Style="{StaticResource SecondaryButtonStyle}" MinHeight="36" FontSize="13" Margin="0,0,8,0"
+                  Command="{Binding UseNewerStillsProfileCommand}" AutomationProperties.Name="{Binding StillsNewerProfile}"
+                  Visibility="{Binding StillsNewerProfile, Converter={views:NullToCollapsedConverter}}" />
           <StackPanel VerticalAlignment="Center" Margin="0,0,14,0">
             <TextBlock Text="Stills failed" FontSize="14" FontWeight="SemiBold" Foreground="{StaticResource PillErrorTextBrush}" />
             <TextBlock Text="{Binding StillsError}" FontSize="13" Foreground="#E2C1BB" TextWrapping="Wrap" Margin="0,2,0,0"
@@ -365,6 +373,10 @@
           <!-- Make clips makes what is waiting: the clips the run did not get to, and the ones queued; those made stay. -->
           <Button DockPanel.Dock="Right" Content="Make clips" Style="{StaticResource PrimaryButtonStyle}" MinHeight="36" FontSize="13"
                   Background="{StaticResource ErrorTextBrush}" Command="{Binding MakeClipsCommand}" AutomationProperties.Name="Make the clips again" />
+          <!-- #75: the newer version of the profile the stage started with. -->
+          <Button DockPanel.Dock="Right" Content="{Binding ClipsNewerProfile}" Style="{StaticResource SecondaryButtonStyle}" MinHeight="36" FontSize="13" Margin="0,0,8,0"
+                  Command="{Binding UseNewerClipsProfileCommand}" AutomationProperties.Name="{Binding ClipsNewerProfile}"
+                  Visibility="{Binding ClipsNewerProfile, Converter={views:NullToCollapsedConverter}}" />
           <StackPanel VerticalAlignment="Center" Margin="0,0,14,0">
             <TextBlock Text="Clips failed" FontSize="14" FontWeight="SemiBold" Foreground="{StaticResource PillErrorTextBrush}" />
             <TextBlock Text="{Binding ClipsError}" FontSize="13" Foreground="#E2C1BB" TextWrapping="Wrap" Margin="0,2,0,0"

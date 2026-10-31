@@ -23,8 +23,14 @@ public sealed partial class ReferencesViewModel(IStoryForgeClient client, Guid p
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsRunning), nameof(IsMaking), nameof(IsReview), nameof(IsApproved), nameof(IsFailed), nameof(ShowsListBar), nameof(ShowsGateBar), nameof(ShowsTextOnlyBar), nameof(CanPropose))]
-    [NotifyCanExecuteChangedFor(nameof(ProposeCommand), nameof(MakeImagesCommand), nameof(CancelCommand), nameof(RetryCommand), nameof(ApproveRemainingCommand), nameof(ApproveTextOnlyCommand), nameof(AddReferenceCommand))]
+    [NotifyCanExecuteChangedFor(nameof(ProposeCommand), nameof(MakeImagesCommand), nameof(CancelCommand), nameof(RetryCommand), nameof(ApproveRemainingCommand), nameof(ApproveTextOnlyCommand), nameof(AddReferenceCommand),
+        nameof(UseNewerProfileCommand))]
     private StageState _state;
+
+    /// <summary>"Use Painted dark fantasy v2" while the references failed and their profile has a newer version (#75); null otherwise.</summary>
+    [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(UseNewerProfileCommand))]
+    private string? _newerProfile;
 
     public bool IsRunning => State == StageState.Running;
 
@@ -139,6 +145,7 @@ public sealed partial class ReferencesViewModel(IStoryForgeClient client, Guid p
                 return;   // a newer load or a live update came in meanwhile; this view is old
             }
             Apply(view);
+            NewerProfile = IsFailed ? await NewerProfileOffer.OfferAsync(client, ProjectId, PipelineStage.References) : null;
         }
         catch (Exception ex)
         {
@@ -248,7 +255,7 @@ public sealed partial class ReferencesViewModel(IStoryForgeClient client, Guid p
         {
             OnPropertyChanged(name);
         }
-        foreach (var command in new IRelayCommand[] { CancelCommand, ProposeCommand, MakeImagesCommand, AddReferenceCommand, MakeReferenceCommand, ApproveRemainingCommand, RetryCommand, ApproveTextOnlyCommand, ToggleCellCommand })
+        foreach (var command in new IRelayCommand[] { CancelCommand, ProposeCommand, MakeImagesCommand, AddReferenceCommand, MakeReferenceCommand, ApproveRemainingCommand, RetryCommand, ApproveTextOnlyCommand, ToggleCellCommand, UseNewerProfileCommand })
         {
             command.NotifyCanExecuteChanged();
         }
@@ -319,6 +326,32 @@ public sealed partial class ReferencesViewModel(IStoryForgeClient client, Guid p
     private Task RetryAsync() => IsListPhase
         ? ActAsync("make the references", () => client.RegenerateAsync(ProjectId, PipelineStage.References))
         : ActAsync("make the images", () => client.MakeReferenceImagesAsync(ProjectId));   // past the list: the approved ones stay
+
+    private bool CanUseNewerProfile() => NewerProfile is not null && IsFailed && !_acting;
+
+    /// <summary>Moves the references to the newer profile version, then tries again as Retry does; nothing runs when the move does not go through.</summary>
+    [RelayCommand(CanExecute = nameof(CanUseNewerProfile))]
+    private async Task UseNewerProfileAsync()
+    {
+        var named = NewerProfileOffer.Named(NewerProfile!);
+        var listPhase = IsListPhase;
+        // The move reloads the screen when it goes through, so it shows the new version also when the
+        // stage then will not start.
+        if (!await ActAsync($"use {named}", () => client.UseNewerProfileAsync(ProjectId, PipelineStage.References)))
+        {
+            await LoadAsync();   // a move made elsewhere meanwhile takes its offer off the line
+            return;
+        }
+        try
+        {
+            await (listPhase ? client.RegenerateAsync(ProjectId, PipelineStage.References) : client.MakeReferenceImagesAsync(ProjectId));
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"{named} did not start: {ex}");
+            ActionError = $"Now on {named}, but it did not start again: {ex.Message}";
+        }
+    }
 
     private bool CanApproveTextOnly() => (TextOnly || NothingToMake) && IsReview && !_acting;
 
