@@ -98,8 +98,15 @@ internal sealed class FfmpegVideoRenderer(IProcessRunner processes, SettingsStor
         Directory.CreateDirectory(Path.GetDirectoryName(output)!);
         // Written whole, then moved into place: an editor never opens half a timeline.
         var partial = output + ".partial";
-        await File.WriteAllTextAsync(partial, xml, new System.Text.UTF8Encoding(encoderShouldEmitUTF8Identifier: false), cancellationToken);
-        File.Move(partial, output, overwrite: true);
+        try
+        {
+            await File.WriteAllTextAsync(partial, xml, new System.Text.UTF8Encoding(encoderShouldEmitUTF8Identifier: false), cancellationToken);
+            File.Move(partial, output, overwrite: true);
+        }
+        finally
+        {
+            File.Delete(partial);   // left behind only when the write or the move failed
+        }
     }
 
     private async Task<MediaInfo> ProbeAsync(string ffmpeg, string file, CancellationToken cancellationToken)

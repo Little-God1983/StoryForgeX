@@ -139,6 +139,33 @@ public sealed partial class StillsRunTests
         Assert.Null((await client.GetAssemblyAsync(project.Id)).TimelinePath);
     }
 
+    /// <summary>Review of #71, round 3: the Assembly screen is built anew each time it opens, so its
+    /// own "sending" did not stop a second send after leaving and coming back. The engine does.</summary>
+    [Fact]
+    public async Task One_send_at_a_time_a_second_while_the_first_runs_is_refused()
+    {
+        var client = await StartWithResolveAsync();
+        var project = await ClipsApprovedAsync(client);
+        await AssemblyAsync(client, project.Id);
+        var gate = new TaskCompletionSource();
+        _resolve.Gate = gate.Task;
+
+        var first = client.SendToResolveAsync(project.Id, 1, "Dark Eye");
+        for (var waited = 0; _resolve.Sends.Count == 0 && waited < 500; waited++)
+        {
+            await Task.Delay(10);   // until the first is with Resolve
+        }
+        var second = await client.SendToResolveAsync(project.Id, 1, "Dark Eye");
+        gate.SetResult();
+
+        Assert.Equal((false, "busy"), (second.Ok, second.Stage));
+        Assert.Contains("still sending", second.Problem);
+        Assert.True((await first).Ok);
+        Assert.Single(_resolve.Sends);
+        _resolve.Gate = null;
+        Assert.True((await client.SendToResolveAsync(project.Id, 1, "Dark Eye 2")).Ok);   // free again after
+    }
+
     [Fact]
     public async Task Send_to_Resolve_needs_a_name_and_a_version_that_exists()
     {
@@ -158,14 +185,21 @@ public sealed partial class StillsRunTests
 
         public SendToResolveResult Answer { get; set; } = new(true, "done", null, "timeline", 1, 0);
 
+        /// <summary>While set, a send waits for it.</summary>
+        public Task? Gate { get; set; }
+
         public IResolveSender For(ResolveInstall install) => new Sender(this, install);
 
         private sealed class Sender(FakeResolveSenders owner, ResolveInstall install) : IResolveSender
         {
-            public Task<SendToResolveResult> SendAsync(SendToResolveRequest request, CancellationToken cancellationToken)
+            public async Task<SendToResolveResult> SendAsync(SendToResolveRequest request, CancellationToken cancellationToken)
             {
                 owner.Sends.Add((install, request));
-                return Task.FromResult(owner.Answer);
+                if (owner.Gate is { } gate)
+                {
+                    await gate;
+                }
+                return owner.Answer;
             }
         }
     }

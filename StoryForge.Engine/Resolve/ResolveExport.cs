@@ -26,6 +26,9 @@ internal sealed class ResolveSenders(IProcessRunner processes, IOptions<StoryFor
 /// <summary>Send to Resolve (#71): an Assembly version's timeline as a new, named Resolve project.</summary>
 internal sealed class ResolveExport(CellReader cells, ProjectStore projects, ProjectFolders folders, SettingsStore settings, IResolveSenders senders)
 {
+    // One send at a time, whatever screen started it: two scripts against one Resolve would race.
+    private readonly SemaphoreSlim _sending = new(1, 1);
+
     public async Task<SentToResolve> SendAsync(Guid projectId, int version, string projectName, CancellationToken cancellationToken)
     {
         var name = projectName?.Trim() ?? "";
@@ -46,7 +49,18 @@ internal sealed class ResolveExport(CellReader cells, ProjectStore projects, Pro
         var install = ResolveInstall.Locate(saved.ResolveExe, saved.ResolvePython);
         var request = new SendToResolveRequest(name, Path.Combine(root, video.Timeline),
             SendToResolveRequest.FrameRateText(ClipsStage.FramesPerSecond, 1), PlaceMarkers: false, Markers: []);
-        var result = await senders.For(install).SendAsync(request, cancellationToken);
-        return new SentToResolve(result.Ok, result.Stage, result.Problem, result.TimelineName, result.VideoItems);
+        if (!_sending.Wait(0))
+        {
+            return new SentToResolve(false, "busy", "Resolve is still sending the last timeline; its answer shows where it was started. Try again once it is in.", null, 0);
+        }
+        try
+        {
+            var result = await senders.For(install).SendAsync(request, cancellationToken);
+            return new SentToResolve(result.Ok, result.Stage, result.Problem, result.TimelineName, result.VideoItems);
+        }
+        finally
+        {
+            _sending.Release();
+        }
     }
 }
