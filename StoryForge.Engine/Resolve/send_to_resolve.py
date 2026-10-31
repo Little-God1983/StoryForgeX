@@ -237,8 +237,11 @@ def run(request, state, request_path):
     except Exception:
         state["timelineName"] = None
 
+    # A transition is an item on the track as well, but has no media pool item behind it; counting
+    # it made a cut of 11 clips with 6 cross dissolves come back as "17 clips".
     try:
-        state["videoItems"] = len(timeline.GetItemListInTrack("video", 1) or [])
+        items = timeline.GetItemListInTrack("video", 1) or []
+        state["videoItems"] = sum(1 for item in items if item.GetMediaPoolItem() is not None)
     except Exception:
         state["videoItems"] = 0
 

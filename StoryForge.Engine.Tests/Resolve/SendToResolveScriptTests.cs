@@ -38,12 +38,21 @@ public sealed class SendToResolveScriptTests
                 handle.write(name + "\n")
 
 
+        class _Item:
+            def __init__(self, clip):
+                self._clip = clip
+
+            # A transition is an item on the track too, but has no media behind it.
+            def GetMediaPoolItem(self):
+                return object() if self._clip else None
+
+
         class _Timeline:
             def GetName(self):
                 return "T"
 
             def GetItemListInTrack(self, kind, index):
-                return [1, 2]
+                return [_Item(True), _Item(False), _Item(True)]
 
             def GetSetting(self, key):
                 return 60.0
@@ -162,6 +171,16 @@ public sealed class SendToResolveScriptTests
         Assert.True(result.Ok, result.Problem);
         Assert.Equal("done", result.Stage);
         Assert.Equal(1, creates);
+    }
+
+    /// <summary>Found in the first send from StoryForge X (#71): Resolve lists the cross dissolves
+    /// on the video track among the clips, and "17 clips" came back for a cut of 11.</summary>
+    [Fact]
+    public void TheClipCount_LeavesTheTransitionsOut()
+    {
+        var (result, _, _) = RunScript(refuseCreates: 0);
+
+        Assert.Equal(2, result.VideoItems);
     }
 
     /// <summary>The signal is what stops RawCutX closing Resolve's update windows: once the project
