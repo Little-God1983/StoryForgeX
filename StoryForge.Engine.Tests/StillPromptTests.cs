@@ -1,3 +1,4 @@
+using StoryForge.Engine.Clips;
 using StoryForge.Engine.Stills;
 
 namespace StoryForge.Engine.Tests;
@@ -15,6 +16,25 @@ public sealed class StillPromptTests
         StillPromptCheck.Problems(new StillPromptsOutput([new StillPromptOutput(StillPromptCheck.Name(shot.Label), prompt)]), [shot]);
 
     private static readonly StillPicture Troll = new("Trolls", "Hulking and grey.");
+
+    [Fact]
+    public void The_clip_prompt_gets_the_cast_and_their_looks()
+    {
+        var prompt = ClaudeCliClipPromptAgent.FirstPrompt(new ClipPromptRequest(Guid.NewGuid(), "A lore video.",
+            [new ClipShot("S02\u00b71", "Nosulgor sleeps.", "", "the still", 5, [new StillPicture("Nosulgor", "An ancient dragon, blind: no eyes visible.")])], "", ""));
+
+        Assert.Contains("In it: Nosulgor: An ancient dragon, blind: no eyes visible.", prompt);
+    }
+
+    [Fact]
+    public void The_clip_rules_ask_to_name_what_must_not_change()
+    {
+        var prompt = ClaudeCliClipPromptAgent.FirstPrompt(new ClipPromptRequest(Guid.NewGuid(), "A lore video.",
+            [new ClipShot("S02\u00b71", "Nosulgor sleeps.", "", "the still", 5, [])], "", ""));
+
+        Assert.Contains("Name what must not change", prompt);
+        Assert.Contains("his eye sockets stay empty", prompt);
+    }
 
     [Theory]
     [InlineData("the dragon from picture 1")]

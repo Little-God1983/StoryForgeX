@@ -14,7 +14,8 @@ namespace StoryForge.Engine.Clips;
 /// <param name="Label">"S01·2".</param>
 /// <param name="Still">The prompt its still was made from: what the first frame shows.</param>
 /// <param name="Seconds">How long the clip runs.</param>
-internal sealed record ClipShot(string Label, string Description, string Heard, string Still, double Seconds);
+/// <param name="Cast">Who and what is in it, with their looks: what must stay as it is.</param>
+internal sealed record ClipShot(string Label, string Description, string Heard, string Still, double Seconds, IReadOnlyList<StillPicture> Cast);
 
 /// <summary>What the motion prompts are written from: the brief, the shots, and the video profile's instructions.</summary>
 /// <param name="Model">The model to use; empty means the provider's default.</param>
@@ -103,6 +104,10 @@ internal sealed class ClaudeCliClipPromptAgent(ClaudeCli claude, IOptions<StoryF
             prompt.AppendLine();
             prompt.AppendLine(CultureInfo.InvariantCulture, $"{StillPromptCheck.Name(shot.Label)} ({shot.Seconds:0.#} s): {shot.Description}");
             prompt.AppendLine(CultureInfo.InvariantCulture, $"Its still shows: {shot.Still}");
+            if (shot.Cast.Count > 0)
+            {
+                prompt.AppendLine($"In it: {string.Join("; ", shot.Cast.Select(c => c.Look.Length > 0 ? $"{c.Name}: {c.Look}" : c.Name))}");
+            }
             if (shot.Heard.Length > 0)
             {
                 prompt.AppendLine(CultureInfo.InvariantCulture, $"Heard meanwhile: \"{shot.Heard}\"");
@@ -115,7 +120,8 @@ internal sealed class ClaudeCliClipPromptAgent(ClaudeCli claude, IOptions<StoryF
             1. One prompt per shot. The clip starts from the still: describe what moves in it and how the camera moves, for as long as the clip runs.
             2. Keep to what the still shows; do not bring in people or things that are not in it.
             3. One clear motion that fits the length: a slow push-in, a pan, a character turning, smoke drifting. No cuts within a clip.
-            4. Never ask for text, letters, captions or logos.
+            4. Name what must not change for who and what is in the shot, from their looks: "his eye sockets stay empty", "the orb stays the size of a fist".
+            5. Never ask for text, letters, captions or logos.
             """);
         if (!string.IsNullOrWhiteSpace(request.Instructions))
         {

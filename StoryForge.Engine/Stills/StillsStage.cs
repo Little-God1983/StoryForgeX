@@ -373,6 +373,12 @@ internal sealed partial class StillsStage(
     /// <summary>The look the shot writer gave someone; empty when none.</summary>
     private static string LookOf(Plan plan, string name) => plan.Cast.FirstOrDefault(c => ReferenceList.Same(c.Name, name))?.Look ?? "";
 
+    /// <summary>Someone's look: their reference's, which you can edit there, else the shot writer's.</summary>
+    internal static string LookOf(IReadOnlyList<CastMember> cast, IReadOnlyList<Reference> references, string name) =>
+        references.FirstOrDefault(r => ReferenceList.IsNamed(r, name))?.Look is { Length: > 0 } look
+            ? look
+            : cast.FirstOrDefault(c => ReferenceList.Same(c.Name, name))?.Look ?? "";
+
     /// <summary>
     /// What goes into a still. Someone seen again with no picture of their own goes in by the earlier
     /// still picked for them, when that shot still comes earlier and has a still; a reference picture
