@@ -93,7 +93,7 @@ public sealed class NewProjectPageTests
     }
 
     [Theory]
-    [InlineData("16:9", 0, 1344, 768, "1344 × 768 · faster")]      // 1366 × 768
+    [InlineData("16:9", 0, 1376, 768, "1376 × 768 · delivery size")]  // 1366 × 768: no taller than the faster size, so nothing to scale up
     [InlineData("16:9", 2, 1344, 768, "1344 × 768 · faster")]      // 2560 × 1440
     [InlineData("9:16", 1, 768, 1344, "768 × 1344 · faster")]      // 1080 × 1920
     [InlineData("1:1", 1, 1024, 1024, "1024 × 1024 · faster")]     // 1080 × 1080
@@ -109,6 +109,20 @@ public sealed class NewProjectPageTests
 
         Assert.Equal(new GenerationSize(aspect, width, height), page.ClipSize.Value);
         Assert.Equal(label, page.ClipSize.Options[0].Label);
+    }
+
+    [Fact]
+    public async Task Stills_smaller_than_the_delivery_only_say_they_are_scaled_for_a_larger_clip()
+    {
+        // Clips no longer match the delivery: a still at the clips' size is not scaled at all.
+        AddOneOfEach();
+        var page = await ShownPage();
+
+        page.StillSize.SelectedIndex = GenerationSizeViewModel.CustomIndex;
+        page.StillSize.CustomWidth = "1344";
+        page.StillSize.CustomHeight = "768";
+
+        Assert.Equal("Smaller than the delivery: a clip larger than this gets a scaled-up still.", page.StillSize.Warning);
     }
 
     [Fact]

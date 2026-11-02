@@ -70,7 +70,7 @@ public sealed partial class NewProjectPageViewModel : PageViewModel
         ResearchSlot.PropertyChanged += (_, e) => OnSlotChanged(e, ResearchSlot, ApplyResearchProfile);
         StoryboardSlot.PropertyChanged += (_, e) => OnSlotChanged(e, StoryboardSlot,
             (content, _, sameProfile) => Pacing.UseDefault(content, keepCustom: sameProfile));
-        // The sizes follow the delivery, not the profiles: the image profile has no defaults to load.
+        // The sizes do not follow the profiles: the image profile has no defaults to load.
         VideoSlot.PropertyChanged += (_, e) => OnSlotChanged(e, VideoSlot,
             (content, _, sameProfile) => MaxClip.UseDefault(content, keepCustom: sameProfile));
         foreach (var slot in Cards.SelectMany(c => c.Slots))
@@ -153,7 +153,7 @@ public sealed partial class NewProjectPageViewModel : PageViewModel
     [ObservableProperty]
     private bool _reviewReferenceList = true;
 
-    public GenerationSizeViewModel StillSize { get; } = new("the stills are scaled up for the clips.");
+    public GenerationSizeViewModel StillSize { get; } = new("a clip larger than this gets a scaled-up still.");
 
     public GenerationSizeViewModel ClipSize { get; } = new("Assembly scales the clips up.", faster: true);
 

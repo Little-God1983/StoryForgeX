@@ -54,7 +54,8 @@ public sealed partial class GenerationSizeViewModel(string scaledUp, bool faster
 
     /// <summary>
     /// The size clips run fast at, with the video model staying on the graphics card (the bench in
-    /// #85); a delivery with fewer pixels stays as it is.
+    /// #85). A delivery no taller than that stays as it is: 1376 × 768 costs next to nothing more
+    /// than 1344 × 768, and saves scaling every clip up.
     /// </summary>
     public static GenerationSize Faster(GenerationSize delivery)
     {
@@ -65,7 +66,7 @@ public sealed partial class GenerationSizeViewModel(string scaledUp, bool faster
             _ => delivery with { Width = 1344, Height = 768 },
         };
         var whole = RoundUp(delivery);
-        return whole.Width * whole.Height < fast.Width * fast.Height ? whole : fast;
+        return Math.Min(whole.Width, whole.Height) <= Math.Min(fast.Width, fast.Height) ? whole : fast;
     }
 
     /// <summary>"Smaller than the delivery: Assembly scales the clips up."; null when the size is not smaller.</summary>

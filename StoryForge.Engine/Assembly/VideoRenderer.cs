@@ -128,7 +128,7 @@ internal sealed class FfmpegVideoRenderer(IProcessRunner processes, SettingsStor
         for (var i = 0; i < plan.Pictures.Count; i++)
         {
             var part = plan.Pictures[i];
-            Line($"[{clips.IndexOf(part.File)}:v]fps={fps},scale={w}:{h}:force_original_aspect_ratio=increase,crop={w}:{h},setsar=1,format=yuv420p,tpad=stop_mode=clone:stop_duration=5,trim=start_frame={part.FirstFrame}:end_frame={part.FirstFrame + part.Frames},setpts=PTS-STARTPTS,settb=AVTB[p{i}]");
+            Line($"[{clips.IndexOf(part.File)}:v]fps={fps},scale={w}:{h}:force_original_aspect_ratio=increase:flags=lanczos,crop={w}:{h},setsar=1,format=yuv420p,tpad=stop_mode=clone:stop_duration=5,trim=start_frame={part.FirstFrame}:end_frame={part.FirstFrame + part.Frames},setpts=PTS-STARTPTS,settb=AVTB[p{i}]");
         }
         var joined = "p0";
         var frames = plan.Pictures[0].Frames;
