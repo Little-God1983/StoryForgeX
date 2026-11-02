@@ -11,13 +11,15 @@ namespace StoryForge.Engine.Stills;
 
 /// <summary>A picture a still is made from, as the prompt names it: "picture 1 shows Karlach".</summary>
 /// <param name="Look">What it looks like, in words; empty when unknown.</param>
-internal sealed record StillPicture(string Name, string Look);
+/// <param name="FromShot">An earlier still: the shot it is the still of, e.g. "S03-1".</param>
+/// <param name="KeepSurroundings">An earlier still of a place: it brings its surroundings along.</param>
+internal sealed record StillPicture(string Name, string Look, string? FromShot = null, bool KeepSurroundings = false);
 
 /// <summary>A shot as the prompt writer sees it: what the storyboard says, what is heard, what it starts from.</summary>
 /// <param name="Label">"S01·2".</param>
 /// <param name="Pictures">The pictures the image model gets with the prompt, in order; empty for text only.</param>
 /// <param name="FromShotBefore">The first picture is the still of the shot before: the camera moves on in the same scene.</param>
-/// <param name="Described">Who is in it with a reference but no picture (the workflow takes one): in words only.</param>
+/// <param name="Described">Who is in it with no picture of their own: in words only.</param>
 internal sealed record StillShot(
     string Label, string Description, IReadOnlyList<string> Cast, string Heard, IReadOnlyList<StillPicture> Pictures, bool FromShotBefore, IReadOnlyList<StillPicture> Described);
 

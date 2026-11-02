@@ -8,6 +8,7 @@ namespace StoryForge.Client;
 /// <param name="ContinuesFrom">The shot whose still it started from (a continuation); null for none.</param>
 /// <param name="YourPrompt">Made from your prompt (Edit prompt…), not one Claude wrote.</param>
 /// <param name="YourFile">Your own picture (Replace with file…): nothing was made.</param>
+/// <param name="EarlierStills">The earlier stills that went in, for whom; null when none did.</param>
 public sealed record Still(
     string ShotKey,
     string File,
@@ -18,7 +19,8 @@ public sealed record Still(
     IReadOnlyList<string> References,
     string? ContinuesFrom = null,
     bool YourPrompt = false,
-    bool YourFile = false)
+    bool YourFile = false,
+    IReadOnlyList<EarlierStill>? EarlierStills = null)
 {
     /// <summary>Raised whenever the stored shape changes, so older stills can still be read.</summary>
     public const int SchemaVersion = 1;
