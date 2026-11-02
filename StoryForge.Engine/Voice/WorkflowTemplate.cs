@@ -11,6 +11,8 @@ namespace StoryForge.Engine.Voice;
 /// </summary>
 internal static class WorkflowTemplate
 {
+    private const string UnloadAfter = "unload_after";
+
     /// <exception cref="StageFailedException">No templates folder or file, not JSON, or not the API format.</exception>
     /// <param name="kind">The profile's kind as its messages name it: "voice", "image".</param>
     public static async Task<JsonObject> LoadAsync(string folder, string file, CancellationToken cancellationToken, string kind = "voice")
@@ -79,6 +81,26 @@ internal static class WorkflowTemplate
             fields[name] = value.DeepClone();
         }
         return copy;
+    }
+
+    /// <summary>
+    /// Turns on the workflow's own "unload_after" switches, so its nodes let go of their models when
+    /// they have run. Models in a node pack's own cache (Breeze TTS, Whisper) go no other way: ComfyUI's
+    /// /free cannot reach them. A switch wired from another node stays as the workflow has it.
+    /// </summary>
+    /// <returns>Whether the workflow has such a switch.</returns>
+    public static bool UnloadModelsAfter(JsonObject workflow)
+    {
+        var found = false;
+        foreach (var (_, node) in workflow)
+        {
+            if (node?["inputs"] is JsonObject inputs && inputs[UnloadAfter] is JsonValue)
+            {
+                inputs[UnloadAfter] = true;
+                found = true;
+            }
+        }
+        return found;
     }
 
     /// <summary>Whether the profile maps <paramref name="key"/> to a node.</summary>

@@ -159,6 +159,72 @@ public sealed class VoiceRunTests : IDisposable
     }
 
     [Fact]
+    public async Task Only_the_last_part_of_the_run_lets_go_of_the_voice_models()
+    {
+        // Whisper reads the reference voice for Breeze: its cache, like Breeze's, is out of /free's reach.
+        File.WriteAllText(Path.Combine(_templates, "whisper.json"), """
+            {
+              "1": { "class_type": "ITLBreezeTTSLoader", "inputs": { "attention": "sdpa", "fast_path": false } },
+              "2": { "class_type": "LoadAudio", "inputs": { "audio": "Amira.mp3" } },
+              "11": { "class_type": "ITLBreezeTTSVoiceDirection", "inputs": { "model": ["1", 0], "reference_audio": ["2", 0], "reference_text": ["19", 0], "text": "", "instruction": "", "seed": 1, "cfg_scale": 4, "unload_after": false } },
+              "19": { "class_type": "ITLWhisperTranscribe", "inputs": { "language": "auto", "unload_after": false, "model": ["20", 0], "audio": ["2", 0] } },
+              "20": { "class_type": "ITLWhisperLoader", "inputs": { "model": "large-v3-turbo", "device": "auto" } }
+            }
+            """);
+        var client = await StartAsync();
+        var project = await ScriptApprovedAsync(client, workflow: "whisper.json");
+
+        var voice = await VoiceAsync(client, project.Id, StageState.Approved, StageState.Failed);
+
+        // Not on every part: the next one would load them again (about 20 s) only to let go once more.
+        bool[] onlyTheLast = [false, false, false, false, false, false, false, true];
+        Assert.Equal(onlyTheLast, _comfy.Workflows.Select(w => Unloads(w, "11")));
+        Assert.Equal(onlyTheLast, _comfy.Workflows.Select(w => Unloads(w, "19")));
+        Assert.Contains(voice.Activity, a => a.Text == "voice models unloaded from the GPU");
+    }
+
+    [Fact]
+    public async Task Speaking_one_segment_again_lets_go_of_the_voice_models_after_its_last_part()
+    {
+        var client = await StartAsync();
+        var project = await ScriptApprovedAsync(client);
+        await VoiceAsync(client, project.Id, StageState.Approved, StageState.Failed);
+
+        await client.RegenerateSegmentAsync(project.Id, PipelineStage.Voice, "S02");
+        await ScriptRunTests.WaitForAsync(() => client.GetVoiceAsync(project.Id), v => v.Segments[1].Version == 2);
+
+        Assert.Equal([false, true], _comfy.Workflows.Skip(8).Select(w => Unloads(w, "11")));
+    }
+
+    [Fact]
+    public async Task A_workflow_without_the_switch_is_spoken_all_the_same_and_the_log_says_the_models_may_stay()
+    {
+        File.WriteAllText(Path.Combine(_templates, "plain.json"), ApiWorkflow.Replace(""", "unload_after": false""", ""));
+        var client = await StartAsync();
+        var project = await ScriptApprovedAsync(client, workflow: "plain.json");
+
+        var voice = await VoiceAsync(client, project.Id, StageState.Approved, StageState.Failed);
+
+        Assert.Equal(StageState.Approved, voice.State);
+        Assert.All(_comfy.Workflows, w => Assert.Null(w["11"]!["inputs"]!["unload_after"]));
+        Assert.DoesNotContain(voice.Activity, a => a.Text == "voice models unloaded from the GPU");
+        Assert.Contains(voice.Activity, a => a.Text.Contains("no unload_after switch", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task A_switch_the_workflow_wires_from_another_node_stays_wired()
+    {
+        File.WriteAllText(Path.Combine(_templates, "wired.json"), ApiWorkflow.Replace("\"unload_after\": false", "\"unload_after\": [\"1\", 0]"));
+        var client = await StartAsync();
+        var project = await ScriptApprovedAsync(client, workflow: "wired.json");
+
+        var voice = await VoiceAsync(client, project.Id, StageState.Approved, StageState.Failed);
+
+        Assert.All(_comfy.Workflows, w => Assert.IsType<JsonArray>(w["11"]!["inputs"]!["unload_after"], exactMatch: false));
+        Assert.Contains(voice.Activity, a => a.Text.Contains("no unload_after switch", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public async Task Speaking_one_segment_again_leaves_the_others_as_they_are()
     {
         var client = await StartAsync();
@@ -333,6 +399,8 @@ public sealed class VoiceRunTests : IDisposable
     }
 
     private static int Words(string text) => text.Split(' ', StringSplitOptions.RemoveEmptyEntries).Length;
+
+    private static bool Unloads(JsonObject workflow, string node) => workflow[node]!["inputs"]!["unload_after"]!.GetValue<bool>();
 
     /// <summary>ComfyUI that "speaks" by writing the text it got as the file; records what it was sent.</summary>
     private sealed class FakeComfy : IComfyUi
