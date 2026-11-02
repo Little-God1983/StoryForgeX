@@ -43,6 +43,17 @@ public sealed class ShippedWorkflowTests
     }
 
     [Fact]
+    public async Task The_Minimax_workflow_runs_4_steps_at_the_faster_size()
+    {
+        var workflow = await WorkflowTemplate.LoadAsync(Folder(), "Minimax H3 Image-to-Video (API).json", CancellationToken.None, "video");
+
+        // Half the sampling time of 8 steps, with no damage Chris could see (#86). At LoRA 1.0 the orb went glassy.
+        Assert.Equal(4, (int)workflow["253"]!["inputs"]!["steps"]!);
+        Assert.Equal(0.75, (double)workflow["236"]!["inputs"]!["strength_model"]!);
+        Assert.Equal((1344, 768), ((int)workflow["301"]!["inputs"]!["width"]!, (int)workflow["301"]!["inputs"]!["height"]!));
+    }
+
+    [Fact]
     public async Task The_Breeze_workflow_lets_go_of_Whisper_at_once_and_of_Breeze_after_the_last_part()
     {
         var workflow = await WorkflowTemplate.LoadAsync(Folder(), "BreezeTTS - 3. Voice Direction by Into the Latent.json", CancellationToken.None);
