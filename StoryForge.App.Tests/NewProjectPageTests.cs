@@ -97,6 +97,9 @@ public sealed class NewProjectPageTests
     [InlineData("16:9", 2, 1344, 768, "1344 × 768 · faster")]      // 2560 × 1440
     [InlineData("9:16", 1, 768, 1344, "768 × 1344 · faster")]      // 1080 × 1920
     [InlineData("1:1", 1, 1024, 1024, "1024 × 1024 · faster")]     // 1080 × 1080
+    [InlineData("9:16", 0, 768, 1376, "768 × 1376 · delivery size")]  // 768 × 1366: its short side is no longer than the faster size's
+    [InlineData("9:16", 2, 768, 1344, "768 × 1344 · faster")]      // 1440 × 2560
+    [InlineData("1:1", 2, 1024, 1024, "1024 × 1024 · faster")]     // 1440 × 1440
     [InlineData("1:1", 0, 768, 768, "768 × 768 · delivery size")]  // smaller than the faster size: as it is
     public async Task Clips_start_at_the_faster_size_for_every_shape_unless_the_delivery_is_smaller(string aspect, int delivery, int width, int height, string label)
     {
@@ -123,6 +126,19 @@ public sealed class NewProjectPageTests
         page.StillSize.CustomHeight = "768";
 
         Assert.Equal("Smaller than the delivery: a clip larger than this gets a scaled-up still.", page.StillSize.Warning);
+    }
+
+    [Fact]
+    public async Task A_custom_clip_size_left_as_it_was_filled_in_follows_the_default_to_another_delivery()
+    {
+        AddOneOfEach();
+        var page = await ShownPage();
+        page.ClipSize.SelectedIndex = GenerationSizeViewModel.CustomIndex;   // 1344 × 768, not touched
+
+        page.SelectedDelivery = page.DeliveryChoices[0];   // 1366 × 768: its own size, 1376 × 768, is the default now
+
+        Assert.Equal(new GenerationSize("16:9", 1376, 768), page.ClipSize.Value);
+        Assert.Equal("1376", page.ClipSize.CustomWidth);
     }
 
     [Fact]

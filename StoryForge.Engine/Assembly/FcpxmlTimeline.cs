@@ -115,7 +115,7 @@ internal static class FcpxmlTimeline
                 new XAttribute("tcFormat", "NDF"));
             if ((info.Width, info.Height) != (plan.Size.Width, plan.Size.Height))
             {
-                clip.Add(new XElement("adjust-conform", new XAttribute("type", "fill")));   // cropped like the render, not letterboxed
+                clip.Add(new XElement("adjust-conform", new XAttribute("type", "fill")));   // scaled and cropped like the render, not letterboxed
             }
             if (info.HasAudio)
             {

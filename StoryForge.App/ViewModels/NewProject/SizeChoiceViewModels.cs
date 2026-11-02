@@ -54,10 +54,10 @@ public sealed partial class GenerationSizeViewModel(string scaledUp, bool faster
 
     /// <summary>
     /// The size clips run fast at, with the video model staying on the graphics card (the bench in
-    /// #85). A delivery no taller than that stays as it is: 1376 × 768 costs next to nothing more
-    /// than 1344 × 768, and saves scaling every clip up.
+    /// #85). A delivery whose short side is no longer stays as it is: 1376 × 768 costs next to
+    /// nothing more than 1344 × 768, and saves scaling every clip up.
     /// </summary>
-    public static GenerationSize Faster(GenerationSize delivery)
+    private static GenerationSize Faster(GenerationSize delivery)
     {
         var fast = delivery.Aspect switch
         {

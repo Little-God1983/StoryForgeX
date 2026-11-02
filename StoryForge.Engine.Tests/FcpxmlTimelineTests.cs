@@ -95,6 +95,18 @@ public sealed class FcpxmlTimelineTests
     }
 
     [Fact]
+    public void Clips_smaller_than_the_delivery_fill_it_too()
+    {
+        // New projects make clips at 1344 × 768 (#85). Seen in Resolve 21.1.1: a white clip reaches every edge of 1920 × 1080.
+        var media = Media().ToDictionary(m => m.Key, m => m.Value.Width > 0 ? m.Value with { Width = 1344, Height = 768 } : m.Value);
+
+        var clips = Spine(XElement.Parse(FcpxmlTimeline.Build(Plan(), media, Root, Fps, "Dark Eye – DSA lore"))).Where(e => e.Name == "asset-clip").ToList();
+
+        Assert.Equal(3, clips.Count);
+        Assert.All(clips, c => Assert.Equal("fill", (string?)c.Element("adjust-conform")?.Attribute("type")));
+    }
+
+    [Fact]
     public void Clips_larger_than_the_delivery_fill_it_and_their_sound_is_at_the_cut_lists_level()
     {
         var clips = Spine(Build()).Where(e => e.Name == "asset-clip").ToList();
