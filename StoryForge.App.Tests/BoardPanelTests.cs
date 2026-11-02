@@ -31,6 +31,92 @@ public sealed class BoardPanelTests
         return picked;
     }
 
+    /// <summary>Karlach in two shots with a look of the shot writer's, the coin with a reference.</summary>
+    private async Task<ScriptMatrixViewModel> LookedAsync(StoryboardView? change = null)
+    {
+        var project = await _client.CreateProjectAsync(Setup());
+        _client.Scripts[project.Id] = new ScriptView(project.Id, StageState.Approved, null, [], [Segment("S01", "Hook"), Segment("S02", "Outro")], "", 20, 60, []);
+        _client.Storyboards[project.Id] = (change ?? Planned(project.Id, StageState.NeedsReview,
+            Shot("S01", 1, 0, 4.2, 0, 4, cast: ["Karlach", "Soul coin"]), Shot("S01", 2, 4.2, 10.3, 4, 6, cast: ["Karlach"]), Shot("S02", 1, 0, 5, 0, 10))) with
+        {
+            ProjectId = project.Id,
+            Cast = [new CastMember("Karlach", CastKind.Character, "", "A red tiefling."), new CastMember("Soul coin", CastKind.Object, "", "Iron.")],
+            ReferencedCast = new Dictionary<string, string> { ["Soul coin"] = "A tarnished coin, the size of a thumbnail." },
+        };
+        var matrix = new ResultMatrixPageViewModel(_client, _ => { });
+        matrix.Show(project);
+        await matrix.ScriptLoading;
+        return matrix.Script!;
+    }
+
+    [Fact]
+    public async Task The_panel_shows_each_cast_members_look_and_how_many_shots()
+    {
+        var script = await LookedAsync();
+
+        Pick(script, 0, 0);
+
+        Assert.Equal(
+            [new BoardLookRow("Karlach", "A red tiefling.", 2, false), new BoardLookRow("Soul coin", "A tarnished coin, the size of a thumbnail.", 1, true)],
+            script.BoardLooks);
+        Assert.Equal(["Karlach \u00b7 in 2 shots", "Soul coin \u00b7 in 1 shot"], script.BoardLooks.Select(l => l.Title));
+    }
+
+    [Fact]
+    public async Task Saving_a_look_calls_the_client_and_closes_the_box()
+    {
+        var script = await LookedAsync();
+        Pick(script, 0, 0);
+
+        script.StartEditLookCommand.Execute("Karlach");
+        Assert.True(script.IsEditingLook);
+        Assert.Equal(("Karlach", "A red tiefling."), (script.EditLookName, script.EditLookText));
+        script.EditLookText = "  Horned, with one eye.  ";
+        await script.SaveLookCommand.ExecuteAsync(null);
+
+        Assert.Equal(("Karlach", "Horned, with one eye."), _client.LookChanges.Single());
+        Assert.False(script.IsEditingLook);
+    }
+
+    [Fact]
+    public async Task An_empty_look_cannot_be_saved()
+    {
+        var script = await LookedAsync();
+        Pick(script, 0, 0);
+
+        script.StartEditLookCommand.Execute("Karlach");
+        script.EditLookText = "  ";
+
+        Assert.False(script.SaveLookCommand.CanExecute(null));
+    }
+
+    [Fact]
+    public async Task A_look_with_a_reference_is_read_only()
+    {
+        var script = await LookedAsync();
+        Pick(script, 0, 0);
+
+        Assert.False(script.StartEditLookCommand.CanExecute("Soul coin"));
+        Assert.True(script.StartEditLookCommand.CanExecute("Karlach"));
+    }
+
+    [Fact]
+    public async Task A_fact_disagreement_about_this_shot_or_its_cast_shows_as_a_note()
+    {
+        var noted = Shot("S01", 1, 0, 4.2, 0, 4, cast: ["Karlach"]);
+        noted = noted with { Shot = noted.Shot with { FactDisagreements = [new FactDisagreement("S01-1", "F04", "F04 says behind her ribs.")] } };
+        var script = await LookedAsync(Planned(Guid.Empty, StageState.NeedsReview, noted, Shot("S01", 2, 4.2, 10.3, 4, 6)) with
+        {
+            FactDisagreements = [new FactDisagreement("Karlach", "F02", "F02 says no horns."), new FactDisagreement("Raphael", "F03", "Not here."), new FactDisagreement("", "", "The facts could not be checked.")],
+        });
+
+        Pick(script, 0, 0);
+
+        Assert.Equal(
+            ["The fact check still disagrees (F04): F04 says behind her ribs.", "The fact check still disagrees about Karlach (F02): F02 says no horns.", "The facts could not be checked."],
+            script.BoardFactNotes);
+    }
+
     [Fact]
     public async Task The_panel_shows_what_the_shot_shows_and_lights_the_words_it_covers()
     {
