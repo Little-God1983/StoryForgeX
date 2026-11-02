@@ -84,19 +84,19 @@ internal static class WorkflowTemplate
     }
 
     /// <summary>
-    /// Turns on the workflow's own "unload_after" switches, so its nodes let go of their models when
-    /// they have run. Models in a node pack's own cache (Breeze TTS, Whisper) go no other way: ComfyUI's
-    /// /free cannot reach them. A switch wired from another node stays as the workflow has it.
+    /// Sets the workflow's own "unload_after" switches: on, its nodes let go of their models when they
+    /// have run. Models in a node pack's own cache (Breeze TTS, Whisper) go no other way: ComfyUI's
+    /// /free cannot reach them. Only a plain on/off is a switch; a wired input stays as the workflow has it.
     /// </summary>
     /// <returns>Whether the workflow has such a switch.</returns>
-    public static bool UnloadModelsAfter(JsonObject workflow)
+    public static bool SetUnloadAfter(JsonObject workflow, bool unload)
     {
         var found = false;
         foreach (var (_, node) in workflow)
         {
-            if (node?["inputs"] is JsonObject inputs && inputs[UnloadAfter] is JsonValue)
+            if (node?["inputs"] is JsonObject inputs && inputs[UnloadAfter] is JsonValue value && value.GetValueKind() is JsonValueKind.True or JsonValueKind.False)
             {
-                inputs[UnloadAfter] = true;
+                inputs[UnloadAfter] = unload;
                 found = true;
             }
         }

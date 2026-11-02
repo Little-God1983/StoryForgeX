@@ -103,8 +103,8 @@ internal sealed class VoiceStage(
         language = setup.Output.Language,
     });
 
-    /// <summary>What every part is spoken with: the workflow, the profile, the uploaded reference audio, and where the audio goes.</summary>
-    private sealed record Speaker(JsonObject Workflow, ProfileContent Profile, string? Reference, string Root, string Folder, string Language, string Project);
+    /// <summary>What every part is spoken with: the workflow, the profile, the uploaded reference audio, where the audio goes, and Settings' "Free VRAM between stages".</summary>
+    private sealed record Speaker(JsonObject Workflow, ProfileContent Profile, string? Reference, string Root, string Folder, string Language, string Project, bool FreeVram);
 
     private async Task<Speaker> SpeakerAsync(StageContext context, CancellationToken cancellationToken)
     {
@@ -114,8 +114,8 @@ internal sealed class VoiceStage(
             throw new StageFailedException($"The voice is spoken through ComfyUI for now, and this project uses {setup.Voice.Provider}.");
         }
         var profile = (await profiles.GetVersionAsync(setup.Voice.Profile.ProfileId, setup.Voice.Profile.Version, cancellationToken)).Content;
-        var templates = (await settings.LoadAsync(cancellationToken)).ComfyUi.WorkflowTemplatesFolder;
-        var workflow = await WorkflowTemplate.LoadAsync(templates, profile.WorkflowTemplate, cancellationToken);
+        var machine = (await settings.LoadAsync(cancellationToken)).ComfyUi;
+        var workflow = await WorkflowTemplate.LoadAsync(machine.WorkflowTemplatesFolder, profile.WorkflowTemplate, cancellationToken);
         if (!WorkflowTemplate.Maps(profile.Inputs, TextKey))
         {
             throw new StageFailedException($"The voice profile does not say where the text goes. Map '{TextKey}' to the TTS node's text, e.g. #11.text.");
@@ -131,7 +131,7 @@ internal sealed class VoiceStage(
             reference = await comfy.UploadAsync(file, cancellationToken);
             Report(context, ActivityKind.Model, $"reference audio {Path.GetFileName(file)} uploaded to ComfyUI");
         }
-        return new Speaker(workflow, profile, reference, await folders.RootAsync(cancellationToken), ProjectFolders.Of(context.Project), setup.Output.Language, setup.Name);
+        return new Speaker(workflow, profile, reference, await folders.RootAsync(cancellationToken), ProjectFolders.Of(context.Project), setup.Output.Language, setup.Name, machine.FreeVramBetweenStages);
     }
 
     private async Task<VoiceClip> SpeakAsync(StageContext context, Speaker speaker, Segment segment, int version, bool lastOfRun, CancellationToken cancellationToken)
@@ -160,17 +160,22 @@ internal sealed class VoiceStage(
                 // The very last part lets go of the voice models, for the stages after Voice. Not
                 // every part: the next one would only load them again.
                 var last = lastOfRun && i == parts.Count - 1;
-                var unloads = last && WorkflowTemplate.UnloadModelsAfter(workflow);
+                var unloads = speaker.FreeVram && WorkflowTemplate.SetUnloadAfter(workflow, last);
                 var files = await comfy.RunAsync(
                     workflow,
                     $"StoryForge · {speaker.Project} · {name}",
                     new Progress(line => Report(context, ActivityKind.Model, $"{name}: {line}")),
                     cancellationToken);
-                if (last)
+                if (last && speaker.FreeVram)
                 {
-                    Report(context, ActivityKind.Check, unloads
-                        ? "voice models unloaded from the GPU"
-                        : "the voice workflow has no unload_after switch, so its models may stay on the GPU and slow down Stills and Clips");
+                    if (unloads)
+                    {
+                        Report(context, ActivityKind.Check, "voice models unloaded from the GPU");
+                    }
+                    else
+                    {
+                        Report(context, ActivityKind.Failed, "could not turn on an unload_after switch in the voice workflow, so its models may stay on the GPU and slow down Stills and Clips");
+                    }
                 }
                 var spoken = files.FirstOrDefault(f => f.Kind == "audio")
                     ?? throw new StageFailedException("The workflow saved no audio. It needs a node that saves it, e.g. Save Audio.");
