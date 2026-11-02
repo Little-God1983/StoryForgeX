@@ -36,8 +36,26 @@ internal sealed class ProviderChecks(
         [
             .. checks,
             new ProviderStatus(ProviderId.ContentAutomatorX, "CAX", ProviderState.NotSetUp),
-            new ProviderStatus(ProviderId.DavinciResolve, "Resolve", ProviderState.NotSetUp),
+            ResolveStatus(settings.Resolve),
         ];
+    }
+
+    /// <summary>
+    /// Ok when Resolve and its Python are where Settings → Resolve says (the standard install when
+    /// empty). Not set up when the standard install is missing; an error when a path you set is wrong.
+    /// Whether Resolve is Studio with external scripting on shows only when you send.
+    /// </summary>
+    private static ProviderStatus ResolveStatus(ResolveSettings saved)
+    {
+        var install = Resolve.ResolveInstall.Locate(saved.ResolveExe, saved.ResolvePython);
+        var missing = !File.Exists(install.ResolvePython) ? install.ResolvePython : !File.Exists(install.ResolveExe) ? install.ResolveExe : null;
+        if (missing is null)
+        {
+            return new ProviderStatus(ProviderId.DavinciResolve, "Resolve", ProviderState.Ok, "Resolve and its Python found");
+        }
+        var yours = !string.IsNullOrWhiteSpace(saved.ResolveExe) || !string.IsNullOrWhiteSpace(saved.ResolvePython);
+        return new ProviderStatus(ProviderId.DavinciResolve, "Resolve", yours ? ProviderState.Error : ProviderState.NotSetUp,
+            yours ? $"not found: {missing}" : "Resolve Studio 21.1 or newer is not installed");
     }
 
     private async Task<ProviderStatus> CheckCliAsync(

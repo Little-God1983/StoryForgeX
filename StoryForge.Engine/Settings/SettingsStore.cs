@@ -20,6 +20,7 @@ internal sealed class SettingsStore(IDbContextFactory<StoryForgeDbContext> conte
     private const string ComfyUiKey = "providers.comfyui";
     private const string FfmpegKey = "providers.ffmpeg";
     private const string PathsKey = "paths";
+    private const string ResolveKey = "providers.resolve";
 
     public async Task<EngineSettings> LoadAsync(CancellationToken cancellationToken)
     {
@@ -32,7 +33,8 @@ internal sealed class SettingsStore(IDbContextFactory<StoryForgeDbContext> conte
             Read(saved, LmStudioKey, defaults.LmStudio),
             Read(saved, ComfyUiKey, defaults.ComfyUi),
             Read(saved, FfmpegKey, defaults.Ffmpeg),
-            Read(saved, PathsKey, defaults.Paths));
+            Read(saved, PathsKey, defaults.Paths),
+            Read(saved, ResolveKey, defaults.Resolve));
     }
 
     public async Task SaveAsync(EngineSettings settings, CancellationToken cancellationToken)
@@ -45,6 +47,7 @@ internal sealed class SettingsStore(IDbContextFactory<StoryForgeDbContext> conte
         Upsert(db, ComfyUiKey, settings.ComfyUi);
         Upsert(db, FfmpegKey, settings.Ffmpeg);
         Upsert(db, PathsKey, settings.Paths);
+        Upsert(db, ResolveKey, settings.Resolve);
         await db.SaveChangesAsync(cancellationToken);
     }
 
@@ -63,6 +66,7 @@ internal sealed class SettingsStore(IDbContextFactory<StoryForgeDbContext> conte
         ComfyUi = s.ComfyUi with { WorkflowTemplatesFolder = Unquote(s.ComfyUi.WorkflowTemplatesFolder) },
         Ffmpeg = s.Ffmpeg with { Executable = Unquote(s.Ffmpeg.Executable) },
         Paths = s.Paths with { ProjectsFolder = Unquote(s.Paths.ProjectsFolder) },
+        Resolve = s.Resolve with { ResolveExe = Unquote(s.Resolve.ResolveExe), ResolvePython = Unquote(s.Resolve.ResolvePython) },
     };
 
     private static string Unquote(string path)

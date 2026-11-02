@@ -162,7 +162,6 @@ public sealed partial class FfmpegCardViewModel() : ProviderCardViewModel(Provid
     public static IReadOnlyList<Choice<TimelineExport>> TimelineExportChoices { get; } =
     [
         new(TimelineExport.Fcpxml, "FCPXML"),
-        new(TimelineExport.OpenTimelineIo, "OpenTimelineIO"),
         new(TimelineExport.None, "None"),
     ];
 
@@ -175,9 +174,29 @@ public sealed partial class FfmpegCardViewModel() : ProviderCardViewModel(Provid
     protected override void LoadFields(EngineSettings settings)
     {
         Executable = settings.Ffmpeg.Executable;
-        TimelineExport = settings.Ffmpeg.TimelineExport;
+        // OpenTimelineIO is not written yet: a saved choice of it gets the FCPXML the Assembly writes for it.
+        TimelineExport = settings.Ffmpeg.TimelineExport == TimelineExport.None ? TimelineExport.None : TimelineExport.Fcpxml;
     }
 
     public override EngineSettings ApplyTo(EngineSettings settings) =>
         settings with { Ffmpeg = new FfmpegSettings(Executable.Trim(), TimelineExport) };
+}
+
+/// <summary>DaVinci Resolve for Send to Resolve (#71): empty paths mean the standard install of Resolve Studio 21.1 or newer.</summary>
+public sealed partial class ResolveCardViewModel() : ProviderCardViewModel(ProviderId.DavinciResolve, "DaVinci Resolve", "Assembly · Send to Resolve")
+{
+    [ObservableProperty]
+    private string _resolveExe = "";
+
+    [ObservableProperty]
+    private string _resolvePython = "";
+
+    protected override void LoadFields(EngineSettings settings)
+    {
+        ResolveExe = settings.Resolve.ResolveExe;
+        ResolvePython = settings.Resolve.ResolvePython;
+    }
+
+    public override EngineSettings ApplyTo(EngineSettings settings) =>
+        settings with { Resolve = new ResolveSettings(ResolveExe.Trim(), ResolvePython.Trim()) };
 }

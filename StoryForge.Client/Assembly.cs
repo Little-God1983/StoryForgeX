@@ -62,6 +62,7 @@ public sealed record CutList(IReadOnlyList<Cut> Cuts, double ClipSoundDb, IReadO
 /// <param name="Clips">Per shot key, the version of its clip it was cut from.</param>
 /// <param name="Voices">Per segment, the version of its voice it was cut to.</param>
 /// <param name="BasedOn">For your edit of a cut list, the version it was edited from; null for Claude's.</param>
+/// <param name="Timeline">The same cut as an FCPXML timeline, relative to the projects folder; null when none was written (#71).</param>
 public sealed record AssembledVideo(
     CutList CutList,
     string File,
@@ -69,7 +70,8 @@ public sealed record AssembledVideo(
     GenerationSize Size,
     IReadOnlyDictionary<string, int> Clips,
     IReadOnlyDictionary<string, int> Voices,
-    int? BasedOn = null)
+    int? BasedOn = null,
+    string? Timeline = null)
 {
     /// <summary>Raised whenever the stored shape changes, so older videos can still be read.</summary>
     public const int SchemaVersion = 1;
@@ -110,4 +112,15 @@ public sealed record AssemblyView(
 
     /// <summary>The version your waiting cut list was edited from; null when none waits, or it was the current one.</summary>
     public int? WaitingBasedOn { get; init; }
+
+    /// <summary>The shown version's FCPXML timeline, full path; null when none was written or the file is gone.</summary>
+    public string? TimelinePath { get; init; }
 }
+
+/// <summary>What Send to Resolve did.</summary>
+/// <param name="Ok">The project exists and the timeline is in it; <see cref="Problem"/> may still say what did not go to plan.</param>
+/// <param name="Stage">How far it got: "install", "launch", "connect", "create", "rate", "import", "open", "done".</param>
+/// <param name="Problem">Why it failed, or what went wrong after the import; null when all went well.</param>
+/// <param name="TimelineName">The timeline's name in Resolve.</param>
+/// <param name="Clips">How many clips the timeline's first video track holds.</param>
+public sealed record SentToResolve(bool Ok, string Stage, string? Problem, string? TimelineName, int Clips);
