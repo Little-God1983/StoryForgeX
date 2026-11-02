@@ -118,7 +118,7 @@ internal sealed class ClaudeCliClipPromptAgent(ClaudeCli claude, IOptions<StoryF
             """
             How to write them:
             1. One prompt per shot. The clip starts from the still: describe what moves in it and how the camera moves, for as long as the clip runs.
-            2. Keep to what the still shows; do not bring in people or things that are not in it.
+            2. Keep to what the still shows; do not bring in people or things that are not in it. Its prompt may name the pictures it was made from, as <image1>: the clip gets none of them, so never name them.
             3. One clear motion that fits the length: a slow push-in, a pan, a character turning, smoke drifting. No cuts within a clip.
             4. Name what must not change for who and what is in the shot, from their looks: "his eye sockets stay empty", "the orb stays the size of a fist".
             5. Never ask for text, letters, captions or logos.

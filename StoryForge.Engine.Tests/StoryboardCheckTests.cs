@@ -183,6 +183,20 @@ public sealed class StoryboardCheckTests
         Assert.Contains("Prefer close-ups.", prompt);
     }
 
+    [Fact]
+    public void Someone_who_changed_a_detail_keeps_their_earlier_still()
+    {
+        var request = new StoryboardRequest(Guid.NewGuid(), "A lore video.",
+            [new(new Segment("S01", "Hook", "w", ["F01"]), Segment("S01", 30))], "", "", new Pacing(3, 5, 8), 20);
+
+        foreach (var prompt in new[] { ClaudeCliStoryboardAgent.FirstPrompt(request), ClaudeCliStoryboardAgent.ShotPrompt(request, RewriteBoard, RewriteCast, "S01/cccc") })
+        {
+            Assert.Contains("still visibly the same", prompt);
+            Assert.Contains("only when the picture cannot help", prompt);
+            Assert.Contains("the main subject first", prompt);
+        }
+    }
+
     /// <summary>S01 with the soul coin and Karlach, S02 asking for earlier stills: for the checks on picks.</summary>
     private static EarlierStillOutput Pick(string cast, string shot) => new(cast, shot);
 

@@ -122,10 +122,10 @@ internal sealed class ClaudeCliStoryboardAgent(ClaudeCli claude, IOptions<StoryF
             3. Pacing: shots of {request.Pacing.MinSeconds} to {request.Pacing.MaxSeconds} seconds, about {request.Pacing.TypicalSeconds} seconds. Cut from the story: a list of names gets quick shots, a slow explanation one long shot.
             4. Never shorter than {Pacing.ShortestShot} seconds, never longer than {request.MaxClipSeconds} seconds (the longest clip the video model makes), whatever the pacing says. A segment shorter than {Pacing.ShortestShot} seconds is one shot.
             5. Cut in a pause: after the end of a sentence first, else after a comma.
-            6. For every shot say what is seen (subject, setting, light, camera), who and what is in it (at most {Shot.MaxCast}, the ones that matter most), and whether it continues the shot before (same scene, the camera moves on).
+            6. For every shot say what is seen (subject, setting, light, camera), who and what is in it (at most {Shot.MaxCast}, the ones that matter most, the main subject first), and whether it continues the shot before (same scene, the camera moves on).
             7. The cast list holds everyone and everything that is shown: characters, places and objects. Only what is shown, never what is only named. Give keyReason only for something shown in just one shot that carries the story, and say why; leave it empty otherwise.
             8. Give everyone on the cast list one look, kept for the whole video: their appearance, their size against something familiar ("the size of a fist"), and the traits the facts fix. Facts come first and are kept, not bent, in the looks and in every shot: blind means no eyes are visible, not one eye. Where the facts say nothing, use what you know of the setting.
-            9. In earlierStills, for everyone in a shot who is in an earlier shot too, name the earlier shot whose still best shows them for this shot, as S03-1 (segment, then the shot's number in it). Prefer the earliest shot that fits. Leave the shot empty when no earlier still fits, e.g. the orb is wrapped in hide there and bare here. Put the most fitting entry first: a workflow that takes one picture uses only that one.
+            9. In earlierStills, for everyone in a shot who is in an earlier shot too, name the earlier shot whose still best shows them for this shot, as S03-1 (segment, then the shot's number in it). Prefer the earliest shot that fits. Someone who is still visibly the same keeps their earlier still even when a detail differs: a dragon who lost the orb from his brow is still that dragon, and the shot says what changed. Leave the shot empty only when the picture cannot help, e.g. the orb is wrapped in hide there and bare here. Put the most fitting entry first: a workflow that takes one picture uses only that one.
             """);
         if (request.Cast is { } cast)
         {
@@ -176,8 +176,8 @@ internal sealed class ClaudeCliStoryboardAgent(ClaudeCli claude, IOptions<StoryF
         prompt.AppendLine();
         prompt.AppendLine(CultureInfo.InvariantCulture,
             $"Plan {ShotTiming.Label(board, shotKey)} again: a new take on what is seen while \"{string.Join(' ', words.Skip(shot.FirstWord).Take(shot.WordCount).Select(w => w.Text))}\" is heard. " +
-            $"It keeps its place and length. Say what is seen, who and what is in it (names from the cast list, at most {Shot.MaxCast}), and whether it continues the shot before. " +
-            $"In earlierStills, for everyone in it who is in an earlier shot too, name the earlier shot whose still best shows them for this shot, as S03-1, or leave the shot empty when none fits; prefer the earliest that fits, and put the most fitting entry first. Keep to the facts and the looks.");
+            $"It keeps its place and length. Say what is seen, who and what is in it (names from the cast list, at most {Shot.MaxCast}, the main subject first), and whether it continues the shot before. " +
+            $"In earlierStills, for everyone in it who is in an earlier shot too, name the earlier shot whose still best shows them for this shot, as S03-1. Someone who is still visibly the same keeps their earlier still even when a detail differs, and the shot says what changed; leave the shot empty only when the picture cannot help. Prefer the earliest that fits, and put the most fitting entry first. Keep to the facts and the looks.");
         AppendProfile(prompt, request.Instructions);
         return prompt.ToString();
     }
