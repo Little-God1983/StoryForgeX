@@ -255,7 +255,7 @@
     <Border Grid.Column="2" Background="{StaticResource CardBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="10" Padding="18,16">
       <DockPanel>
         <StackPanel DockPanel.Dock="Bottom">
-          <TextBlock Text="Your edits collect in a new version; Render again makes its video. The clips are cropped to the delivery only in the render: the clip files are never changed."
+          <TextBlock Text="Your edits collect in a new version; Render again makes its video. The clips are scaled and cropped to the delivery only in the render: the clip files are never changed."
                      FontSize="12" Foreground="{StaticResource TextMutedBrush}" TextWrapping="Wrap" Margin="0,0,0,10" />
           <Button Content="Render again with my edits" Style="{StaticResource PrimaryButtonStyle}" MinHeight="40" Command="{Binding RenderAgainCommand}"
                   AutomationProperties.Name="Render again with my edits" />

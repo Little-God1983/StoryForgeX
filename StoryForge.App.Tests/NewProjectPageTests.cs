@@ -76,18 +76,84 @@ public sealed class NewProjectPageTests
     }
 
     [Fact]
-    public async Task Stills_and_clips_start_at_the_delivery_size_rounded_up_for_the_models()
+    public async Task Stills_start_at_the_delivery_size_and_clips_at_the_faster_size()
     {
-        // Made at the delivery size, not upscaled later; models take multiples of 32, so 1080 becomes 1088.
+        // Stills: models take multiples of 32, so 1080 becomes 1088. Clips: 1920 × 1088 takes hours longer (#85).
         AddOneOfEach();
 
         var page = await ShownPage();
 
         Assert.Equal(new GenerationSize("16:9", 1920, 1080), page.SelectedDelivery.Value);
         Assert.Equal(new GenerationSize("16:9", 1920, 1088), page.StillSize.Value);
-        Assert.Equal(new GenerationSize("16:9", 1920, 1088), page.ClipSize.Value);
+        Assert.Equal(new GenerationSize("16:9", 1344, 768), page.ClipSize.Value);
         Assert.Equal(30, page.MaxClip.Value);
         Assert.Equal("1920 × 1088 · delivery size", page.StillSize.Options[0].Label);
+        Assert.Equal("1344 × 768 · faster", page.ClipSize.Options[0].Label);
+        Assert.Equal("Smaller than the delivery: Assembly scales the clips up.", page.ClipSize.Warning);
+    }
+
+    [Theory]
+    [InlineData("16:9", 0, 1376, 768, "1376 × 768 · delivery size")]  // 1366 × 768: no taller than the faster size, so nothing to scale up
+    [InlineData("16:9", 2, 1344, 768, "1344 × 768 · faster")]      // 2560 × 1440
+    [InlineData("9:16", 1, 768, 1344, "768 × 1344 · faster")]      // 1080 × 1920
+    [InlineData("1:1", 1, 1024, 1024, "1024 × 1024 · faster")]     // 1080 × 1080
+    [InlineData("9:16", 0, 768, 1376, "768 × 1376 · delivery size")]  // 768 × 1366: its short side is no longer than the faster size's
+    [InlineData("9:16", 2, 768, 1344, "768 × 1344 · faster")]      // 1440 × 2560
+    [InlineData("1:1", 2, 1024, 1024, "1024 × 1024 · faster")]     // 1440 × 1440
+    [InlineData("1:1", 0, 768, 768, "768 × 768 · delivery size")]  // smaller than the faster size: as it is
+    public async Task Clips_start_at_the_faster_size_for_every_shape_unless_the_delivery_is_smaller(string aspect, int delivery, int width, int height, string label)
+    {
+        AddOneOfEach();
+        var page = await ShownPage();
+
+        page.Aspect = aspect;
+        await page.WhenSettled();
+        page.SelectedDelivery = page.DeliveryChoices[delivery];
+
+        Assert.Equal(new GenerationSize(aspect, width, height), page.ClipSize.Value);
+        Assert.Equal(label, page.ClipSize.Options[0].Label);
+    }
+
+    [Fact]
+    public async Task Stills_smaller_than_the_delivery_only_say_they_are_scaled_for_a_larger_clip()
+    {
+        // Clips no longer match the delivery: a still at the clips' size is not scaled at all.
+        AddOneOfEach();
+        var page = await ShownPage();
+
+        page.StillSize.SelectedIndex = GenerationSizeViewModel.CustomIndex;
+        page.StillSize.CustomWidth = "1344";
+        page.StillSize.CustomHeight = "768";
+
+        Assert.Equal("Smaller than the delivery: a clip larger than this gets a scaled-up still.", page.StillSize.Warning);
+    }
+
+    [Fact]
+    public async Task A_custom_clip_size_left_as_it_was_filled_in_follows_the_default_to_another_delivery()
+    {
+        AddOneOfEach();
+        var page = await ShownPage();
+        page.ClipSize.SelectedIndex = GenerationSizeViewModel.CustomIndex;   // 1344 × 768, not touched
+
+        page.SelectedDelivery = page.DeliveryChoices[0];   // 1366 × 768: its own size, 1376 × 768, is the default now
+
+        Assert.Equal(new GenerationSize("16:9", 1376, 768), page.ClipSize.Value);
+        Assert.Equal("1376", page.ClipSize.CustomWidth);
+    }
+
+    [Fact]
+    public async Task Clips_at_the_delivery_size_are_one_custom_size_away_and_carry_no_note()
+    {
+        AddOneOfEach();
+        var page = await ShownPage();
+
+        page.ClipSize.SelectedIndex = GenerationSizeViewModel.CustomIndex;
+        Assert.Equal("1344", page.ClipSize.CustomWidth);   // starts from the default
+        page.ClipSize.CustomWidth = "1920";
+        page.ClipSize.CustomHeight = "1088";
+
+        Assert.Equal(new GenerationSize("16:9", 1920, 1088), page.ClipSize.Value);
+        Assert.Null(page.ClipSize.Warning);
     }
 
     [Theory]
@@ -124,12 +190,12 @@ public sealed class NewProjectPageTests
     {
         AddOneOfEach();
         var page = await ShownPage();
-        page.ClipSize.SelectedIndex = GenerationSizeViewModel.CustomIndex;   // 1920 × 1088, not touched
+        page.StillSize.SelectedIndex = GenerationSizeViewModel.CustomIndex;   // 1920 × 1088, not touched
 
         page.SelectedDelivery = page.DeliveryChoices[2];   // 2560 × 1440
 
-        Assert.Equal(new GenerationSize("16:9", 2560, 1440), page.ClipSize.Value);
-        Assert.Equal("2560", page.ClipSize.CustomWidth);
+        Assert.Equal(new GenerationSize("16:9", 2560, 1440), page.StillSize.Value);
+        Assert.Equal("2560", page.StillSize.CustomWidth);
     }
 
     [Fact]
@@ -166,14 +232,14 @@ public sealed class NewProjectPageTests
     {
         AddOneOfEach();
         var page = await ShownPage();
-        page.ClipSize.SelectedIndex = GenerationSizeViewModel.CustomIndex;   // fills in 1920 × 1088
-        page.ClipSize.SelectedIndex = GenerationSizeViewModel.DefaultIndex;
+        page.StillSize.SelectedIndex = GenerationSizeViewModel.CustomIndex;   // fills in 1920 × 1088
+        page.StillSize.SelectedIndex = GenerationSizeViewModel.DefaultIndex;
 
         page.SelectedDelivery = page.DeliveryChoices[2];   // 2560 × 1440
-        page.ClipSize.SelectedIndex = GenerationSizeViewModel.CustomIndex;
+        page.StillSize.SelectedIndex = GenerationSizeViewModel.CustomIndex;
 
-        Assert.Equal(new GenerationSize("16:9", 2560, 1440), page.ClipSize.Value);
-        Assert.Null(page.ClipSize.Warning);
+        Assert.Equal(new GenerationSize("16:9", 2560, 1440), page.StillSize.Value);
+        Assert.Null(page.StillSize.Warning);
     }
 
     [Fact]
@@ -181,7 +247,6 @@ public sealed class NewProjectPageTests
     {
         AddOneOfEach();
         var page = await ShownPage();
-        Assert.Null(page.ClipSize.Warning);
 
         page.ClipSize.SelectedIndex = GenerationSizeViewModel.CustomIndex;
         page.ClipSize.CustomWidth = "1280";
@@ -210,7 +275,7 @@ public sealed class NewProjectPageTests
 
         Assert.Equal(new GenerationSize("9:16", 1088, 1920), page.StillSize.Value);
         Assert.False(page.StillSize.IsCustom);   // a custom size typed for 16:9 is dropped
-        Assert.Equal(new GenerationSize("9:16", 1088, 1920), page.ClipSize.Value);
+        Assert.Equal(new GenerationSize("9:16", 768, 1344), page.ClipSize.Value);
         Assert.Equal(new GenerationSize("9:16", 1080, 1920), page.SelectedDelivery.Value);
     }
 
@@ -628,7 +693,7 @@ public sealed class NewProjectPageTests
         Assert.Equal(2, setup.Script.Script.Version);              // the script profile is at v2
         Assert.Equal(3, setup.Stills.Profile.Version);
         Assert.Equal(new ReferencesSetup("ComfyUI", "Krea 2 edit", setup.Stills.Profile, Consistency.TextToImageOnly), setup.References);
-        Assert.Equal((new GenerationSize("9:16", 1088, 1920), new GenerationSize("9:16", 1088, 1920)), (setup.Stills.Size, setup.Clips.Size));   // the delivery, rounded up to 32
+        Assert.Equal((new GenerationSize("9:16", 1088, 1920), new GenerationSize("9:16", 768, 1344)), (setup.Stills.Size, setup.Clips.Size));   // the delivery, rounded up; the faster size
         Assert.Equal(new OutputSetup("9:16", 1080, 1920, 150, "Deutsch", AssemblyTarget.DavinciResolve), setup.Output);
         Assert.Equal(30, setup.Clips.MaxClipSeconds);
         Assert.Equal(RunMode.RunThrough, setup.Mode);

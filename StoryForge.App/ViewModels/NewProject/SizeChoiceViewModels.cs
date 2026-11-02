@@ -19,12 +19,13 @@ public sealed partial class OptionItem(string label) : ObservableObject
 }
 
 /// <summary>
-/// "Generation size": the delivery size, or a custom one for this project. Stills and clips are
-/// made at the delivery size, not upscaled later (#13 was dropped: video upscaling looks poor).
-/// Changing the aspect goes back to the delivery size.
+/// "Generation size": the default, or a custom one for this project. Stills start at the delivery
+/// size; clips at <see cref="Faster"/>, because the delivery size takes hours longer (#85), and
+/// Assembly scales them up. Changing the aspect goes back to the default.
 /// </summary>
 /// <param name="scaledUp">What a size smaller than the delivery means, e.g. "Assembly scales the clips up."</param>
-public sealed partial class GenerationSizeViewModel(string scaledUp) : ObservableValidator
+/// <param name="faster">Start at <see cref="Faster"/>, not at the delivery size.</param>
+public sealed partial class GenerationSizeViewModel(string scaledUp, bool faster = false) : ObservableValidator
 {
     /// <summary>Models take sizes in multiples of 32: a 1920 × 1080 delivery is made at 1920 × 1088 and cropped.</summary>
     public const int Step = 32;
@@ -34,16 +35,39 @@ public sealed partial class GenerationSizeViewModel(string scaledUp) : Observabl
 
     private GenerationSize _delivery = FullHd;
 
-    /// <summary>The delivery rounded up to <see cref="Step"/>: the size picked when "Custom…" is not.</summary>
-    private GenerationSize Default => RoundUp(_delivery);
+    /// <summary>The size picked when "Custom…" is not.</summary>
+    private GenerationSize Default => DefaultFor(_delivery, faster);
 
     public const int DefaultIndex = 0;
     public const int CustomIndex = 1;
 
-    /// <summary>The two dropdown entries: "1920 × 1088 · delivery size" and "Custom…".</summary>
-    public IReadOnlyList<OptionItem> Options { get; } = [new(DefaultLabel(RoundUp(FullHd))), new("Custom…")];
+    /// <summary>The two dropdown entries: "1920 × 1088 · delivery size" or "1344 × 768 · faster", and "Custom…".</summary>
+    public IReadOnlyList<OptionItem> Options { get; } = [new(DefaultLabel(FullHd, faster)), new("Custom…")];
 
-    private static string DefaultLabel(GenerationSize size) => $"{size.Width} × {size.Height} · delivery size";
+    private static GenerationSize DefaultFor(GenerationSize delivery, bool faster) => faster ? Faster(delivery) : RoundUp(delivery);
+
+    private static string DefaultLabel(GenerationSize delivery, bool faster)
+    {
+        var size = DefaultFor(delivery, faster);
+        return $"{size.Width} × {size.Height} · {(size == RoundUp(delivery) ? "delivery size" : "faster")}";
+    }
+
+    /// <summary>
+    /// The size clips run fast at, with the video model staying on the graphics card (the bench in
+    /// #85). A delivery whose short side is no longer stays as it is: 1376 × 768 costs next to
+    /// nothing more than 1344 × 768, and saves scaling every clip up.
+    /// </summary>
+    private static GenerationSize Faster(GenerationSize delivery)
+    {
+        var fast = delivery.Aspect switch
+        {
+            "9:16" => delivery with { Width = 768, Height = 1344 },
+            "1:1" => delivery with { Width = 1024, Height = 1024 },
+            _ => delivery with { Width = 1344, Height = 768 },
+        };
+        var whole = RoundUp(delivery);
+        return Math.Min(whole.Width, whole.Height) <= Math.Min(fast.Width, fast.Height) ? whole : fast;
+    }
 
     /// <summary>"Smaller than the delivery: Assembly scales the clips up."; null when the size is not smaller.</summary>
     public string? Warning => Value is { } size && (size.Width < _delivery.Width || size.Height < _delivery.Height)
@@ -131,7 +155,7 @@ public sealed partial class GenerationSizeViewModel(string scaledUp) : Observabl
             CustomWidth = NumberText.Format(Default.Width);
             CustomHeight = NumberText.Format(Default.Height);
         }
-        Options[DefaultIndex].Label = DefaultLabel(Default);
+        Options[DefaultIndex].Label = DefaultLabel(delivery, faster);
         RaiseValue();
     }
 

@@ -165,7 +165,7 @@ public sealed partial class StillsRunTests
         var view = await ClipsAsync(client, project.Id, v => v.State != StageState.Running && v.Clips.Single(c => c.Key == keys["S03·2"]).Version == 2);
         var clip = view.Clips.Single(c => c.Key == keys["S03·2"]);
         Assert.Equal(("LTX 2.5", false, (ProfileRef?)null), (clip.Clip!.Model, clip.Queued, clip.QueuedProfile));
-        // At the project's clip size (the delivery's), not the profile's own: nothing is upscaled later.
+        // At the project's clip size, not the profile's own.
         Assert.Equal(new GenerationSize("16:9", 1280, 704), clip.Clip.Size);
         Assert.Equal("Minimax H3", view.Clips.Single(c => c.Key == keys["S03·3"]).Clip!.Model);   // nothing else switched
         Assert.Equal(61, ClipRuns().Count);

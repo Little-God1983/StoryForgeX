@@ -86,6 +86,43 @@ public sealed partial class VideoRendererTests : IDisposable
         Assert.False(File.Exists(output));
     }
 
+    [Fact]
+    public async Task A_clip_smaller_than_the_delivery_is_scaled_up_to_it()
+    {
+        if (!HasFfmpeg)
+        {
+            return;
+        }
+        var root = Path.Combine(_engine.DataDirectory, "media");
+        Directory.CreateDirectory(Path.Combine(root, "clips"));
+        var processes = new ProcessRunner();
+        // The shape of 1344 × 768 for a 16:9 delivery: not quite the same, so it is cropped a little too.
+        await MakeAsync(processes, "-f lavfi -i testsrc=size=168x96:rate=24:duration=5", Path.Combine(root, "clips", "a.mp4"));
+        await MakeAsync(processes, "-f lavfi -i sine=frequency=200:duration=4 -ac 1 -ar 48000 -c:a pcm_s16le", Path.Combine(root, "narration.wav"));
+        var timeline = new Timeline([Shot("a", 0, 4)], [("narration.wav", 4)]);
+        var plan = CutPlan.Render(new CutList([], -20, []), timeline, new GenerationSize("16:9", 320, 180), 24);
+        var host = await _engine.StartAsync(services => services.Replace(ServiceDescriptor.Singleton<IProcessRunner>(processes)));
+        var renderer = ActivatorUtilities.CreateInstance<FfmpegVideoRenderer>(host.Services);
+        var output = Path.Combine(root, "assembly", "video.mp4");
+
+        await renderer.RenderAsync(plan, root, output, 24, new Progress<string>(), CancellationToken.None);
+
+        var probe = (await processes.RunAsync("ffmpeg", $"-hide_banner -nostdin -i \"{output}\"", TimeSpan.FromSeconds(30), CancellationToken.None)).StandardError;
+        Assert.Contains("320x180", probe);
+    }
+
+    [Fact]
+    public void Clips_are_fitted_to_the_delivery_with_lanczos()
+    {
+        // New projects make clips smaller than the delivery (#85): every clip is scaled up in every render.
+        var timeline = new Timeline([Shot("a", 0, 4), Shot("b", 4, 7)], [("narration.wav", 7)]);
+        var plan = CutPlan.Render(new CutList([new Cut("a", CutTransition.Cut, 0, 0, 0, "")], -20, []), timeline, new GenerationSize("16:9", 1920, 1080), 24);
+
+        var graph = FfmpegVideoRenderer.Graph(plan, ["clips/a.mp4", "clips/b.mp4"], new HashSet<string>(), 24);
+
+        Assert.Contains("scale=1920:1080:force_original_aspect_ratio=increase:flags=lanczos,crop=1920:1080", graph);
+    }
+
     private static CutShot Shot(string key, double start, double end) =>
         new(key, key, "S01", start, end, start - 0.5, end + 0.5, $"clips/{key}.mp4", 1, key, "");
 
