@@ -192,7 +192,7 @@ internal sealed class Reruns(
         {
             parts.Add("its still");
             parts.AddRange(After(key, stills, label));
-            remade = [key, .. stills.Where(s => !s.Value.YourFile && s.Value.ContinuesFrom == key).Select(s => s.Key)];
+            remade = [key, .. Later(key, stills)];
         }
         if (keep && parts.Count == 0)
         {
@@ -205,7 +205,7 @@ internal sealed class Reruns(
 
     private static Plan StillPlan(string key, IReadOnlyDictionary<string, Still> stills, Func<string, string> label)
     {
-        var after = stills.Where(s => !s.Value.YourFile && s.Value.ContinuesFrom == key).Select(s => s.Key).ToList();
+        var after = Later(key, stills);
         if (stills.GetValueOrDefault(key) is not { YourFile: true })
         {
             return new Plan(
@@ -215,7 +215,7 @@ internal sealed class Reruns(
         // Your own picture stays; what starts from it is made again.
         return after.Count == 0
             ? new Plan($"Your own picture of {label(key)} stays, and no still starts from it: nothing is made again.", true, [], true)
-            : new Plan($"This keeps your own picture of {label(key)} and remakes {Join([.. After(key, stills, label)])}. Other stills stay as they are.", true, after, false);
+            : new Plan($"This keeps your own picture of {label(key)} and remakes {Join([.. After(key, stills, label)])}. Other stills stay as they are.", true, [.. after], false);
     }
 
     private async Task<Plan> ImagePlanAsync(
@@ -242,9 +242,13 @@ internal sealed class Reruns(
         return new Plan($"{text}. Other stills stay as they are.{wait}", true, [.. direct], false);
     }
 
-    /// <summary>"the still of S04·3, which starts from it": the stills after this one's that start from it.</summary>
+    /// <summary>The stills painted from this shot's still, all the way down.</summary>
+    private static IReadOnlyList<string> Later(string key, IReadOnlyDictionary<string, Still> stills) =>
+        [.. PipelineRunner.Reached([key], stills).Where(k => k != key)];
+
+    /// <summary>"the still of S04·3, which starts from it": the stills that start from this one, or are painted from it.</summary>
     private static IEnumerable<string> After(string key, IReadOnlyDictionary<string, Still> stills, Func<string, string> label) =>
-        stills.Where(s => !s.Value.YourFile && s.Value.ContinuesFrom == key).Select(s => $"the still of {label(s.Key)}, which starts from it");
+        Later(key, stills).Select(k => $"the still of {label(k)}, which {(stills[k].ContinuesFrom == key ? "starts" : "is painted")} from it");
 
     /// <summary>"a, b and c".</summary>
     private static string Join(IReadOnlyList<string> parts) =>

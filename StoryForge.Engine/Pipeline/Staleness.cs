@@ -237,6 +237,7 @@ internal sealed class Staleness(
                 : made.Still.References.FirstOrDefault(staleForStills.Contains) is { } image
                     ? $"{names.GetValueOrDefault(ReferencesStage.Parse(image).ReferenceId, image)}'s image is out of date."
                 : made.Still.ContinuesFrom is { } from && stale.ContainsKey((PipelineStage.Stills, from)) ? $"The still of {labels.GetValueOrDefault(from, from)} it starts from is out of date."
+                : (made.Still.EarlierStills ?? []).FirstOrDefault(e => stale.ContainsKey((PipelineStage.Stills, e.ShotKey))) is { } source ? $"The still of {labels.GetValueOrDefault(source.ShotKey, source.ShotKey)} it was painted from is out of date."
                 : hashes.TryGetValue(key, out var hash) && hash != made.Version.InputHash ? Changed(made, label)
                 : null;
             if (why is not null)
@@ -292,6 +293,13 @@ internal sealed class Staleness(
             {
                 return $"The still of {labels.GetValueOrDefault(from, from)} it starts from was made again since.";
             }
+            foreach (var earlier in made.Still.EarlierStills ?? [])
+            {
+                if (stills.TryGetValue(earlier.ShotKey, out var source) && source.Version.CreatedAt > still.CreatedAt)
+                {
+                    return $"The still of {labels.GetValueOrDefault(earlier.ShotKey, earlier.ShotKey)} it was painted from was made again since.";
+                }
+            }
             if (Of(PipelineStage.Storyboard).FirstOrDefault(c => c.Key == still.Key) is { } shotCell && Current(shotCell, c => c.CurrentVersion) is { } shot && shot.CreatedAt > still.CreatedAt)
             {
                 return $"Shot {label} changed since the still was made.";
@@ -320,7 +328,7 @@ internal sealed class Staleness(
                 {
                     // Your own picture is made of nothing: a reference change leaves it as it is.
                     if (stills.GetValueOrDefault(shot.Key) is { YourFile: false } still
-                        && (direct(id, shot, still) || (still.ContinuesFrom is { } from && reached.Contains(from))))
+                        && (direct(id, shot, still) || still.PaintedFrom().Any(reached.Contains)))
                     {
                         reached.Add(shot.Key);
                     }

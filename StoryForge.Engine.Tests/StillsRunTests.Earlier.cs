@@ -1,5 +1,6 @@
 using System.Text.Json.Nodes;
 using StoryForge.Client;
+using StoryForge.Engine.Pipeline;
 using StoryForge.Engine.References;
 using StoryForge.Engine.Stills;
 using StoryForge.Engine.Storyboard;
@@ -294,5 +295,146 @@ public sealed partial class StillsRunTests
         Assert.Null(view.Error);
         Assert.All(view.Stills, s => Assert.Null(s.Still!.EarlierStills));
         Assert.Empty(_prompts.Requests.Single().Shots.Single(s => s.Label == "S01·3").Pictures);
+    }
+
+    /// <summary><see cref="Picking"/>, with S01·4 painted from S01·3: a chain from S01·2.</summary>
+    private static StoryboardOutput Chain()
+    {
+        var board = Picking();
+        var s01 = board.Segments[0];
+        return board with
+        {
+            Segments = [s01 with { Shots = [.. s01.Shots.Take(3), s01.Shots[3] with { EarlierStills = [new("Karlach", "S01-3")] }, .. s01.Shots.Skip(4)] }, .. board.Segments.Skip(1)],
+        };
+    }
+
+    private static Still Made(string key, string? continues = null, string? earlier = null, bool yours = false, params string[] references) => new(
+        key, key + ".png", "p", 1, new GenerationSize("16:9", 1344, 768), "w", references, continues, false, yours,
+        earlier is null ? null : [new EarlierStill("Karlach", earlier)]);
+
+    [Fact]
+    public void Redo_walks_a_chain_of_earlier_stills()
+    {
+        var stills = new Dictionary<string, Still> { ["c"] = Made("c", earlier: "b"), ["a"] = Made("a"), ["b"] = Made("b", earlier: "a"), ["z"] = Made("z") };
+
+        var redo = PipelineRunner.Redo(PipelineStage.Storyboard, new HashSet<string> { "a" }, stills, stills.Keys.ToHashSet());
+
+        Assert.Equal(["a", "b", "c"], redo.Order());
+    }
+
+    [Fact]
+    public void Your_own_picture_stops_a_chain()
+    {
+        var stills = new Dictionary<string, Still> { ["a"] = Made("a"), ["b"] = Made("b", earlier: "a", yours: true), ["c"] = Made("c", earlier: "b") };
+
+        var redo = PipelineRunner.Redo(PipelineStage.Storyboard, new HashSet<string> { "a" }, stills, stills.Keys.ToHashSet());
+
+        Assert.Equal(["a"], redo.Order());
+    }
+
+    [Fact]
+    public void A_still_painted_from_a_shot_that_is_gone_is_not_remade_but_a_continuation_of_one_is()
+    {
+        var stills = new Dictionary<string, Still> { ["b"] = Made("b", earlier: "gone"), ["c"] = Made("c", continues: "gone") };
+
+        var redo = PipelineRunner.Redo(PipelineStage.Storyboard, new HashSet<string> { "new" }, stills, new HashSet<string> { "b", "c", "new" });
+
+        Assert.Equal(["c"], redo.Order());
+    }
+
+    [Fact]
+    public void An_image_reaches_through_earlier_stills()
+    {
+        var stills = new Dictionary<string, Still> { ["a"] = Made("a", references: "R01/1"), ["b"] = Made("b", earlier: "a"), ["z"] = Made("z") };
+
+        var redo = PipelineRunner.Redo(PipelineStage.References, new HashSet<string> { "R01/1" }, stills, stills.Keys.ToHashSet());
+
+        Assert.Equal(["a", "b"], redo.Order());
+    }
+
+    [Fact]
+    public async Task The_rerun_question_names_the_stills_painted_from_it()
+    {
+        TakesMany();
+        var client = await StartAsync();
+        var project = await ReferencesApprovedAsync(client, TextOnly, Chain());
+        await StillsAsync(client, project.Id);
+        var keys = await KeysAsync(client, project.Id);
+
+        var plan = await client.GetRerunPlanAsync(project.Id, PipelineStage.Stills, keys["S01·2"]);
+
+        Assert.Contains("the still of S01·3, which is painted from it", plan.Text);
+        Assert.Contains("the still of S01·4, which is painted from it", plan.Text);
+        Assert.Contains("the still of S02·2, which is painted from it", plan.Text);
+    }
+
+    [Fact]
+    public async Task Remaking_the_source_puts_the_stills_painted_from_it_out_of_date()
+    {
+        TakesMany();
+        var client = await StartAsync();
+        var project = await ReferencesApprovedAsync(client, TextOnly, Chain());
+        await StillsAsync(client, project.Id);
+        var keys = await KeysAsync(client, project.Id);
+
+        await client.RegenerateSegmentAsync(project.Id, PipelineStage.Stills, keys["S01·2"]);
+        var after = await StillsAsync(client, project.Id, v => v.Stills.Single(s => s.Key == keys["S01·2"]) is { Version: 2, State: not StageState.Running });
+
+        string? Why(string label) => after.Stills.Single(s => s.Key == keys[label]).Stale;
+        Assert.Equal("The still of S01·2 it was painted from was made again since.", Why("S01·3"));
+        Assert.Equal("The still of S01·3 it was painted from is out of date.", Why("S01·4"));
+        Assert.Null(Why("S01·5"));
+    }
+
+    [Fact]
+    public async Task A_recut_puts_the_stills_painted_from_it_out_of_date()
+    {
+        TakesMany();
+        var client = await StartAsync();
+        var project = await ReferencesApprovedAsync(client, TextOnly, BoardPickingFromS02());
+        await StillsAsync(client, project.Id);
+        var keys = await KeysAsync(client, project.Id);
+        var runs = StillRuns().Count;
+        _board.Answer(Recut("S02") with { LaterShots = [PickedAgain] });
+
+        await client.RerunFromHereAsync(project.Id, PipelineStage.Voice, "S02");
+        await CutAsync(client, project.Id, "S02", 10);
+
+        var view = await client.GetStillsAsync(project.Id);
+        Assert.NotNull(view.Stills.Single(s => s.Key == keys["S03·2"]).Stale);
+        Assert.Equal(1, view.Stills.Single(s => s.Key == keys["S03·2"]).Version);
+        Assert.Null(view.Stills.Single(s => s.Key == keys["S03·3"]).Stale);
+        Assert.Equal(runs, StillRuns().Count);
+    }
+
+    [Fact]
+    public async Task An_image_counts_the_stills_painted_from_those_it_went_into()
+    {
+        TakesMany();
+        var board = Picking();
+        var s01 = board.Segments[0];
+        board = board with
+        {
+            Segments =
+            [
+                s01 with { Shots = [s01.Shots[0], s01.Shots[1] with { Cast = ["Karlach", "Soul coin"], EarlierStills = [new("Soul coin", "")] }, .. s01.Shots.Skip(2)] },
+                .. board.Segments.Skip(1),
+            ],
+        };
+        var client = await StartAsync();
+        var project = await ReferencesApprovedAsync(client, board: board, beforeApproval: async p =>
+        {
+            var karlach = (await client.GetReferencesAsync(p.Id)).References.Single(r => r.Reference.Name == "Karlach").Images.Single();
+            File.Delete(karlach.Path!);
+        });
+        var view = await StillsAsync(client, project.Id);
+        var keys = await KeysAsync(client, project.Id);
+        Assert.Equal([new EarlierStill("Karlach", keys["S01·2"])], view.Stills.Single(s => s.Key == keys["S01·3"]).Still!.EarlierStills);
+
+        var references = await client.GetReferencesAsync(project.Id);
+
+        var coin = references.References.Single(r => r.Reference.Name == "Soul coin").Reference.Id;
+        var direct = view.Stills.Count(s => s.Still!.References.Any(k => k.StartsWith(coin + "/", StringComparison.Ordinal)));
+        Assert.True(references.StillsUsing[coin] > direct);
     }
 }
