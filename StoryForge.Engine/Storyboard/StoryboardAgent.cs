@@ -18,6 +18,7 @@ internal sealed record StoryboardSegment(Segment Segment, SegmentWords Words);
 /// new shots use. Null for the whole storyboard.
 /// </param>
 /// <param name="Facts">The approved facts not left out: looks and shots keep to them.</param>
+/// <param name="Outside">A rerun's cut: the shots it leaves in place, which its picks may name.</param>
 internal sealed record StoryboardRequest(
     Guid ProjectId,
     string Brief,
@@ -27,7 +28,8 @@ internal sealed record StoryboardRequest(
     Pacing Pacing,
     int MaxClipSeconds,
     IReadOnlyList<CastMember>? Cast = null,
-    IReadOnlyList<Fact>? Facts = null);
+    IReadOnlyList<Fact>? Facts = null,
+    StoryboardCheck.BoardOutside? Outside = null);
 
 /// <summary>The model that plans the shots. It has no tools: the script in the prompt is all it knows.</summary>
 internal interface IStoryboardAgent
@@ -127,8 +129,24 @@ internal sealed class ClaudeCliStoryboardAgent(ClaudeCli claude, IOptions<StoryF
             """);
         if (request.Cast is { } cast)
         {
-            prompt.AppendLine(CultureInfo.InvariantCulture,
-                $"10. The cast of the video so far: {string.Join(", ", cast.Select(c => $"{c.Name} ({c.Kind.ToString().ToLowerInvariant()})"))}. Name them so in the shots. Your cast list needs only who and what these shots show that is not on it yet.");
+            prompt.AppendLine(
+                $"10. The cast of the video so far, with their looks, which stay:\n{string.Join("\n", cast.Select(Looked))}\nName them so in the shots. Your cast list needs only who and what these shots show that is not on it yet, and a look for anyone above who has none.");
+        }
+        if (request.Outside is { } outside)
+        {
+            prompt.AppendLine("11. The shots the cut leaves in place, which earlierStills may name when they come earlier:");
+            foreach (var other in outside.Shots)
+            {
+                prompt.AppendLine($"{outside.Label(other.Key)}: {other.Description} [in it: {string.Join(", ", other.Cast)}]");
+            }
+            if (outside.PickAgain.Count > 0)
+            {
+                prompt.AppendLine("12. These later shots picked from shots you are cutting again. In laterShots, answer for each with the earlier shot that fits now:");
+                foreach (var (key, lost) in outside.PickAgain)
+                {
+                    prompt.AppendLine($"{outside.Label(key)} must pick again for {string.Join(", ", lost)}");
+                }
+            }
         }
         AppendProfile(prompt, request.Instructions);
         return prompt.ToString();
@@ -149,14 +167,24 @@ internal sealed class ClaudeCliStoryboardAgent(ClaudeCli claude, IOptions<StoryF
                 $" [in it: {string.Join(", ", other.Cast)}]{(other.ContinuesPrevious ? " (continues the shot before)" : "")}");
         }
         prompt.AppendLine();
-        prompt.AppendLine($"The cast list: {string.Join(", ", cast.Select(c => $"{c.Name} ({c.Kind.ToString().ToLowerInvariant()})"))}.");
+        prompt.AppendLine("The cast list, with the looks, which stay:");
+        foreach (var member in cast)
+        {
+            prompt.AppendLine(Looked(member));
+        }
+        AppendFacts(prompt, request.Facts);
         prompt.AppendLine();
         prompt.AppendLine(CultureInfo.InvariantCulture,
             $"Plan {ShotTiming.Label(board, shotKey)} again: a new take on what is seen while \"{string.Join(' ', words.Skip(shot.FirstWord).Take(shot.WordCount).Select(w => w.Text))}\" is heard. " +
-            $"It keeps its place and length. Say what is seen, who and what is in it (names from the cast list, at most {Shot.MaxCast}), and whether it continues the shot before.");
+            $"It keeps its place and length. Say what is seen, who and what is in it (names from the cast list, at most {Shot.MaxCast}), and whether it continues the shot before. " +
+            $"In earlierStills, for everyone in it who is in an earlier shot too, name the earlier shot whose still best shows them for this shot, as S03-1, or leave the shot empty when none fits; prefer the earliest that fits, and put the most fitting entry first. Keep to the facts and the looks.");
         AppendProfile(prompt, request.Instructions);
         return prompt.ToString();
     }
+
+    /// <summary>"Karlach (character): A red tiefling."</summary>
+    private static string Looked(CastMember member) =>
+        $"{member.Name} ({member.Kind.ToString().ToLowerInvariant()}){(member.Look.Length > 0 ? $": {member.Look}" : "")}";
 
     private static void AppendFacts(StringBuilder prompt, IReadOnlyList<Fact>? facts)
     {

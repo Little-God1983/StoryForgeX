@@ -43,6 +43,7 @@ internal sealed class StoryboardEdits(
                 ContinuesPrevious = change.ContinuesPrevious ?? shot.ContinuesPrevious,
                 // What you write counts as given: the fact check's note was about the old words.
                 FactDisagreements = description == shot.Description ? shot.FactDisagreements : null,
+                EarlierStills = PicksOf(shot, cast),
             };
             return changed.Description == shot.Description && changed.Cast.SequenceEqual(shot.Cast) && changed.ContinuesPrevious == shot.ContinuesPrevious
                 ? []
@@ -66,7 +67,7 @@ internal sealed class StoryboardEdits(
             {
                 throw new ArgumentException($"{board.Label(board.Index)} has {Shot.MaxCast} in it already: what Minimax takes per clip. Take one out first.");
             }
-            return [Change.Replace(shot with { Cast = cast })];
+            return [Change.Replace(shot with { Cast = cast, EarlierStills = PicksOf(shot, cast) })];
         }, cancellationToken, keepApproval: true);
 
     /// <summary>Moves a shot's start or end by <paramref name="words"/>; the shot on the other side of the cut takes or gives the words.</summary>
@@ -132,13 +133,26 @@ internal sealed class StoryboardEdits(
             }
             var next = board.Segment[board.Index + 1];
             var merged = board.Retime(board.Shot, board.Shot.FirstWord, board.Shot.WordCount + next.WordCount, label);
-            return [Change.Replace(merged), Change.Remove(next.Key)];
+            // Who picked the shot going away now has the one it joined, if it still shows them.
+            var pickers = board.All.Where(s => s.Key != merged.Key && s.Key != next.Key && s.EarlierStills?.Any(p => p.ShotKey == next.Key) == true)
+                .Select(s => Change.Picks(s with
+                {
+                    EarlierStills = [.. s.EarlierStills!.Where(p => p.ShotKey != next.Key || merged.Cast.Contains(p.Cast)).Select(p => p.ShotKey == next.Key ? p with { ShotKey = merged.Key } : p)],
+                }));
+            return [Change.Replace(merged), Change.Remove(next.Key), .. pickers];
         }, cancellationToken);
 
+    /// <summary>The shot's picks for who is in it now.</summary>
+    private static IReadOnlyList<EarlierStill>? PicksOf(Shot shot, IReadOnlyList<string> cast) =>
+        shot.EarlierStills is null ? null : [.. shot.EarlierStills.Where(p => cast.Contains(p.Cast))];
+
     /// <summary>What one edit does to one shot's cell.</summary>
-    private sealed record Change(Shot? Shot, string Key, bool IsNew)
+    /// <param name="KeepApproval">Only its picks changed, because of another shot: what you approved stands.</param>
+    private sealed record Change(Shot? Shot, string Key, bool IsNew, bool KeepApproval = false)
     {
         public static Change Replace(Shot shot) => new(shot, shot.Key, false);
+
+        public static Change Picks(Shot shot) => new(shot, shot.Key, false, KeepApproval: true);
 
         public static Change Add(Shot shot) => new(shot, shot.Key, true);
 
@@ -147,7 +161,8 @@ internal sealed class StoryboardEdits(
 
     /// <summary>The shot being changed, among the shots of its segment, and the words they are timed by.</summary>
     /// <param name="Keys">Every shot key of the storyboard, so a new shot gets one of its own.</param>
-    private sealed record Board(StoryboardSheet Sheet, IReadOnlyList<Shot> Segment, int Index, SegmentWords Words, int MaxClipSeconds, HashSet<string> Keys)
+    /// <param name="All">Every shot of the storyboard.</param>
+    private sealed record Board(StoryboardSheet Sheet, IReadOnlyList<Shot> Segment, int Index, SegmentWords Words, int MaxClipSeconds, HashSet<string> Keys, IReadOnlyList<Shot> All)
     {
         public Shot Shot => Segment[Index];
 
@@ -185,7 +200,7 @@ internal sealed class StoryboardEdits(
         {
             throw new KeyNotFoundException($"The voice {shot.SegmentId} was cut from is gone.");
         }
-        var changes = plan(new Board(sheet, segment, segment.IndexOf(shot), new SegmentWords(shot.SegmentId, clip.Words, clip.Seconds), setup.Clips.MaxClipSeconds, [.. await cells.UsedShotKeysAsync(projectId, cancellationToken)]));
+        var changes = plan(new Board(sheet, segment, segment.IndexOf(shot), new SegmentWords(shot.SegmentId, clip.Words, clip.Seconds), setup.Clips.MaxClipSeconds, [.. await cells.UsedShotKeysAsync(projectId, cancellationToken)], shots));
         if (changes.Count == 0)
         {
             return;
@@ -242,7 +257,7 @@ internal sealed class StoryboardEdits(
                     OutputJson = StoredJson.Write(change.Shot),
                     CreatedAt = now,
                 });
-                var review = gated && !(keepApproval && cell.State == StageState.Approved);
+                var review = gated && !((keepApproval || change.KeepApproval) && cell.State == StageState.Approved);
                 cell.CurrentVersion = next;
                 cell.State = review ? StageState.NeedsReview : StageState.Approved;
                 cell.ApprovedVersion = review ? cell.ApprovedVersion : next;

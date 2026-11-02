@@ -34,6 +34,78 @@ public sealed class StoryboardEditTests : IDisposable
         }).WithPicks();
     }
 
+    /// <summary><see cref="StoryboardRunTests.Good"/>, with S01·4 painted from the Karlach of S01·3.</summary>
+    private static StoryboardOutput Picking()
+    {
+        var good = StoryboardRunTests.Good();
+        var first = good.Segments[0];
+        return good with
+        {
+            Segments = [first with { Shots = [.. first.Shots.Take(3), first.Shots[3] with { EarlierStills = [new("Karlach", "S01-3")] }, .. first.Shots.Skip(4)] }, .. good.Segments.Skip(1)],
+        };
+    }
+
+    [Fact]
+    public async Task A_merge_moves_a_pick_to_the_surviving_shot()
+    {
+        var (client, projectId, view) = await PlannedAsync(Picking());
+        var picker = view.Shots.Single(s => s.Label == "S01·4").Key;
+        var kept = view.Shots.Single(s => s.Label == "S01·2").Key;
+
+        await client.MergeShotAsync(projectId, kept);
+
+        var shot = (await client.GetStoryboardAsync(projectId)).Shots.Single(s => s.Key == picker).Shot;
+        Assert.Equal([new EarlierStill("Karlach", kept)], shot.EarlierStills);
+    }
+
+    [Fact]
+    public async Task A_merge_drops_a_pick_when_the_surviving_shot_does_not_show_them()
+    {
+        var (client, projectId, view) = await PlannedAsync(Picking());
+        var picker = view.Shots.Single(s => s.Label == "S01·4").Key;
+        var kept = view.Shots.Single(s => s.Label == "S01·2").Key;
+        await client.EditShotAsync(projectId, kept, new ShotChange(Cast: ["Soul coin"]));
+
+        await client.MergeShotAsync(projectId, kept);
+
+        Assert.Empty((await client.GetStoryboardAsync(projectId)).Shots.Single(s => s.Key == picker).Shot.EarlierStills!);
+    }
+
+    [Fact]
+    public async Task A_split_gives_the_second_half_the_picks_of_the_shot()
+    {
+        var (client, projectId, view) = await PlannedAsync(Picking());
+        var picker = view.Shots.Single(s => s.Label == "S01·4");
+
+        await client.SplitShotAsync(projectId, picker.Key, picker.Shot.FirstWord + 5);
+
+        var after = await client.GetStoryboardAsync(projectId);
+        var second = after.Shots.Single(s => s.Label == "S01·5");
+        Assert.Equal(picker.Shot.EarlierStills, second.Shot.EarlierStills);
+    }
+
+    [Fact]
+    public async Task Taking_someone_out_of_a_shot_drops_their_pick()
+    {
+        var (client, projectId, view) = await PlannedAsync(Picking());
+        var picker = view.Shots.Single(s => s.Label == "S01·4").Key;
+
+        await client.EditShotAsync(projectId, picker, new ShotChange(Cast: ["Soul coin"]));
+
+        Assert.Empty((await client.GetStoryboardAsync(projectId)).Shots.Single(s => s.Key == picker).Shot.EarlierStills!);
+    }
+
+    [Fact]
+    public async Task Adding_someone_gives_no_pick()
+    {
+        var (client, projectId, view) = await PlannedAsync(Picking());
+        var picker = view.Shots.Single(s => s.Label == "S01·4").Key;
+
+        await client.EditShotAsync(projectId, picker, new ShotChange(Cast: ["Karlach", "Soul coin"]));
+
+        Assert.Equal([new EarlierStill("Karlach", view.Shots.Single(s => s.Label == "S01·3").Key)], (await client.GetStoryboardAsync(projectId)).Shots.Single(s => s.Key == picker).Shot.EarlierStills);
+    }
+
     [Fact]
     public async Task Editing_what_a_shot_shows_clears_its_fact_note()
     {

@@ -16,7 +16,7 @@ public sealed partial class StillsRunTests
     /// <summary>One segment cut again: 10 shots of 15 words, Raphael new on the cast list, Karlach spelled otherwise.</summary>
     private static StoryboardOutput Recut(string id) => new StoryboardOutput(
         [new("karlach", "character", "", "The look of karlach."), new("Raphael", "character", "", "The look of Raphael.")],
-        [new SegmentShotsOutput(id, [.. Enumerable.Range(0, 10).Select(i => new ShotOutput(i * 15, $"{id} new shot {i + 1}", i == 0 ? ["Raphael"] : ["karlach"], false, []))])]).WithPicks();
+        [new SegmentShotsOutput(id, [.. Enumerable.Range(0, 10).Select(i => new ShotOutput(i * 15, $"{id} new shot {i + 1}", i == 0 ? ["Raphael"] : ["karlach"], false, []))])]).WithPicks("Karlach");
 
     /// <summary>Ticks a gate of the project, as if it was set up with it.</summary>
     private async Task GateAsync(Guid projectId, PipelineStage stage)
@@ -188,6 +188,89 @@ public sealed partial class StillsRunTests
         Assert.All(stills.Stills, s => Assert.Equal(again.Contains(s.Key) ? 2 : 1, s.Version));
         Assert.Equal(runs + 8, StillRuns().Count);
         Assert.Equal(made.Stills.Count, stills.Stills.Count);
+    }
+
+    /// <summary><see cref="Board"/>, with S03·2 painted from the Karlach of S02·2.</summary>
+    private static StoryboardOutput BoardPickingFromS02()
+    {
+        var board = Board();
+        var s03 = board.Segments[2];
+        return board with
+        {
+            Segments = [board.Segments[0], board.Segments[1], s03 with { Shots = [s03.Shots[0], s03.Shots[1] with { EarlierStills = [new("Karlach", "S02-2")] }, .. s03.Shots.Skip(2)] }, board.Segments[3]],
+        };
+    }
+
+    private static readonly StoryForge.Engine.Storyboard.LaterShotOutput PickedAgain = new("S03-2", [new("Karlach", "S02-3")]);
+
+    [Fact]
+    public async Task A_recut_picks_again_for_later_shots_that_lost_theirs()
+    {
+        var client = await StartAsync();
+        var project = await ReferencesApprovedAsync(client, board: BoardPickingFromS02());
+        await StillsAsync(client, project.Id);
+        var keys = await KeysAsync(client, project.Id);
+        _board.Answer(Recut("S02") with { LaterShots = [PickedAgain] });
+
+        await client.RerunFromHereAsync(project.Id, PipelineStage.Voice, "S02");
+
+        var board = await CutAsync(client, project.Id, "S02", 10);
+        Assert.Null(board.Error);
+        var later = board.Shots.Single(s => s.Key == keys["S03·2"]);
+        Assert.Equal(2, later.Version);
+        Assert.Equal(StageState.Approved, later.State);
+        Assert.Equal(later.Version, later.ApprovedVersion);
+        var third = board.Shots.Single(s => s.SegmentId == "S02" && s.Number == 3);
+        Assert.Equal([new EarlierStill("Karlach", third.Key)], later.Shot.EarlierStills);
+    }
+
+    [Fact]
+    public async Task A_recut_shows_the_shots_outside_it_and_who_must_pick_again()
+    {
+        var client = await StartAsync();
+        var project = await ReferencesApprovedAsync(client, board: BoardPickingFromS02());
+        await StillsAsync(client, project.Id);
+        _board.Answer(Recut("S02") with { LaterShots = [PickedAgain] });
+
+        await client.RerunFromHereAsync(project.Id, PipelineStage.Voice, "S02");
+        await CutAsync(client, project.Id, "S02", 10);
+
+        var request = _board.Requests[^1];
+        var prompt = StoryForge.Engine.Storyboard.ClaudeCliStoryboardAgent.FirstPrompt(request);
+        Assert.Contains("S01-2: S01 shot 2 [in it: Karlach]", prompt);
+        Assert.DoesNotContain("S02-2: S02 shot 2", prompt);
+        Assert.Contains("S03-2 must pick again for Karlach", prompt);
+        Assert.Contains("Karlach (character): The look of Karlach.", prompt);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task A_later_shot_not_answered_for_or_not_asked_for_is_sent_back(bool extra)
+    {
+        var client = await StartAsync();
+        var project = await ReferencesApprovedAsync(client, board: BoardPickingFromS02());
+        await StillsAsync(client, project.Id);
+        var wrong = extra ? new[] { PickedAgain, new StoryForge.Engine.Storyboard.LaterShotOutput("S04-2", [new("Karlach", "S02-3")]) } : [];
+        _board.Answer(Recut("S02") with { LaterShots = wrong }).Answer(Recut("S02") with { LaterShots = [PickedAgain] });
+
+        await client.RerunFromHereAsync(project.Id, PipelineStage.Voice, "S02");
+        await CutAsync(client, project.Id, "S02", 10);
+
+        Assert.Contains(_board.Problems[^1], p => extra ? p.Contains("S04-2 was not asked for", StringComparison.Ordinal) : p.Contains("S03·2 shows Karlach", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task The_rerun_question_says_how_many_later_stills_go_out_of_date()
+    {
+        var client = await StartAsync();
+        var project = await ReferencesApprovedAsync(client, board: BoardPickingFromS02());
+        await StillsAsync(client, project.Id);
+
+        var plan = await client.GetRerunPlanAsync(project.Id, PipelineStage.Voice, "S02");
+
+        Assert.Contains("1 later still goes out of date: its shot picks again from the new ones", plan.Text);
+        Assert.DoesNotContain("Other segments stay as they are", plan.Text);
     }
 
     [Fact]

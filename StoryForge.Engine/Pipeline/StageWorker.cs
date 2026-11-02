@@ -29,7 +29,11 @@ internal sealed record StageContext(
 /// <summary>A stage's finished result, ready to store as a new version.</summary>
 /// <param name="OutputJson">The result in <see cref="StoredJson"/> form.</param>
 /// <param name="Segments">For a stage with a result per segment (the script), each segment's own result.</param>
-internal sealed record StageResult(string OutputJson, int SchemaVersion, string InputHash, IReadOnlyList<CellResult>? Segments = null);
+internal sealed record StageResult(string OutputJson, int SchemaVersion, string InputHash, IReadOnlyList<CellResult>? Segments = null)
+{
+    /// <summary>Next versions of segments the run's scope leaves in place: each stays approved, or waiting, as it was.</summary>
+    public IReadOnlyList<CellResult>? Kept { get; init; }
+}
 
 /// <summary>One segment's result: stored as the next version of the segment's own cell.</summary>
 internal sealed record CellResult(string Key, string OutputJson, int SchemaVersion, string InputHash);

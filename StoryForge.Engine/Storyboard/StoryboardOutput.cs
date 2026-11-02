@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using StoryForge.Client;
+using StoryForge.Engine.Stills;
 
 namespace StoryForge.Engine.Storyboard;
 
@@ -9,7 +10,12 @@ namespace StoryForge.Engine.Storyboard;
 
 internal sealed record StoryboardOutput(
     [property: Description("Everyone and everything the shots show: characters, places and objects. Never what is only named.")] IReadOnlyList<CastOutput> Cast,
-    [property: Description("Every segment of the script, in order, with its shots.")] IReadOnlyList<SegmentShotsOutput> Segments);
+    [property: Description("Every segment of the script, in order, with its shots.")] IReadOnlyList<SegmentShotsOutput> Segments,
+    [property: Description("Only when asked: later shots that must pick again, with their new picks.")] IReadOnlyList<LaterShotOutput>? LaterShots = null);
+
+internal sealed record LaterShotOutput(
+    [property: Description("The later shot, e.g. S03-2.")] string Shot,
+    [property: Description("One entry for each one it must pick again for.")] IReadOnlyList<EarlierStillOutput> EarlierStills);
 
 internal sealed record CastOutput(
     [property: Description("The name, e.g. Karlach, the House of Hope, a soul coin.")] string Name,
@@ -41,7 +47,8 @@ internal sealed record ShotRewriteOutput(
 /// <summary>Checks the model's storyboard before it becomes the Storyboard stage's result.</summary>
 internal static class StoryboardCheck
 {
-    public static IReadOnlyList<string> Problems(StoryboardOutput? output, IReadOnlyList<SegmentWords> segments, int maxClipSeconds)
+    /// <param name="outside">A rerun's cut: the shots it leaves in place, and which of them must pick again.</param>
+    public static IReadOnlyList<string> Problems(StoryboardOutput? output, IReadOnlyList<SegmentWords> segments, int maxClipSeconds, BoardOutside? outside = null)
     {
         if (output is null)
         {
@@ -76,29 +83,96 @@ internal static class StoryboardCheck
             }
             problems.AddRange(SegmentProblems(segment, shots, names, maxClipSeconds));
         }
-        problems.AddRange(PickProblems(AllShots(output, segments), names));
+        problems.AddRange(PickProblems(AllShots(output, segments, outside), names));
+        foreach (var extra in (output.LaterShots ?? []).Where(l => l is not null && outside?.PickAgain.Keys.Any(k => Pick(outside.Label(k)) == Pick(l.Shot ?? "")) != true))
+        {
+            problems.Add($"{extra.Shot} was not asked for: answer only for the later shots that must pick again.");
+        }
         return problems;
     }
 
     /// <summary>Checks one shot written again; its timing stays as it was.</summary>
     /// <param name="label">"S01·2".</param>
-    public static IReadOnlyList<string> RewriteProblems(ShotRewriteOutput? output, string label, IReadOnlyList<CastMember> cast)
+    /// <param name="board">The storyboard the shot is on, for its picks.</param>
+    public static IReadOnlyList<string> RewriteProblems(ShotRewriteOutput? output, string label, IReadOnlyList<CastMember> cast, IReadOnlyList<Shot>? board = null)
     {
         if (output is null)
         {
             return ["The answer had no shot."];
         }
-        return [.. ContentProblems(label, output.Description, output.Cast, Names(cast.Select(c => c.Name)))];
+        var names = Names(cast.Select(c => c.Name));
+        IEnumerable<string> problems = ContentProblems(label, output.Description, output.Cast, names);
+        if (board is not null)
+        {
+            var before = Ordered(board).Select(s => new PickedShot(ShotTiming.Label(board, s.Key), s.Cast, null, new HashSet<string>())).TakeWhile(s => s.Label != label);
+            problems = problems.Concat(PickProblems([.. before, new PickedShot(label, output.Cast, output.EarlierStills)], names));
+        }
+        return [.. problems];
+    }
+
+    /// <summary>The shots in the order they are seen: by segment, then by where they start.</summary>
+    private static IOrderedEnumerable<Shot> Ordered(IEnumerable<Shot> board) => board.OrderBy(s => s.SegmentId, StringComparer.Ordinal).ThenBy(s => s.FirstWord);
+
+    /// <summary>
+    /// The shots a rerun's cut leaves in place, and what the cut takes from them: a shot that picked
+    /// from a shot now going away must pick again.
+    /// </summary>
+    /// <param name="Board">The whole storyboard before the cut, for the labels.</param>
+    /// <param name="Shots">The shots staying.</param>
+    /// <param name="PickAgain">Of those, by key: who lost their pick, as the cast list spells them.</param>
+    internal sealed record BoardOutside(IReadOnlyList<Shot> Board, IReadOnlyList<Shot> Shots, IReadOnlyDictionary<string, IReadOnlyList<string>> PickAgain)
+    {
+        public string Label(string key) => StillPromptCheck.Name(ShotTiming.Label(Board, key));
+
+        public static BoardOutside Of(IReadOnlyList<Shot> board, IReadOnlySet<string> segments)
+        {
+            var going = board.Where(s => segments.Contains(s.SegmentId)).Select(s => s.Key).ToHashSet();
+            var staying = board.Where(s => !going.Contains(s.Key)).ToList();
+            return new(board, staying, staying
+                .Where(s => s.EarlierStills?.Any(p => going.Contains(p.ShotKey)) == true)
+                .ToDictionary(s => s.Key, s => (IReadOnlyList<string>)[.. s.EarlierStills!.Where(p => going.Contains(p.ShotKey)).Select(p => p.Cast)]));
+        }
+    }
+
+    /// <summary>The shots that picked again, with the answer's picks in place of the ones lost.</summary>
+    public static IReadOnlyList<Shot> PickedAgain(StoryboardOutput output, BoardOutside outside, IReadOnlyList<Shot> cut)
+    {
+        var names = Names(output.Cast ?? []);
+        var labels = Labels(outside, cut);
+        return
+        [
+            .. outside.Shots.Where(s => outside.PickAgain.ContainsKey(s.Key)).Select(shot =>
+            {
+                var lost = outside.PickAgain[shot.Key];
+                var answer = (output.LaterShots ?? []).FirstOrDefault(l => l is not null && Pick(l.Shot ?? "") == Pick(outside.Label(shot.Key)));
+                return shot with
+                {
+                    EarlierStills = [.. shot.EarlierStills!.Where(p => !lost.Contains(p.Cast)), .. ToPicks(answer?.EarlierStills, names, labels)],
+                };
+            }),
+        ];
+    }
+
+    /// <summary>Every shot of the storyboard after the cut, by label as <see cref="Pick"/> has it.</summary>
+    public static IReadOnlyDictionary<string, string> Labels(BoardOutside outside, IReadOnlyList<Shot> cut)
+    {
+        var labels = outside.Shots.ToDictionary(s => Pick(outside.Label(s.Key)), s => s.Key);
+        foreach (var shot in cut)
+        {
+            labels[Pick(ShotTiming.Label(cut, shot.Key))] = shot.Key;
+        }
+        return labels;
     }
 
     /// <summary>The shots from a checked answer: timed from the word timings, each with a key of its own.</summary>
     /// <param name="used">Keys that shots of this storyboard have versions under: a new shot takes none of them, nor their history.</param>
-    public static IReadOnlyList<Shot> ToShots(StoryboardOutput output, IReadOnlyList<SegmentWords> segments, IEnumerable<string>? used = null, Func<string>? random = null)
+    /// <param name="outside">A rerun's cut: the shots it leaves in place, which its picks may name.</param>
+    public static IReadOnlyList<Shot> ToShots(StoryboardOutput output, IReadOnlyList<SegmentWords> segments, IEnumerable<string>? used = null, Func<string>? random = null, BoardOutside? outside = null)
     {
         var names = Names(output.Cast ?? []);
         var shots = new List<Shot>();
         var keys = new HashSet<string>(used ?? []);
-        var labels = new Dictionary<string, string>();
+        var labels = outside is null ? [] : outside.Shots.ToDictionary(s => Pick(outside.Label(s.Key)), s => s.Key);
         var picks = new List<IReadOnlyList<EarlierStillOutput>?>();
         foreach (var segment in segments)
         {
@@ -220,15 +294,33 @@ internal static class StoryboardCheck
 
     /// <summary>A shot as the checks on picks see it.</summary>
     /// <param name="Label">"S02·1".</param>
-    private sealed record PickedShot(string Label, IReadOnlyList<string>? Cast, IReadOnlyList<EarlierStillOutput>? Picks);
+    /// <param name="Asked">Who must answer, by normal name; null for everyone seen before. A shot not answered for asks no one.</param>
+    private sealed record PickedShot(string Label, IReadOnlyList<string>? Cast, IReadOnlyList<EarlierStillOutput>? Picks, IReadOnlySet<string>? Asked = null);
 
-    /// <summary>Every shot of an answer, in the order of the segments.</summary>
-    private static List<PickedShot> AllShots(StoryboardOutput output, IReadOnlyList<SegmentWords> segments) =>
+    /// <summary>Every shot of the storyboard after an answer, in the order they are seen.</summary>
+    private static List<PickedShot> AllShots(StoryboardOutput output, IReadOnlyList<SegmentWords> segments, BoardOutside? outside)
+    {
+        var answered = segments.SelectMany(segment => ((output.Segments ?? []).FirstOrDefault(a => a?.SegmentId?.Trim() == segment.SegmentId)?.Shots ?? [])
+            .Where(s => s is not null)
+            .Select((shot, i) => (segment.SegmentId, Word: shot.FirstWord, Shot: new PickedShot($"{segment.SegmentId}·{i + 1}", shot.Cast, shot.EarlierStills))));
+        if (outside is null)
+        {
+            return [.. answered.Select(a => a.Shot)];
+        }
+        return
         [
-            .. segments.SelectMany(segment => ((output.Segments ?? []).FirstOrDefault(a => a?.SegmentId?.Trim() == segment.SegmentId)?.Shots ?? [])
-                .Where(s => s is not null)
-                .Select((shot, i) => new PickedShot($"{segment.SegmentId}·{i + 1}", shot.Cast, shot.EarlierStills))),
+            .. answered.Concat(outside.Shots.Select(s => (s.SegmentId, Word: s.FirstWord, Shot: Staying(s))))
+                .OrderBy(a => a.SegmentId, StringComparer.Ordinal).ThenBy(a => a.Word).Select(a => a.Shot),
         ];
+
+        PickedShot Staying(Shot shot)
+        {
+            var label = ShotTiming.Label(outside.Board, shot.Key);
+            return outside.PickAgain.TryGetValue(shot.Key, out var lost)
+                ? new PickedShot(label, shot.Cast, (output.LaterShots ?? []).FirstOrDefault(l => l is not null && Pick(l.Shot ?? "") == Pick(label))?.EarlierStills, lost.Select(Normal).ToHashSet())
+                : new PickedShot(label, shot.Cast, null, new HashSet<string>());
+        }
+    }
 
     /// <summary>
     /// Everyone seen in an earlier shot needs an entry: empty is a decision, silence goes back. A
@@ -269,7 +361,7 @@ internal static class StoryboardCheck
                     yield return $"{shot.Label} picks the still of {pick.Shot.Trim()} for {name}, who is not in that shot.";
                 }
             }
-            foreach (var name in shown.Where(n => !answered.Contains(Normal(n))))
+            foreach (var name in shown.Where(n => !answered.Contains(Normal(n)) && (shot.Asked?.Contains(Normal(n)) ?? true)))
             {
                 var seen = earlier.FirstOrDefault(e => e.Value.Contains(Normal(name)));
                 if (seen.Key is not null)

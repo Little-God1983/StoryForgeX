@@ -280,6 +280,38 @@ public sealed class StoryboardCheckTests
         Assert.Contains("Prefer the earliest shot that fits", prompt);
     }
 
+    private static readonly IReadOnlyList<CastMember> RewriteCast = [new("Karlach", CastKind.Character, "", "A look."), new("Soul coin", CastKind.Object, "", "A look.")];
+
+    private static Shot OnBoard(string key, int firstWord, params string[] cast) => new(key, key[..3], firstWord, 10, firstWord * 0.5, (firstWord + 10) * 0.5, "A coin.", cast, false);
+
+    private static readonly IReadOnlyList<Shot> RewriteBoard = [OnBoard("S01/aaaa", 0, "Karlach"), OnBoard("S01/bbbb", 10, "Soul coin"), OnBoard("S01/cccc", 20, "Karlach")];
+
+    [Fact]
+    public void A_rewritten_shot_needs_a_pick_for_who_was_seen_before() =>
+        Assert.Contains(
+            "S01·3 shows Karlach, who is in S01-1 too: name the earlier shot whose still fits, or leave it empty when none does.",
+            StoryboardCheck.RewriteProblems(new ShotRewriteOutput("A coin.", ["Karlach"], false, []), "S01·3", RewriteCast, RewriteBoard));
+
+    [Fact]
+    public void A_rewritten_shot_picks_only_from_shots_before_it() =>
+        Assert.Contains(
+            "S01·2 picks the still of S01-3 for Soul coin, which is not an earlier shot.",
+            StoryboardCheck.RewriteProblems(new ShotRewriteOutput("A coin.", ["Soul coin"], false, [new("Soul coin", "S01-3")]), "S01·2", RewriteCast, RewriteBoard));
+
+    [Fact]
+    public void The_prompt_for_one_shot_asks_for_picks_and_shows_the_looks()
+    {
+        var request = new StoryboardRequest(Guid.NewGuid(), "A lore video.",
+            [new(new Segment("S01", "Hook", "w", ["F01"]), Segment("S01", 30))], "", "", new Pacing(3, 5, 8), 20,
+            Facts: [new Fact("F01", "Nosulgor is blind.", "u", "q")]);
+
+        var prompt = ClaudeCliStoryboardAgent.ShotPrompt(request, RewriteBoard, RewriteCast, "S01/cccc");
+
+        Assert.Contains("Karlach (character): A look.", prompt);
+        Assert.Contains("F01: Nosulgor is blind.", prompt);
+        Assert.Contains("earlierStills", prompt);
+    }
+
     [Fact]
     public void A_new_shot_key_is_never_one_the_board_already_has()
     {

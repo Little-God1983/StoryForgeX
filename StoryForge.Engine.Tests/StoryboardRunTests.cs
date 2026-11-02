@@ -381,6 +381,22 @@ public sealed class StoryboardRunTests : IDisposable
     }
 
     [Fact]
+    public async Task A_shot_written_again_answers_its_picks()
+    {
+        _board.Answer(Good());
+        var client = await StartAsync();
+        var project = await VoiceApprovedAsync(client);
+        await StageAsync(client, project.Id, PipelineStage.Storyboard, StageState.NeedsReview);
+        var before = await ShotsAsync();
+        _board.AnswerShot(new ShotRewriteOutput("Karlach turns the coin.", ["Karlach"], false, [new("Karlach", "S01-2")]));
+
+        await client.RegenerateSegmentAsync(project.Id, PipelineStage.Storyboard, before[2].Key);
+        await ScriptRunTests.WaitForAsync(ShotsAsync, s => s.Single(x => x.Key == before[2].Key).Version == 2);
+
+        Assert.Equal([new EarlierStill("Karlach", before[1].Key)], (await ShotsAsync()).Single(x => x.Key == before[2].Key).Shot.EarlierStills);
+    }
+
+    [Fact]
     public async Task A_shot_written_again_keeps_its_timing_and_the_others_stay()
     {
         _board.Answer(Good());
@@ -388,7 +404,7 @@ public sealed class StoryboardRunTests : IDisposable
         var project = await VoiceApprovedAsync(client);
         await StageAsync(client, project.Id, PipelineStage.Storyboard, StageState.NeedsReview);
         var before = await ShotsAsync();
-        _board.AnswerShot(new ShotRewriteOutput("Karlach turns the coin in her fingers.", ["karlach", "Soul coin"], true, []));
+        _board.AnswerShot(new ShotRewriteOutput("Karlach turns the coin in her fingers.", ["karlach", "Soul coin"], true, [new("Soul coin", "")]));
 
         await client.RegenerateSegmentAsync(project.Id, PipelineStage.Storyboard, before[1].Key);
         await ScriptRunTests.WaitForAsync(ShotsAsync, s => s.Single(x => x.Key == before[1].Key).Version == 2);

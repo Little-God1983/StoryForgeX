@@ -9,9 +9,10 @@ internal static class StoryboardAnswers
     /// The answer with "no earlier still fits" for every cast member seen before and not answered
     /// for yet, as the check wants: for tests about something else.
     /// </summary>
-    public static StoryboardOutput WithPicks(this StoryboardOutput output)
+    /// <param name="seenBefore">Who the shots outside this answer show before it.</param>
+    public static StoryboardOutput WithPicks(this StoryboardOutput output, params string[] seenBefore)
     {
-        var seen = new HashSet<string>();
+        var seen = seenBefore.Select(Normal).ToHashSet();
         return output with
         {
             Segments = [.. output.Segments.Select(segment => segment is null ? segment! : segment with

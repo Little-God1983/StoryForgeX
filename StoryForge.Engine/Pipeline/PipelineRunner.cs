@@ -626,6 +626,16 @@ internal sealed partial class PipelineRunner(
                 child.UpdatedAt = clock.GetUtcNow();
             }
         }
+        foreach (var kept in result.Kept ?? [])
+        {
+            if (await db.Cells.FirstOrDefaultAsync(c => c.ProjectId == job.ProjectId && c.Stage == job.Stage && c.Key == kept.Key) is { } child)
+            {
+                var approved = child.ApprovedVersion == child.CurrentVersion;
+                AddVersion(db, child, await NextVersionAsync(db, job.ProjectId, job.Stage, kept.Key), kept.OutputJson, kept.SchemaVersion, kept.InputHash);
+                child.ApprovedVersion = approved ? child.CurrentVersion : child.ApprovedVersion;
+                child.UpdatedAt = clock.GetUtcNow();
+            }
+        }
         if (goingOn.Count > 0)
         {
             // Cut again from these voices: the rerun has moved on from them.

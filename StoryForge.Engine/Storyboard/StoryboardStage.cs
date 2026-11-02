@@ -77,7 +77,8 @@ internal sealed class StoryboardStage(IStoryboardAgent agent, IStoryboardFactChe
         var sheet = await cells.CurrentStoryboardAsync(context.Project.Id, cancellationToken)
             ?? throw new StageFailedException("The storyboard has not been planned yet.");
         var (all, voices) = await RequestAsync(context, null, cancellationToken, scope);
-        var request = all with { Cast = sheet.Cast };
+        var outside = StoryboardCheck.BoardOutside.Of(await cells.CurrentShotsAsync(context.Project.Id, cancellationToken), scope);
+        var request = all with { Cast = sheet.Cast, Outside = outside };
         if (request.Segments.Count == 0)
         {
             throw new StageFailedException($"The script has no segment {string.Join(", ", scope)} to cut again.");
@@ -96,19 +97,21 @@ internal sealed class StoryboardStage(IStoryboardAgent agent, IStoryboardFactChe
             {
                 Cast = [.. sheet.Cast.Select(c => new CastOutput(c.Name, c.Kind.ToString().ToLowerInvariant(), c.KeyReason, c.Look)), .. answer.Output.Cast ?? []],
             };
-            problems = StoryboardCheck.Problems(output, segments, request.MaxClipSeconds);
+            problems = StoryboardCheck.Problems(output, segments, request.MaxClipSeconds, outside);
             if (problems.Count == 0)
             {
                 // Everyone on the list stays, as they are spelled there; the new shots name them so.
-                var cast = StoryboardCheck.ToCast(output!);
+                // A look you typed stays yours.
+                var cast = (IReadOnlyList<CastMember>)[.. StoryboardCheck.ToCast(output!).Select(c => c with { LookByYou = sheet.Cast.Any(old => old.Name == c.Name && old.LookByYou) })];
                 // ToShots spells the cast as the list does, the cast so far first.
-                var shots = StoryboardCheck.ToShots(output!, segments, await cells.UsedShotKeysAsync(context.Project.Id, cancellationToken));
+                var shots = StoryboardCheck.ToShots(output!, segments, await cells.UsedShotKeysAsync(context.Project.Id, cancellationToken), outside: outside);
                 var found = await FactsAsync(context, request, cast, shots, cancellationToken);
                 if (SendBack(context, found, attempt, session, out problems))
                 {
                     continue;
                 }
                 (shots, var rest) = Noted(context, shots, found);
+                var pickedAgain = StoryboardCheck.PickedAgain(output!, outside, shots);
                 IReadOnlyList<FactDisagreement> notes = [.. (sheet.FactDisagreements ?? []).Union(rest)];
                 var cutFrom = sheet.VoiceVersions.ToDictionary();
                 foreach (var id in scope.Where(voices.ContainsKey))
@@ -122,7 +125,10 @@ internal sealed class StoryboardStage(IStoryboardAgent agent, IStoryboardFactChe
                     StoredJson.Write(new StoryboardSheet(cast, cutFrom, request.Pacing, notes.Count > 0 ? notes : null)),
                     Shot.SchemaVersion,
                     hash,
-                    [.. shots.Select(s => new CellResult(s.Key, StoredJson.Write(s), Shot.SchemaVersion, hash))]);
+                    [.. shots.Select(s => new CellResult(s.Key, StoredJson.Write(s), Shot.SchemaVersion, hash))])
+                {
+                    Kept = [.. pickedAgain.Select(s => new CellResult(s.Key, StoredJson.Write(s), Shot.SchemaVersion, hash))],
+                };
             }
             Fail(context, attempt, problems, last: attempt == Tries || session is null);
             if (session is null)
@@ -151,7 +157,7 @@ internal sealed class StoryboardStage(IStoryboardAgent agent, IStoryboardFactChe
             tries = attempt;
             var answer = await agent.RewriteShotAsync(request, board, sheet.Cast, key, session, problems, context.Activity, cancellationToken);
             session = answer.Session;
-            problems = StoryboardCheck.RewriteProblems(answer.Output, label, sheet.Cast);
+            problems = StoryboardCheck.RewriteProblems(answer.Output, label, sheet.Cast, board);
             if (problems.Count == 0)
             {
                 var names = StoryboardCheck.Names(sheet.Cast.Select(c => c.Name));
@@ -160,6 +166,7 @@ internal sealed class StoryboardStage(IStoryboardAgent agent, IStoryboardFactChe
                     Description = answer.Output!.Description.Trim(),
                     Cast = StoryboardCheck.CastOf(answer.Output.Cast, names),
                     ContinuesPrevious = answer.Output.ContinuesPrevious,
+                    EarlierStills = StoryboardCheck.ToPicks(answer.Output.EarlierStills, names, board.ToDictionary(s => StoryboardCheck.Pick(ShotTiming.Label(board, s.Key)), s => s.Key)),
                 };
                 var found = await StoryboardFacts.CheckAsync(
                     facts,

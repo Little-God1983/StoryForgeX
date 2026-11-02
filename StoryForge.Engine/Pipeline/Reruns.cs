@@ -172,7 +172,15 @@ internal sealed class Reruns(
             return new Plan($"Nothing is made from {key}'s {what} yet.", true, [], true);
         }
         var head = keep ? $"This keeps your edit of {key}'s {what} and remakes {Join(parts)}" : $"This remakes {Join([$"{key}'s {what}", .. parts])}";
-        return new Plan($"{head}. Other segments stay as they are.{tail}", keep, remade, false);
+        // Painted from the shots going away: they pick again, and you decide when to make them.
+        var later = spoken ? shots.Count(s => !own.Contains(s.Key) && !remade.Contains(s.Key) && stills.GetValueOrDefault(s.Key) is { YourFile: false } && s.EarlierStills?.Any(p => own.Contains(p.ShotKey)) == true) : 0;
+        var others = later switch
+        {
+            0 => "Other segments stay as they are.",
+            1 => "Other segments' shots stay, but 1 later still goes out of date: its shot picks again from the new ones.",
+            _ => $"Other segments' shots stay, but {later} later stills go out of date: their shots pick again from the new ones.",
+        };
+        return new Plan($"{head}. {others}{tail}", keep, remade, false);
     }
 
     private static Plan ShotPlan(string key, bool keep, IReadOnlyDictionary<string, Still> stills, bool stillsMade, Func<string, string> label)
