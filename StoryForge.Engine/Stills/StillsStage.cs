@@ -190,7 +190,6 @@ internal sealed partial class StillsStage(
         heard,
         looks = everyone.Select(p => new { p.Name, p.Look }),
         before = before?.File,
-        picks = shot.EarlierStills ?? [],
         earlier = (earlier ?? []).Select(e => new { e.ShotKey, e.File }),
         yourPrompt,
         consistency = setup.References.Consistency,
@@ -392,7 +391,7 @@ internal sealed partial class StillsStage(
         var everyone = Pictures(plan, shot);
         var sent = Sent(takesMany, everyone, beforeKey is not null);
         var earlier = new List<EarlierPicture>();
-        var carried = new List<string>();   // whose pick is the still before, or an earlier still going in
+        var carried = new List<string>();   // who an earlier still going in is for
         if (takesPictures)
         {
             var before = plan.Shots.TakeWhile(s => s.Key != shot.Key).Select(s => s.Key).ToHashSet();
@@ -400,15 +399,16 @@ internal sealed partial class StillsStage(
             {
                 var reference = plan.References.FirstOrDefault(r => ReferenceList.IsNamed(r, pick.Cast));
                 var hasPicture = reference is not null && everyone.Any(p => p.File is not null && p.Key.StartsWith(reference.Id + "/", StringComparison.Ordinal));
-                if (hasPicture || !before.Contains(pick.ShotKey) || fileOf(pick.ShotKey) is not { } file
+                var stillShown = plan.Shots.FirstOrDefault(s => s.Key == pick.ShotKey)?.Cast
+                    .Any(n => ReferenceList.Same(n, pick.Cast) || (reference is not null && ReferenceList.IsNamed(reference, n))) == true;
+                if (hasPicture || !stillShown || !before.Contains(pick.ShotKey) || fileOf(pick.ShotKey) is not { } file
                     || (file != ToBeMade && !File.Exists(Path.Combine(plan.Root, file))))
                 {
                     continue;
                 }
                 if (pick.ShotKey == beforeKey)
                 {
-                    carried.Add(pick.Cast);
-                    continue;
+                    continue;   // goes in already; their look stays in words, for what a picture does not carry
                 }
                 var place = plan.Cast.FirstOrDefault(c => ReferenceList.Same(c.Name, pick.Cast))?.Kind == CastKind.Place;
                 var index = earlier.FindIndex(e => e.ShotKey == pick.ShotKey);

@@ -493,4 +493,77 @@ public sealed partial class StillsRunTests
 
         Assert.Equal("The look of Karlach.", (await client.GetReferencesAsync(project.Id)).References.Single(r => r.Reference.Name == "Karlach").Reference.Look);
     }
+
+    [Fact]
+    public async Task A_cast_member_whose_pick_is_the_shot_before_keeps_their_look_in_the_prompt()
+    {
+        TakesMany();
+        var board = Board(i => i == 2);
+        var s01 = board.Segments[0];
+        board = board with
+        {
+            Segments = [s01 with { Shots = [s01.Shots[0], s01.Shots[1], s01.Shots[2] with { EarlierStills = [new("Karlach", "S01-2")] }, .. s01.Shots.Skip(3)] }, .. board.Segments.Skip(1)],
+        };
+        var client = await StartAsync();
+        var project = await ReferencesApprovedAsync(client, TextOnly, board);
+
+        await StillsAsync(client, project.Id);
+
+        var shot = _prompts.Requests.Single().Shots.Single(s => s.Label == "S01\u00b73");
+        Assert.True(shot.FromShotBefore);
+        Assert.Single(shot.Pictures);
+        Assert.Equal([new StillPicture("Karlach", "The look of Karlach.")], shot.Described);
+    }
+
+    [Fact]
+    public async Task A_pick_never_used_does_not_put_a_still_out_of_date_when_it_is_cut_again()
+    {
+        var client = await StartAsync();
+        var project = await ReferencesApprovedAsync(client, board: BoardPickingFromS02());   // Karlach has a reference picture
+        await StillsAsync(client, project.Id);
+        var keys = await KeysAsync(client, project.Id);
+        Assert.Contains("Other segments stay as they are", (await client.GetRerunPlanAsync(project.Id, PipelineStage.Voice, "S02")).Text);
+        _board.Answer(Recut("S02") with { LaterShots = [PickedAgain] });
+
+        await client.RerunFromHereAsync(project.Id, PipelineStage.Voice, "S02");
+        await CutAsync(client, project.Id, "S02", 10);
+
+        Assert.Null((await client.GetStillsAsync(project.Id)).Stills.Single(s => s.Key == keys["S03\u00b72"]).Stale);
+    }
+
+    [Fact]
+    public async Task A_pick_of_a_shot_they_were_taken_out_of_goes_by_words()
+    {
+        TakesMany();
+        var client = await StartAsync();
+        var project = await ReferencesApprovedAsync(client, TextOnly, Picking());
+        await StillsAsync(client, project.Id);
+        var keys = await KeysAsync(client, project.Id);
+
+        await client.EditShotAsync(project.Id, keys["S01\u00b72"], new ShotChange(Cast: ["Soul coin"]));
+        await client.RegenerateSegmentAsync(project.Id, PipelineStage.Stills, keys["S01\u00b73"]);
+        var after = await StillsAsync(client, project.Id, v => v.Stills.Single(s => s.Key == keys["S01\u00b73"]) is { Version: 2, State: not StageState.Running });
+
+        Assert.Null(after.Stills.Single(s => s.Key == keys["S01\u00b73"]).Still!.EarlierStills);
+        Assert.Equal(["Karlach"], _prompts.Requests[^1].Shots.Single().Described.Select(p => p.Name));
+    }
+
+    [Fact]
+    public async Task A_shot_you_edited_stays_yours_when_a_recut_makes_it_pick_again()
+    {
+        TakesMany();
+        var client = await StartAsync();
+        var project = await ReferencesApprovedAsync(client, TextOnly, BoardPickingFromS02());
+        await StillsAsync(client, project.Id);
+        var keys = await KeysAsync(client, project.Id);
+        await client.EditShotAsync(project.Id, keys["S03\u00b72"], new ShotChange(Description: "What you want."));
+        await client.ApproveSegmentsAsync(project.Id, PipelineStage.Storyboard);
+        _board.Answer(Recut("S02") with { LaterShots = [PickedAgain] });
+
+        await client.RerunFromHereAsync(project.Id, PipelineStage.Voice, "S02");
+
+        var board = await CutAsync(client, project.Id, "S02", 10);
+        var later = board.Shots.Single(s => s.Key == keys["S03\u00b72"]);
+        Assert.Equal((3, VersionOrigin.Edited), (later.Version, later.Versions[^1].Origin));
+    }
 }

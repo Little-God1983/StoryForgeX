@@ -174,6 +174,19 @@ public sealed class StoryboardRunTests : IDisposable
     }
 
     [Fact]
+    public async Task A_fact_check_that_cannot_be_asked_reaches_the_gate_with_a_note()
+    {
+        _board.Answer(Good());
+        _facts.AnswerFailure("Claude CLI stopped.").AnswerFailure("Claude CLI stopped.").AnswerFailure("Claude CLI stopped.");
+        var client = await StartAsync();
+
+        var project = await VoiceApprovedAsync(client);
+
+        Assert.Equal(StageState.NeedsReview, await StageAsync(client, project.Id, PipelineStage.Storyboard, StageState.NeedsReview, StageState.Failed));
+        Assert.Equal(new FactDisagreement("", "", "The facts could not be checked."), (await client.GetStoryboardAsync(project.Id)).FactDisagreements!.Single());
+    }
+
+    [Fact]
     public async Task The_check_reads_every_shot_of_a_whole_storyboard_and_the_looks()
     {
         _board.Answer(Good());
@@ -473,20 +486,27 @@ public sealed class StoryboardRunTests : IDisposable
     /// <summary>The fact check: no contradiction unless a test queues one; records what it was asked.</summary>
     internal sealed class FakeFactCheck : IStoryboardFactCheck
     {
-        private readonly Queue<FactCheckOutput?> _answers = new();
+        private readonly Queue<Func<FactCheckOutput?>> _answers = new();
 
         public List<FactCheckRequest> Requests { get; } = [];
 
         public FakeFactCheck Answer(params FactProblemOutput[] contradictions)
         {
-            _answers.Enqueue(new FactCheckOutput(contradictions));
+            _answers.Enqueue(() => new FactCheckOutput(contradictions));
             return this;
         }
 
         /// <summary>An answer that could not be read.</summary>
         public FakeFactCheck AnswerNothing()
         {
-            _answers.Enqueue(null);
+            _answers.Enqueue(() => null);
+            return this;
+        }
+
+        /// <summary>The model could not be asked.</summary>
+        public FakeFactCheck AnswerFailure(string reason)
+        {
+            _answers.Enqueue(() => throw new StageFailedException(reason));
             return this;
         }
 
@@ -495,7 +515,7 @@ public sealed class StoryboardRunTests : IDisposable
             lock (Requests)
             {
                 Requests.Add(request);
-                return Task.FromResult(_answers.TryDequeue(out var answer) ? answer : new FactCheckOutput([]));
+                return Task.FromResult(_answers.TryDequeue(out var answer) ? answer() : new FactCheckOutput([]));
             }
         }
     }

@@ -173,7 +173,7 @@ internal sealed class Reruns(
         }
         var head = keep ? $"This keeps your edit of {key}'s {what} and remakes {Join(parts)}" : $"This remakes {Join([$"{key}'s {what}", .. parts])}";
         // Painted from the shots going away: they pick again, and you decide when to make them.
-        var later = spoken ? shots.Count(s => !own.Contains(s.Key) && !remade.Contains(s.Key) && stills.GetValueOrDefault(s.Key) is { YourFile: false } && s.EarlierStills?.Any(p => own.Contains(p.ShotKey)) == true) : 0;
+        var later = spoken ? shots.Count(s => !own.Contains(s.Key) && !remade.Contains(s.Key) && stills.GetValueOrDefault(s.Key) is { YourFile: false } still && still.EarlierStills?.Any(p => own.Contains(p.ShotKey)) == true) : 0;
         var others = later switch
         {
             0 => "Other segments stay as they are.",

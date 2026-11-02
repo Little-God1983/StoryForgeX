@@ -264,7 +264,8 @@ internal sealed class ReferencesStage(
             // What Claude saw, even in a picture it did not know: the image is made from it. A look
             // the shot writer wrote stands against a picture found, not against one you chose.
             var writers = yours && verdict.Look.Length > 0
-                && (await cells.CurrentStoryboardAsync(context.Project.Id, cancellationToken))?.Cast.FirstOrDefault(c => c.Name == reference.Name)?.Look == reference.Look;
+                && (await cells.CurrentStoryboardAsync(context.Project.Id, cancellationToken))?.Cast.FirstOrDefault(c => c.Name == reference.Name) is { LookByYou: false } member
+                && member.Look == reference.Look;
             var looked = reference.Look.Length > 0 && !writers ? reference : reference with { Look = verdict.Look };
             var made = verdict.Complete || !verdict.Usable ? ImageMaking.FromPicture : ImageMaking.PartlyMadeUp;
             // Only the picture Claude looked at: another one on the page could show anyone.

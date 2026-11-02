@@ -46,7 +46,7 @@ internal static class StoryboardFacts
     /// <summary>The note a storyboard reaches your approval with when the check never gave a readable answer.</summary>
     public static readonly FactDisagreement Unchecked = new("", "", "The facts could not be checked.");
 
-    /// <summary>What contradicts the facts: none with no facts to keep, <see cref="Unchecked"/> when no answer could be read.</summary>
+    /// <summary>What contradicts the facts: none with no facts to keep, <see cref="Unchecked"/> when no answer came.</summary>
     public static async Task<IReadOnlyList<FactDisagreement>> CheckAsync(
         IStoryboardFactCheck check, FactCheckRequest request, IProgress<ActivityLine> activity, CancellationToken cancellationToken)
     {
@@ -56,7 +56,16 @@ internal static class StoryboardFacts
         }
         for (var attempt = 1; attempt <= Tries; attempt++)
         {
-            if (await check.CheckAsync(request, activity, cancellationToken) is { } answer)
+            FactCheckOutput? answer;
+            try
+            {
+                answer = await check.CheckAsync(request, activity, cancellationToken);
+            }
+            catch (Pipeline.StageFailedException)
+            {
+                continue;   // the storyboard is good: it waits for you all the same, saying the facts were not checked
+            }
+            if (answer is not null)
             {
                 return
                 [

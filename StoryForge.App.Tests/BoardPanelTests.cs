@@ -91,6 +91,58 @@ public sealed class BoardPanelTests
     }
 
     [Fact]
+    public async Task A_reference_with_no_look_yet_shows_the_shot_writers()
+    {
+        var script = await LookedAsync(Planned(Guid.Empty, StageState.NeedsReview, Shot("S01", 1, 0, 4.2, 0, 4, cast: ["Soul coin"]), Shot("S01", 2, 4.2, 10.3, 4, 6)));
+        var board = _client.Storyboards.Values.Last();
+        _client.Storyboards[board.ProjectId] = board with { ReferencedCast = new Dictionary<string, string> { ["Soul coin"] = "" } };
+        await script.LoadAsync();
+
+        Pick(script, 0, 0);
+
+        Assert.Equal(new BoardLookRow("Soul coin", "Iron.", 1, true), script.BoardLooks.Single());
+    }
+
+    [Fact]
+    public async Task A_disagreement_that_names_no_one_exactly_shows_on_every_shot()
+    {
+        var script = await LookedAsync(Planned(Guid.Empty, StageState.NeedsReview, Shot("S01", 1, 0, 4.2, 0, 4, cast: ["Karlach"]), Shot("S01", 2, 4.2, 10.3, 4, 6)) with
+        {
+            FactDisagreements =
+            [
+                new FactDisagreement(" karlach ", "F02", "Spelled otherwise."),
+                new FactDisagreement("Shot S02-1", "F03", "The model's own way of saying where."),
+                new FactDisagreement("Soul coin", "F04", "About someone else."),
+            ],
+        });
+
+        Pick(script, 0, 0);
+        Assert.Equal(2, script.BoardFactNotes.Count(n => n.Contains("Spelled otherwise.", StringComparison.Ordinal) || n.Contains("own way", StringComparison.Ordinal)));
+        Assert.DoesNotContain(script.BoardFactNotes, n => n.Contains("About someone else.", StringComparison.Ordinal));
+
+        Pick(script, 0, 1);
+        Assert.Single(script.BoardFactNotes);
+        Assert.Contains("own way", script.BoardFactNotes[0], StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task The_gate_says_how_many_disagreements_wait_before_you_approve()
+    {
+        var noted = Shot("S01", 1, 0, 4.2, 0, 4, cast: ["Karlach"]);
+        noted = noted with { Shot = noted.Shot with { FactDisagreements = [new FactDisagreement("S01-1", "F04", "Behind her ribs.")] } };
+        var script = await LookedAsync(Planned(Guid.Empty, StageState.NeedsReview, noted, Shot("S01", 2, 4.2, 10.3, 4, 6)) with
+        {
+            FactDisagreements = [new FactDisagreement("Karlach", "F02", "No horns.")],
+        });
+
+        Assert.Equal("The fact check still disagrees on 2 things. Each shows on the Board panel of its shot.", script.BoardGateFactNote);
+    }
+
+    [Fact]
+    public async Task With_no_disagreements_the_gate_says_nothing_about_facts() =>
+        Assert.Equal("", (await LookedAsync()).BoardGateFactNote);
+
+    [Fact]
     public async Task A_look_with_a_reference_is_read_only()
     {
         var script = await LookedAsync();
@@ -107,7 +159,7 @@ public sealed class BoardPanelTests
         noted = noted with { Shot = noted.Shot with { FactDisagreements = [new FactDisagreement("S01-1", "F04", "F04 says behind her ribs.")] } };
         var script = await LookedAsync(Planned(Guid.Empty, StageState.NeedsReview, noted, Shot("S01", 2, 4.2, 10.3, 4, 6)) with
         {
-            FactDisagreements = [new FactDisagreement("Karlach", "F02", "F02 says no horns."), new FactDisagreement("Raphael", "F03", "Not here."), new FactDisagreement("", "", "The facts could not be checked.")],
+            FactDisagreements = [new FactDisagreement("Karlach", "F02", "F02 says no horns."), new FactDisagreement("Soul coin", "F03", "Not here."), new FactDisagreement("", "", "The facts could not be checked.")],
         });
 
         Pick(script, 0, 0);

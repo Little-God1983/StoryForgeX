@@ -54,7 +54,8 @@ public sealed partial class ReferencesRunTests : IDisposable
     });
 
     /// <summary>A project whose storyboard is approved, with an image profile for the workflow above.</summary>
-    private async Task<Project> StoryboardApprovedAsync(IStoryForgeClient client, Func<ProjectSetup, ProjectSetup>? change = null)
+    /// <param name="beforeApproval">Runs just before the storyboard is approved, which proposes the references.</param>
+    private async Task<Project> StoryboardApprovedAsync(IStoryForgeClient client, Func<ProjectSetup, ProjectSetup>? change = null, Func<Project, Task>? beforeApproval = null)
     {
         var settings = await client.GetSettingsAsync();
         await client.SaveSettingsAsync(settings with
@@ -77,6 +78,10 @@ public sealed partial class ReferencesRunTests : IDisposable
             return change is null ? s : change(s);
         });
         await ScriptRunTests.WaitForAsync(() => client.GetStoryboardAsync(project.Id), v => v.State == StageState.NeedsReview);
+        if (beforeApproval is not null)
+        {
+            await beforeApproval(project);
+        }
         await client.ApproveSegmentsAsync(project.Id, PipelineStage.Storyboard);
         return project;
     }

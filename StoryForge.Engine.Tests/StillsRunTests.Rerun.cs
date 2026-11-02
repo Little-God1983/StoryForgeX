@@ -263,8 +263,9 @@ public sealed partial class StillsRunTests
     [Fact]
     public async Task The_rerun_question_says_how_many_later_stills_go_out_of_date()
     {
+        TakesMany();
         var client = await StartAsync();
-        var project = await ReferencesApprovedAsync(client, board: BoardPickingFromS02());
+        var project = await ReferencesApprovedAsync(client, TextOnly, BoardPickingFromS02());
         await StillsAsync(client, project.Id);
 
         var plan = await client.GetRerunPlanAsync(project.Id, PipelineStage.Voice, "S02");

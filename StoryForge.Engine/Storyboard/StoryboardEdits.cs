@@ -311,7 +311,7 @@ internal sealed class StoryboardEdits(
                     Stage = Stage,
                     Key = change.Key,
                     Version = next,
-                    Origin = VersionOrigin.Edited,
+                    Origin = change.KeepApproval && current is not null ? current.Origin : VersionOrigin.Edited,
                     BasedOn = current?.Version,
                     // A new half was made from the same inputs as the shot it was split from.
                     InputHash = current?.InputHash ?? (await db.CellVersions.FirstAsync(v => v.ProjectId == projectId && v.Stage == Stage && v.Key == shotKey, cancellationToken)).InputHash,

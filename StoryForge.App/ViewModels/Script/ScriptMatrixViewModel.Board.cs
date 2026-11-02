@@ -225,10 +225,24 @@ public sealed partial class ScriptMatrixViewModel
     {
         var referenced = _board?.ReferencedCast.GetValueOrDefault(name);
         var shots = (_board?.Shots ?? []).Count(s => s.Shot.Cast.Contains(name));
-        return new BoardLookRow(name, referenced ?? _board?.Cast.FirstOrDefault(c => c.Name == name)?.Look ?? "", shots, referenced is not null);
+        // A reference with no look yet goes by the shot writer's, as the stills do.
+        var look = referenced is { Length: > 0 } ? referenced : _board?.Cast.FirstOrDefault(c => c.Name == name)?.Look ?? "";
+        return new BoardLookRow(name, look, shots, referenced is not null);
     })];
 
     public bool HasBoardLooks => BoardLooks.Count > 0;
+
+    /// <summary>At the gate, so you know before you approve; each note itself is on the panel of its shot.</summary>
+    public string BoardGateFactNote
+    {
+        get
+        {
+            var notes = (_board?.FactDisagreements?.Count ?? 0) + (_board?.Shots ?? []).Sum(s => s.Shot.FactDisagreements?.Count ?? 0);
+            return notes == 0 ? "" : $"The fact check still disagrees on {notes} {(notes == 1 ? "thing" : "things")}. Each shows on the Board panel of its shot.";
+        }
+    }
+
+    private static bool SameName(string a, string b) => string.Equals(a.Trim(), b.Trim(), StringComparison.OrdinalIgnoreCase);
 
     /// <summary>What the fact check still disagrees with in this shot and the looks of who is in it, or that it could not check.</summary>
     public IReadOnlyList<string> BoardFactNotes
@@ -236,7 +250,9 @@ public sealed partial class ScriptMatrixViewModel
         get
         {
             var mine = (SelectedShot?.Shot.Shot.FactDisagreements ?? []).Select(d => d.FactId.Length == 0 ? d.Problem : $"The fact check still disagrees ({d.FactId}): {d.Problem}");
-            var sheet = (_board?.FactDisagreements ?? []).Where(d => d.Where.Length == 0 || BoardCast.Contains(d.Where))
+            // Free text from a model: what names no one on the cast list exactly shows on every shot, so you see it before you approve.
+            var cast = _board?.Cast.Select(c => c.Name).ToList() ?? [];
+            var sheet = (_board?.FactDisagreements ?? []).Where(d => !cast.Any(c => SameName(c, d.Where)) || BoardCast.Any(c => SameName(c, d.Where)))
                 .Select(d => d.Where.Length == 0 ? d.Problem : $"The fact check still disagrees about {d.Where} ({d.FactId}): {d.Problem}");
             return SelectedShot is null ? [] : [.. mine, .. sheet];
         }
@@ -422,7 +438,7 @@ public sealed partial class ScriptMatrixViewModel
     /// <summary>The selected shot changed, or another one is selected: the panel reads it again.</summary>
     private void RefreshBoardPanel()
     {
-        foreach (var name in new[] { nameof(BoardShows), nameof(BoardWords), nameof(BoardStartWord), nameof(BoardEndWord), nameof(BoardCast), nameof(BoardCastChoices), nameof(BoardLooks), nameof(HasBoardLooks), nameof(BoardFactNotes), nameof(BoardContinues), nameof(CanEditBoard) })
+        foreach (var name in new[] { nameof(BoardShows), nameof(BoardWords), nameof(BoardStartWord), nameof(BoardEndWord), nameof(BoardCast), nameof(BoardCastChoices), nameof(BoardLooks), nameof(HasBoardLooks), nameof(BoardFactNotes), nameof(BoardGateFactNote), nameof(BoardContinues), nameof(CanEditBoard) })
         {
             OnPropertyChanged(name);
         }

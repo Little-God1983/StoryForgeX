@@ -215,7 +215,7 @@
           <Button DockPanel.Dock="Right" Content="Regenerate storyboard" Style="{StaticResource SecondaryButtonStyle}" Command="{Binding RegenerateBoardCommand}" />
           <TextBlock Text="Gate: Storyboard" FontSize="14" FontWeight="SemiBold" Foreground="{StaticResource AccentTextBrush}" VerticalAlignment="Center" Margin="0,0,14,0" />
           <TextBlock VerticalAlignment="Center" FontSize="13" Foreground="#D9C9A8" TextWrapping="Wrap">
-            <Run Text="{Binding BoardApprovedSummary, Mode=OneWay}" /> This stop is always on: References start when every shot is approved.
+            <Run Text="{Binding BoardApprovedSummary, Mode=OneWay}" /> This stop is always on: References start when every shot is approved. <Run Text="{Binding BoardGateFactNote, Mode=OneWay}" Foreground="{StaticResource AccentTextBrush}" />
           </TextBlock>
         </DockPanel>
       </Border>

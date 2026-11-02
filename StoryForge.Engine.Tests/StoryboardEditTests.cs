@@ -59,6 +59,17 @@ public sealed class StoryboardEditTests : IDisposable
     }
 
     [Fact]
+    public async Task A_shot_a_merge_moves_a_pick_on_is_not_counted_as_yours()
+    {
+        var (client, projectId, view) = await PlannedAsync(Picking());
+        var picker = view.Shots.Single(s => s.Label == "S01\u00b74").Key;
+
+        await client.MergeShotAsync(projectId, view.Shots.Single(s => s.Label == "S01\u00b72").Key);
+
+        Assert.Equal(VersionOrigin.Generated, (await client.GetStoryboardAsync(projectId)).Shots.Single(s => s.Key == picker).Versions[^1].Origin);
+    }
+
+    [Fact]
     public async Task A_merge_drops_a_pick_when_the_surviving_shot_does_not_show_them()
     {
         var (client, projectId, view) = await PlannedAsync(Picking());

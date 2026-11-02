@@ -108,8 +108,10 @@ internal sealed class ReferenceEdits(
                     var board = await cells.CurrentStoryboardAsync(projectId, cancellationToken);
                     (name, kind, reason) = (other.Name, other.Kind, board?.Cast.FirstOrDefault(c => ReferenceList.Same(c.Name, name))?.KeyReason ?? "");
                 }
+                // Someone on the cast list keeps the look the shot writer gave them.
+                var look = (await cells.CurrentStoryboardAsync(projectId, cancellationToken))?.Cast.FirstOrDefault(c => ReferenceList.Same(c.Name, name))?.Look ?? "";
                 var reference = new Reference(
-                    ReferenceList.NextId(sheet.References), name, kind, reason, "",
+                    ReferenceList.NextId(sheet.References), name, kind, reason, look,
                     [.. shots.Where(s => s.Cast.Any(n => ReferenceList.Same(n, name))).Select(s => s.Key)], []);
                 sheet = sheet with
                 {

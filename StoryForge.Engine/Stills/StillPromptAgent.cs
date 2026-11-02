@@ -198,7 +198,8 @@ internal sealed class ClaudeCliStillPromptAgent(ClaudeCli claude, IOptions<Story
             }
             foreach (var described in shot.Described)
             {
-                prompt.AppendLine(CultureInfo.InvariantCulture, $"In no picture, so describe how they look: {described.Name}{(described.Look.Length > 0 ? $": {described.Look}" : "")}");
+                var how = shot.FromShotBefore ? "As they look, whatever the still before shows" : "In no picture, so describe how they look";
+                prompt.AppendLine(CultureInfo.InvariantCulture, $"{how}: {described.Name}{(described.Look.Length > 0 ? $": {described.Look}" : "")}");
             }
         }
         prompt.AppendLine();

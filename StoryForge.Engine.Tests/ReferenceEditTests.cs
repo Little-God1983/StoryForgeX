@@ -189,6 +189,37 @@ public sealed partial class ReferencesRunTests
     }
 
     [Fact]
+    public async Task A_look_you_typed_on_the_board_stays_with_your_own_picture()
+    {
+        _pictures.ByName["Soul coin"] = [];
+        var client = await StartAsync();
+        var project = await StoryboardApprovedAsync(
+            client,
+            s => s with { References = s.References with { ReviewList = false } },
+            p => client.SetCastLookAsync(p.Id, "Soul coin", "A coin of my own."));
+        await ReferencesAsync(client, project.Id, ImagesMade);
+        var own = Path.Combine(_engine.DataDirectory, "coin fan art.png");
+        await File.WriteAllBytesAsync(own, Png(900, 900));
+        _check.ByName["Soul coin"] = new PictureVerdict(false, false, "", "A gold coin with a horned skull.");
+
+        await client.AddOwnPictureAsync(project.Id, "R02", own);
+        var view = await ReferencesAsync(client, project.Id, v => v.References[1].Images[0] is { Version: >= 2, State: not StageState.Running });
+
+        Assert.Equal("A coin of my own.", view.References[1].Reference.Look);
+    }
+
+    [Fact]
+    public async Task Making_someone_a_reference_keeps_the_shot_writers_look()
+    {
+        var (client, projectId) = await ListedAsync();
+
+        await client.ChangeReferencesAsync(projectId, new ReferenceChange(ReferenceChangeKind.MakeReference, Name: "Mammon's mint"));
+
+        var view = await client.GetReferencesAsync(projectId);
+        Assert.Equal("The look of Mammon's mint.", view.References.Single(r => r.Reference.Name == "Mammon's mint").Reference.Look);
+    }
+
+    [Fact]
     public async Task A_look_you_typed_stays_with_your_own_picture()
     {
         _pictures.ByName["Soul coin"] = [];
