@@ -124,9 +124,9 @@ public sealed partial class ReferencesRunTests : IDisposable
         Assert.True(File.Exists(karlach.Path));
         Assert.StartsWith(Path.Combine(_projects, $"Soul Coins – BG3 lore ({project.Id.ToString("N")[..8]})", "references"), karlach.Path);
         // Claude's look goes into the reference and into the prompt.
-        Assert.Equal("A tarnished iron coin.", view.References[1].Reference.Look);
+        Assert.Equal("The look of Soul coin.", view.References[1].Reference.Look);
         var prompts = _comfy.Workflows.Select(w => (string)w["2"]!["inputs"]!["prompt"]!).ToList();
-        Assert.Contains(prompts, p => p.Contains("Soul coin") && p.Contains("the back") && p.Contains("A tarnished iron coin."));
+        Assert.Contains(prompts, p => p.Contains("Soul coin") && p.Contains("the back") && p.Contains("The look of Soul coin."));
         Assert.All(_comfy.Workflows, w => Assert.Equal((1024, 1024), ((int)w["4"]!["inputs"]!["width"]!, (int)w["4"]!["inputs"]!["height"]!)));
         Assert.All(_comfy.Workflows, w => Assert.StartsWith("uploaded-P0", (string)w["1"]!["inputs"]!["image"]!));
     }

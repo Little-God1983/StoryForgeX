@@ -23,7 +23,7 @@ public sealed class ReferenceListTests : IDisposable
 
     private static readonly StoryboardSheet Sheet = new(
     [
-        new CastMember("Karlach", CastKind.Character, ""),
+        new CastMember("Karlach", CastKind.Character, "", "A red tiefling."),
         new CastMember("Soul coin", CastKind.Object, ""),
         new CastMember("Mammon's mint", CastKind.Place, "Where every coin is made."),
         new CastMember("A tavern mug", CastKind.Object, ""),
@@ -150,5 +150,16 @@ public sealed class ReferenceListTests : IDisposable
         var (references, _) = ReferenceList.Propose(Sheet, [.. Board, Shot("S04/a", "The Tavern"), Shot("S04/b", "the tavern ")]);
 
         Assert.Single(references, r => ReferenceList.Same(r.Name, "The Tavern"));
+    }
+
+    [Fact]
+    public void A_references_look_starts_from_the_shot_writers()
+    {
+        var sheet = new StoryboardSheet([new CastMember("Karlach", CastKind.Character, "", "A red tiefling.")], new Dictionary<string, int>(), Pacing.Default);
+        Shot Showing(string key) => new(key, "S01", 0, 10, 0, 5, "x", ["Karlach"], false);
+
+        var (references, _) = ReferenceList.Propose(sheet, [Showing("S01/a"), Showing("S01/b")]);
+
+        Assert.Equal("A red tiefling.", references.Single().Look);
     }
 }

@@ -159,6 +159,15 @@ public interface IStoryForgeClient
     Task EditShotAsync(Guid projectId, string shotKey, ShotChange change, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Your look for someone on the cast list, in every shot: it counts as given, even against a fact.
+    /// The stills of the shots with them go out of date.
+    /// </summary>
+    /// <exception cref="KeyNotFoundException">No such project, or they are not on the cast list.</exception>
+    /// <exception cref="ArgumentException">The look is empty.</exception>
+    /// <exception cref="InvalidOperationException">They have a reference, whose look is edited there; or the storyboard or the stills are being made.</exception>
+    Task SetCastLookAsync(Guid projectId, string name, string look, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Moves where a shot starts or ends by <paramref name="words"/> (1 later, -1 earlier). The shot
     /// next to it grows or shrinks, so the segment still adds up to its audio; both get a new version.
     /// </summary>

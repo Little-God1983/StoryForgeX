@@ -24,7 +24,7 @@ internal static class ReferenceList
             var shown = shots.Where(s => s.Cast.Any(n => Same(n, member.Name))).Select(s => s.Key).ToList();
             if (shown.Count >= 2 || (shown.Count == 1 && member.KeyReason.Length > 0))
             {
-                references.Add(new Reference(IdOf(references.Count), member.Name, member.Kind, member.KeyReason, "", shown, []));
+                references.Add(new Reference(IdOf(references.Count), member.Name, member.Kind, member.KeyReason, member.Look, shown, []));
             }
             else
             {

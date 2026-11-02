@@ -148,7 +148,11 @@ public sealed record StoryboardView(
     IReadOnlyDictionary<string, IReadOnlyList<SpokenWord>> Words,
     Pacing Pacing,
     int MaxClipSeconds,
-    IReadOnlyList<FactDisagreement>? FactDisagreements = null);
+    IReadOnlyList<FactDisagreement>? FactDisagreements = null)
+{
+    /// <summary>Who on the cast list has a reference, with its look: edited there, shown here.</summary>
+    public IReadOnlyDictionary<string, string> ReferencedCast { get; init; } = new Dictionary<string, string>();
+}
 
 /// <summary>Your change to a shot; a null field stays as it is.</summary>
 public sealed record ShotChange(string? Description = null, IReadOnlyList<string>? Cast = null, bool? ContinuesPrevious = null);

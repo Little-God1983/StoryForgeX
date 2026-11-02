@@ -189,6 +189,22 @@ public sealed partial class ReferencesRunTests
     }
 
     [Fact]
+    public async Task A_look_you_typed_stays_with_your_own_picture()
+    {
+        _pictures.ByName["Soul coin"] = [];
+        var (client, projectId) = await ImagedAsync();
+        await client.ChangeReferencesAsync(projectId, new ReferenceChange(ReferenceChangeKind.EditLook, ReferenceId: "R02", Look: "A coin of my own."));
+        var own = Path.Combine(_engine.DataDirectory, "coin fan art.png");
+        await File.WriteAllBytesAsync(own, Png(900, 900));
+        _check.ByName["Soul coin"] = new PictureVerdict(false, false, "", "A gold coin with a horned skull.");
+
+        await client.AddOwnPictureAsync(projectId, "R02", own);
+        var view = await ReferencesAsync(client, projectId, v => v.References[1].Images[0] is { Version: >= 2, State: not StageState.Running });
+
+        Assert.Equal("A coin of my own.", view.References[1].Reference.Look);
+    }
+
+    [Fact]
     public async Task A_picture_you_picked_is_used_even_when_Claude_does_not_recognise_it()
     {
         var (client, projectId) = await ImagedAsync();
@@ -228,17 +244,18 @@ public sealed partial class ReferencesRunTests
         Assert.Equal(ImageMaking.FromDescription, view.References[1].Images[0].Image.Made);
         // A blank canvas, not the picture the workflow was saved with.
         Assert.Equal("uploaded-blank.png", (string)_comfy.Workflows[runs]["1"]!["inputs"]!["image"]!);
-        Assert.Contains("A tarnished iron coin.", (string)_comfy.Workflows[runs]["2"]!["inputs"]!["prompt"]!);
+        Assert.Contains("The look of Soul coin.", (string)_comfy.Workflows[runs]["2"]!["inputs"]!["prompt"]!);
     }
 
     [Fact]
     public async Task With_no_look_there_is_nothing_to_make_it_from()
     {
         var (client, projectId) = await ListedAsync();
+        await client.ChangeReferencesAsync(projectId, new ReferenceChange(ReferenceChangeKind.Add, Name: "Raphael", Kind: CastKind.Character));
 
-        var refused = await Assert.ThrowsAsync<ArgumentException>(() => client.MakeFromDescriptionAsync(projectId, "R01"));
+        var refused = await Assert.ThrowsAsync<ArgumentException>(() => client.MakeFromDescriptionAsync(projectId, "R03"));
 
-        Assert.Equal("Write how Karlach looks first (Edit look…): that is all it is made from.", refused.Message);
+        Assert.Equal("Write how Raphael looks first (Edit look…): that is all it is made from.", refused.Message);
     }
 
     [Fact]
@@ -633,7 +650,7 @@ public sealed partial class ReferencesRunTests
 
         var failed = await ReferencesAsync(client, project.Id, v => v.State == StageState.Failed);
 
-        Assert.Equal("Karlach as the picture shows.", failed.References[0].Reference.Look);
+        Assert.Equal("The look of Karlach.", failed.References[0].Reference.Look);
     }
 
     [Fact]

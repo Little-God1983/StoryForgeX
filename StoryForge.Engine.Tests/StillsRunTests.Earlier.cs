@@ -437,4 +437,60 @@ public sealed partial class StillsRunTests
         var direct = view.Stills.Count(s => s.Still!.References.Any(k => k.StartsWith(coin + "/", StringComparison.Ordinal)));
         Assert.True(references.StillsUsing[coin] > direct);
     }
+
+    [Fact]
+    public async Task A_recut_keeps_a_look_you_typed()
+    {
+        var client = await StartAsync();
+        var project = await ReferencesApprovedAsync(client, TextOnly);
+        await StillsAsync(client, project.Id);
+        await client.SetCastLookAsync(project.Id, "Karlach", "Horned, with one eye.");
+        _board.Answer(Recut("S02"));
+
+        await client.RerunFromHereAsync(project.Id, PipelineStage.Voice, "S02");
+
+        var board = await CutAsync(client, project.Id, "S02", 10);
+        var karlach = board.Cast.Single(c => c.Name == "Karlach");
+        Assert.Equal(("Horned, with one eye.", true), (karlach.Look, karlach.LookByYou));
+    }
+
+    [Fact]
+    public async Task Editing_a_look_puts_stills_of_shots_with_them_out_of_date()
+    {
+        var client = await StartAsync();
+        var project = await ReferencesApprovedAsync(client, TextOnly, Board(_ => false));
+        await StillsAsync(client, project.Id);
+        var keys = await KeysAsync(client, project.Id);
+
+        await client.SetCastLookAsync(project.Id, "Karlach", "Horned, with one eye.");
+
+        var view = await client.GetStillsAsync(project.Id);
+        Assert.NotNull(view.Stills.Single(s => s.Key == keys["S01\u00b72"]).Stale);
+        Assert.Null(view.Stills.Single(s => s.Key == keys["S01\u00b71"]).Stale);
+    }
+
+    [Fact]
+    public async Task Editing_the_look_of_someone_with_a_reference_is_refused()
+    {
+        var client = await StartAsync();
+        var project = await ReferencesApprovedAsync(client);
+        await StillsAsync(client, project.Id);
+
+        var refused = await Assert.ThrowsAsync<InvalidOperationException>(() => client.SetCastLookAsync(project.Id, "Karlach", "Horned."));
+
+        Assert.Contains("References", refused.Message);
+        var view = await client.GetStoryboardAsync(project.Id);
+        Assert.Equal(view.ReferencedCast["Karlach"], (await client.GetReferencesAsync(project.Id)).References.Single(r => r.Reference.Name == "Karlach").Reference.Look);
+    }
+
+    [Fact]
+    public async Task A_reference_starts_from_the_shot_writers_look_not_the_picture()
+    {
+        var client = await StartAsync();
+        var project = await ReferencesApprovedAsync(client);
+
+        await StillsAsync(client, project.Id);
+
+        Assert.Equal("The look of Karlach.", (await client.GetReferencesAsync(project.Id)).References.Single(r => r.Reference.Name == "Karlach").Reference.Look);
+    }
 }

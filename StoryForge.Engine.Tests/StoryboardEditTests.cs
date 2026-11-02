@@ -107,6 +107,60 @@ public sealed class StoryboardEditTests : IDisposable
     }
 
     [Fact]
+    public async Task Editing_a_look_makes_a_new_sheet_version_and_marks_it_yours()
+    {
+        var (client, projectId, _) = await PlannedAsync();
+
+        await client.SetCastLookAsync(projectId, " karlach ", "  Horned, with one eye.  ");
+
+        var view = await client.GetStoryboardAsync(projectId);
+        var karlach = view.Cast.Single(c => c.Name == "Karlach");
+        Assert.Equal(("Horned, with one eye.", true), (karlach.Look, karlach.LookByYou));
+        Assert.Equal(StageState.NeedsReview, view.State);
+        Assert.False(view.Cast.Single(c => c.Name == "Soul coin").LookByYou);
+    }
+
+    [Fact]
+    public async Task An_empty_look_is_refused()
+    {
+        var (client, projectId, _) = await PlannedAsync();
+
+        await Assert.ThrowsAsync<ArgumentException>(() => client.SetCastLookAsync(projectId, "Karlach", "  "));
+    }
+
+    [Fact]
+    public async Task Someone_not_on_the_cast_list_has_no_look_to_edit()
+    {
+        var (client, projectId, _) = await PlannedAsync();
+
+        await Assert.ThrowsAsync<KeyNotFoundException>(() => client.SetCastLookAsync(projectId, "Raphael", "Red."));
+    }
+
+    [Fact]
+    public async Task The_same_look_changes_nothing()
+    {
+        var (client, projectId, _) = await PlannedAsync();
+
+        await client.SetCastLookAsync(projectId, "Karlach", "The look of Karlach.");
+
+        Assert.False((await client.GetStoryboardAsync(projectId)).Cast.Single(c => c.Name == "Karlach").LookByYou);
+    }
+
+    [Fact]
+    public async Task Editing_a_look_clears_the_fact_note_about_it()
+    {
+        var problem = new FactProblemOutput("Karlach", "F01", "F01 says otherwise.");
+        _board.Answer(StoryboardRunTests.Good()).Answer(StoryboardRunTests.Good());
+        _facts.Answer(problem).Answer(problem).Answer(problem);
+        var (client, projectId, view) = await PlannedAsync(StoryboardRunTests.Good());
+        Assert.Single(view.FactDisagreements!);
+
+        await client.SetCastLookAsync(projectId, "Karlach", "What you want.");
+
+        Assert.Empty((await client.GetStoryboardAsync(projectId)).FactDisagreements!);
+    }
+
+    [Fact]
     public async Task Editing_what_a_shot_shows_clears_its_fact_note()
     {
         var problem = new FactProblemOutput("S01-1", "F01", "F01 says otherwise.");

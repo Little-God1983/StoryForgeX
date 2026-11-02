@@ -674,7 +674,7 @@ public sealed partial class StillsRunTests : IDisposable
         var keys = await KeysAsync(client, project.Id);
         var asked = _prompts.Requests.Single().Shots[1];
         Assert.Equal(["Karlach"], asked.Described.Select(p => p.Name));
-        Assert.Equal("the still of S01-2, Karlach as the picture shows.", view.Stills.Single(s => s.Key == keys["S01·2"]).Still!.Prompt);
+        Assert.Equal("the still of S01-2, The look of Karlach.", view.Stills.Single(s => s.Key == keys["S01·2"]).Still!.Prompt);
     }
 
     [Fact]
@@ -695,7 +695,7 @@ public sealed partial class StillsRunTests : IDisposable
         var third = _prompts.Requests.Single().Shots[2];
         Assert.Empty(third.Pictures);
         Assert.Equal(["Karlach"], third.Described.Select(p => p.Name));
-        Assert.Equal("the still of S01-3, Karlach as the picture shows.", view.Stills.Single(s => s.Key == keys["S01·3"]).Still!.Prompt);
+        Assert.Equal("the still of S01-3, The look of Karlach.", view.Stills.Single(s => s.Key == keys["S01·3"]).Still!.Prompt);
     }
 
     [Fact]

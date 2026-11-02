@@ -101,6 +101,7 @@ public sealed class ProviderStatusBoardTests
         public Task<VoiceView> GetVoiceAsync(Guid projectId, CancellationToken cancellationToken = default) => _inner.GetVoiceAsync(projectId, cancellationToken);
         public Task<StoryboardView> GetStoryboardAsync(Guid projectId, CancellationToken cancellationToken = default) => _inner.GetStoryboardAsync(projectId, cancellationToken);
         public Task EditShotAsync(Guid projectId, string shotKey, ShotChange change, CancellationToken cancellationToken = default) => _inner.EditShotAsync(projectId, shotKey, change, cancellationToken);
+        public Task SetCastLookAsync(Guid projectId, string name, string look, CancellationToken cancellationToken = default) => _inner.SetCastLookAsync(projectId, name, look, cancellationToken);
         public Task MoveCutAsync(Guid projectId, string shotKey, ShotEdge edge, int words, CancellationToken cancellationToken = default) => _inner.MoveCutAsync(projectId, shotKey, edge, words, cancellationToken);
         public Task SplitShotAsync(Guid projectId, string shotKey, int atWord, CancellationToken cancellationToken = default) => _inner.SplitShotAsync(projectId, shotKey, atWord, cancellationToken);
         public Task MergeShotAsync(Guid projectId, string shotKey, CancellationToken cancellationToken = default) => _inner.MergeShotAsync(projectId, shotKey, cancellationToken);

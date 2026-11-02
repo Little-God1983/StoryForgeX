@@ -3,6 +3,7 @@ using StoryForge.Client;
 using StoryForge.Engine.Data;
 using StoryForge.Engine.Pipeline;
 using StoryForge.Engine.Projects;
+using StoryForge.Engine.References;
 
 namespace StoryForge.Engine.Storyboard;
 
@@ -69,6 +70,67 @@ internal sealed class StoryboardEdits(
             }
             return [Change.Replace(shot with { Cast = cast, EarlierStills = PicksOf(shot, cast) })];
         }, cancellationToken, keepApproval: true);
+
+    /// <summary>
+    /// Your look for someone on the cast list: the sheet's next version, keeping its state, as a look
+    /// is no shot to approve again. What the fact check said of the old look goes with it. Once they
+    /// have a reference, its Look box owns the look.
+    /// </summary>
+    public async Task SetLookAsync(Guid projectId, string name, string look, CancellationToken cancellationToken)
+    {
+        look = look.Trim();
+        if (look.Length == 0)
+        {
+            throw new ArgumentException("A look cannot be empty: say what they look like.");
+        }
+        if (runner.IsAnyBusy(projectId, Stage) || runner.IsAnyBusy(projectId, PipelineStage.Stills))
+        {
+            throw new InvalidOperationException("The storyboard or the stills are being made. Try again when they are done.");
+        }
+        var sheet = await cells.CurrentStoryboardAsync(projectId, cancellationToken)
+            ?? throw new KeyNotFoundException($"Project {projectId} has no storyboard yet.");
+        var member = sheet.Cast.FirstOrDefault(c => ReferenceList.Same(c.Name, name))
+            ?? throw new KeyNotFoundException($"{name.Trim()} is not on the cast list.");
+        if ((await cells.CurrentReferencesAsync(projectId, cancellationToken))?.References.Any(r => ReferenceList.IsNamed(r, member.Name)) == true)
+        {
+            throw new InvalidOperationException($"{member.Name} has a reference: edit the look under References.");
+        }
+        if (member.Look == look)
+        {
+            return;
+        }
+        var notes = sheet.FactDisagreements?.Where(d => !ReferenceList.Same(d.Where, member.Name)).ToList();
+        var changed = sheet with
+        {
+            Cast = [.. sheet.Cast.Select(c => c == member ? c with { Look = look, LookByYou = true } : c)],
+            FactDisagreements = notes is { Count: > 0 } ? notes : null,
+        };
+        await using (var db = await contextFactory.CreateDbContextAsync(cancellationToken))
+        {
+            var now = clock.GetUtcNow();
+            var cell = await db.Cells.FirstAsync(c => c.ProjectId == projectId && c.Stage == Stage && c.Key == "", cancellationToken);
+            var current = await db.CellVersions.FirstAsync(v => v.ProjectId == projectId && v.Stage == Stage && v.Key == "" && v.Version == cell.CurrentVersion, cancellationToken);
+            var next = 1 + await db.CellVersions.Where(v => v.ProjectId == projectId && v.Stage == Stage && v.Key == "").MaxAsync(v => v.Version, cancellationToken);
+            db.CellVersions.Add(new CellVersionEntry
+            {
+                ProjectId = projectId,
+                Stage = Stage,
+                Key = "",
+                Version = next,
+                Origin = VersionOrigin.Edited,
+                BasedOn = current.Version,
+                InputHash = current.InputHash,
+                SchemaVersion = Shot.SchemaVersion,
+                OutputJson = StoredJson.Write(changed),
+                CreatedAt = now,
+            });
+            cell.ApprovedVersion = cell.ApprovedVersion == cell.CurrentVersion ? next : cell.ApprovedVersion;
+            cell.CurrentVersion = next;
+            cell.UpdatedAt = now;
+            await db.SaveChangesAsync(cancellationToken);
+        }
+        runner.Publish(new StageUpdate(projectId, Stage, (await cells.StateAsync(projectId, Stage, cancellationToken)), Key: ""));
+    }
 
     /// <summary>Moves a shot's start or end by <paramref name="words"/>; the shot on the other side of the cut takes or gives the words.</summary>
     public Task MoveCutAsync(Guid projectId, string shotKey, ShotEdge edge, int words, CancellationToken cancellationToken) =>
