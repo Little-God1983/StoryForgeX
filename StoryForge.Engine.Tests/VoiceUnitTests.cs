@@ -225,6 +225,43 @@ public sealed class WorkflowTemplateTests : IDisposable
         { "11": { "class_type": "ITLBreezeTTSVoiceDirection", "inputs": { "text": "", "seed": 1, "instruction": "from the workflow" } } }
         """)!;
 
+    /// <summary>The text reaches Breeze from a primitive, then a voice changer; Whisper reads the reference on the side.</summary>
+    private static JsonObject Wired() => (JsonObject)JsonNode.Parse("""
+        {
+          "5": { "class_type": "PrimitiveStringMultiline", "inputs": { "value": "" } },
+          "11": { "class_type": "ITLBreezeTTSVoiceDirection", "inputs": { "text": ["5", 0], "reference_text": ["19", 0], "unload_after": false } },
+          "12": { "class_type": "VoiceChanger", "inputs": { "audio": ["11", 0], "unload_after": false } },
+          "19": { "class_type": "ITLWhisperTranscribe", "inputs": { "audio": ["2", 0], "unload_after": false } },
+          "2": { "class_type": "LoadAudio", "inputs": { "audio": "Amira.mp3" } }
+        }
+        """)!;
+
+    private static bool Unloads(JsonObject workflow, string node) => workflow[node]!["inputs"]!["unload_after"]!.GetValue<bool>();
+
+    [Fact]
+    public void Every_node_the_text_reaches_through_wires_keeps_its_model_until_the_last_part()
+    {
+        var workflow = Wired();
+
+        Assert.True(WorkflowTemplate.SetUnloadAfter(workflow, [new("text", "#5.value")], "text", last: false));
+
+        Assert.Equal((false, false, true), (Unloads(workflow, "11"), Unloads(workflow, "12"), Unloads(workflow, "19")));
+
+        Assert.True(WorkflowTemplate.SetUnloadAfter(workflow, [new("text", "#5.value")], "text", last: true));
+
+        Assert.Equal((true, true, true), (Unloads(workflow, "11"), Unloads(workflow, "12"), Unloads(workflow, "19")));
+    }
+
+    [Fact]
+    public void A_blank_row_for_the_text_counts_for_nothing_and_every_other_row_counts()
+    {
+        var workflow = Wired();
+
+        Assert.True(WorkflowTemplate.SetUnloadAfter(workflow, [new("text", ""), new("text", "#19.language"), new("text", "#5.value")], "text", last: false));
+
+        Assert.Equal((false, false), (Unloads(workflow, "11"), Unloads(workflow, "19")));
+    }
+
     [Fact]
     public void Values_go_into_the_nodes_the_profile_names()
     {
