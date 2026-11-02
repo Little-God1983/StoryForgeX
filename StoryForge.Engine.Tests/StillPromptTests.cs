@@ -18,6 +18,15 @@ public sealed class StillPromptTests
     private static readonly StillPicture Troll = new("Trolls", "Hulking and grey.");
 
     [Fact]
+    public void The_rules_say_the_first_picture_is_built_on_and_a_picture_may_show_what_changed()
+    {
+        var prompt = Prompt(Shot("S03·2", [Troll, Troll]));
+
+        Assert.Contains("The first picture is the one the image model builds on", prompt);
+        Assert.Contains("say what is different in this shot, and leave it out", prompt);
+    }
+
+    [Fact]
     public void The_clip_prompt_gets_the_cast_and_their_looks()
     {
         var prompt = ClaudeCliClipPromptAgent.FirstPrompt(new ClipPromptRequest(Guid.NewGuid(), "A lore video.",

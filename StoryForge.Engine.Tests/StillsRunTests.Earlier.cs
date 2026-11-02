@@ -129,6 +129,93 @@ public sealed partial class StillsRunTests
         Assert.Single(still.References);   // the coin's reference stays its source
     }
 
+    /// <summary>S01·3 is the mint; S02·2 shows Karlach in it, picked in that order.</summary>
+    private static StoryboardOutput InTheMint()
+    {
+        var board = Board(_ => false);
+        var (s01, s02) = (board.Segments[0], board.Segments[1]);
+        return board with
+        {
+            Segments =
+            [
+                s01 with { Shots = [s01.Shots[0], s01.Shots[1], s01.Shots[2] with { Cast = ["Mammon's mint"], EarlierStills = [] }, .. s01.Shots.Skip(3)] },
+                s02 with { Shots = [s02.Shots[0], s02.Shots[1] with { Cast = ["Karlach", "Mammon's mint"], EarlierStills = [new("Karlach", "S01-2"), new("Mammon's mint", "S01-3")] }, .. s02.Shots.Skip(2)] },
+                .. board.Segments.Skip(2),
+            ],
+        };
+    }
+
+    [Fact]
+    public async Task A_place_goes_in_first_whatever_order_it_was_picked_in()
+    {
+        TakesMany();
+        var client = await StartAsync();
+        var project = await ReferencesApprovedAsync(client, TextOnly, InTheMint());
+
+        var view = await StillsAsync(client, project.Id);
+
+        var keys = await KeysAsync(client, project.Id);
+        Assert.Equal([Uploaded(view, keys["S01·3"]), Uploaded(view, keys["S01·2"])], Images(RunOf("S02-2")));
+        Assert.Equal(["Mammon's mint", "Karlach"], _prompts.Requests.Single().Shots.Single(s => s.Label == "S02·2").Pictures.Select(p => p.Name));
+    }
+
+    [Fact]
+    public async Task A_picked_place_goes_in_before_a_reference_picture()
+    {
+        TakesMany();
+        _pictures.ByName["Mammon's mint"] = [FakePictures.Picture("Mint.png", page: "https://bg3.wiki/wiki/Mint")];
+        var client = await StartAsync();
+        var project = await ReferencesApprovedAsync(client, board: InTheMint(), beforeApproval: async p =>
+        {
+            var mint = (await client.GetReferencesAsync(p.Id)).References.Single(r => r.Reference.Name == "Mammon's mint").Images.Single();
+            File.Delete(mint.Path!);
+        });
+
+        var view = await StillsAsync(client, project.Id);
+
+        var keys = await KeysAsync(client, project.Id);
+        Assert.Equal(2, Images(RunOf("S02-2")).Count);
+        Assert.Equal(Uploaded(view, keys["S01·3"]), Images(RunOf("S02-2"))[0]);
+        Assert.Equal(["Mammon's mint", "Karlach"], _prompts.Requests.Single().Shots.Single(s => s.Label == "S02·2").Pictures.Select(p => p.Name));
+    }
+
+    [Fact]
+    public async Task A_place_with_its_own_reference_picture_goes_in_first()
+    {
+        TakesMany();
+        _pictures.ByName["Mammon's mint"] = [FakePictures.Picture("Mint.png", page: "https://bg3.wiki/wiki/Mint")];
+        var client = await StartAsync();
+        var project = await ReferencesApprovedAsync(client, board: InTheMint());
+
+        await StillsAsync(client, project.Id);
+
+        Assert.Equal(["Mammon's mint", "Karlach"], _prompts.Requests.Single().Shots.Single(s => s.Label == "S02·2").Pictures.Select(p => p.Name));
+    }
+
+    [Fact]
+    public async Task With_no_place_the_main_subject_goes_in_first()
+    {
+        TakesMany();
+        var board = Picking();
+        var s02 = board.Segments[1];
+        board = board with
+        {
+            Segments =
+            [
+                board.Segments[0],
+                s02 with { Shots = [s02.Shots[0], s02.Shots[1] with { EarlierStills = [new("Soul coin", "S01-1"), new("Karlach", "S01-2")] }, .. s02.Shots.Skip(2)] },
+                .. board.Segments.Skip(2),
+            ],
+        };
+        var client = await StartAsync();
+        var project = await ReferencesApprovedAsync(client, TextOnly, board);
+
+        var view = await StillsAsync(client, project.Id);
+
+        var keys = await KeysAsync(client, project.Id);
+        Assert.Equal([Uploaded(view, keys["S01·2"]), Uploaded(view, keys["S01·1"])], Images(RunOf("S02-2")));
+    }
+
     [Fact]
     public async Task An_empty_pick_gets_words_only()
     {

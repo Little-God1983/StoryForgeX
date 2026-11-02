@@ -235,10 +235,14 @@ internal sealed partial class StillsStage(
     /// <summary>What goes into one still.</summary>
     /// <param name="Everyone">Everyone in the shot with their look; a picture for those who have one.</param>
     /// <param name="Sent">The reference pictures the workflow gets.</param>
-    /// <param name="Earlier">The earlier stills the workflow gets, after those.</param>
+    /// <param name="Earlier">The earlier stills the workflow gets.</param>
     /// <param name="Described">Those of everyone that no picture carries: in words only.</param>
+    /// <param name="InOrder">Both kinds of picture, in the order the workflow gets them.</param>
     private sealed record ShotSources(
-        IReadOnlyList<ShotPicture> Everyone, IReadOnlyList<ShotPicture> Sent, IReadOnlyList<EarlierPicture> Earlier, IReadOnlyList<ShotPicture> Described);
+        IReadOnlyList<ShotPicture> Everyone, IReadOnlyList<ShotPicture> Sent, IReadOnlyList<EarlierPicture> Earlier, IReadOnlyList<ShotPicture> Described, IReadOnlyList<GoingIn> InOrder);
+
+    /// <summary>A picture going into a still, and what the prompt writer hears about it.</summary>
+    private sealed record GoingIn(string File, StillPicture Picture);
 
     /// <summary>The file of a still this run is about to make.</summary>
     private const string ToBeMade = "";
@@ -428,7 +432,34 @@ internal sealed partial class StillsStage(
             }
         }
         var described = everyone.Where(p => !sent.Contains(p) && !carried.Any(name => Names(plan, p, name))).ToList();
-        return new ShotSources(everyone, sent, earlier, described);
+        var inOrder = sent.Select(p => (Rank: Rank(plan, shot, [p.Name]), Picture: new GoingIn(p.File!, new StillPicture(p.Name, p.Look))))
+            .Concat(earlier.Select(e => (Rank: Rank(plan, shot, e.Cast), Picture: new GoingIn(e.File, new StillPicture(
+                string.Join(" and ", e.Cast),
+                string.Join(" ", e.Cast.Select(c => everyone.FirstOrDefault(p => Names(plan, p, c))?.Look ?? "").Where(l => l.Length > 0)),
+                StillPromptCheck.Name(plan.Labels[e.ShotKey]),
+                e.KeepSurroundings)))))
+            .OrderBy(p => p.Rank)
+            .Select(p => p.Picture)
+            .ToList();
+        return new ShotSources(everyone, sent, earlier, described, inOrder);
+    }
+
+    /// <summary>
+    /// Where a picture goes among the others. Qwen edits the first picture and takes content from the
+    /// rest, so the place goes first; with no place, whoever the shot names first.
+    /// </summary>
+    private static int Rank(Plan plan, Shot shot, IReadOnlyList<string> names)
+    {
+        var place = names.Any(name => plan.Cast.Any(c => c.Kind == CastKind.Place && ReferenceList.Same(c.Name, name))
+            || plan.References.Any(r => r.Kind == CastKind.Place && ReferenceList.IsNamed(r, name)));
+        if (place)
+        {
+            return -1;
+        }
+        var named = names.SelectMany(name => shot.Cast.Select((c, i) => (c, i))
+            .Where(x => ReferenceList.Same(x.c, name) || plan.References.Any(r => ReferenceList.IsNamed(r, x.c) && ReferenceList.IsNamed(r, name)))
+            .Select(x => x.i));
+        return named.DefaultIfEmpty(int.MaxValue).Min();
     }
 
     /// <summary>Whether this name is who the picture is of; a reference may go by several names.</summary>
@@ -447,12 +478,7 @@ internal sealed partial class StillsStage(
 
     private static StillShot Describe(Plan plan, Shot shot, ShotSources sources, bool fromBefore)
     {
-        var pictures = sources.Sent.Select(p => new StillPicture(p.Name, p.Look)).ToList();
-        pictures.AddRange(sources.Earlier.Select(e => new StillPicture(
-            string.Join(" and ", e.Cast),
-            string.Join(" ", e.Cast.Select(c => sources.Everyone.FirstOrDefault(p => Names(plan, p, c))?.Look ?? "").Where(l => l.Length > 0)),
-            StillPromptCheck.Name(plan.Labels[e.ShotKey]),
-            e.KeepSurroundings)));
+        var pictures = sources.InOrder.Select(p => p.Picture).ToList();
         var described = sources.Described.Select(p => new StillPicture(p.Name, p.Look)).ToList();
         if (fromBefore)
         {
@@ -541,8 +567,7 @@ internal sealed partial class StillsStage(
             {
                 files.Add(before.File);
             }
-            files.AddRange(sources.Sent.Select(p => p.File!));
-            files.AddRange(sources.Earlier.Select(e => e.File));
+            files.AddRange(sources.InOrder.Select(p => p.File));
             if (files.Count == 0 && painter.TakesPictures)
             {
                 // Nothing to start from: an edit workflow paints on a blank canvas, not on the picture it was saved with.

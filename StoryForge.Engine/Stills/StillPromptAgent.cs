@@ -209,7 +209,7 @@ internal sealed class ClaudeCliStillPromptAgent(ClaudeCli claude, IOptions<Story
         {
             prompt.AppendLine(
                 """
-                2. Only a shot listed above with a picture number comes with pictures, and the image model sees those: name who is in which ("the woman from picture 1") and say what they do in this shot. Do not describe the rest of their looks again in other words, but state their size and the traits their look fixes, because a picture does not carry size and must not undo a trait.
+                2. Only a shot listed above with a picture number comes with pictures, and the image model sees those: name who is in which ("the woman from picture 1") and say what they do in this shot. Do not describe the rest of their looks again in other words, but state their size and the traits their look fixes, because a picture does not carry size and must not undo a trait. The first picture is the one the image model builds on, and the others supply what you take from them. A picture may show a detail this shot changes: say what is different in this shot, and leave it out.
                 3. A shot that lists no picture comes with none: never name a picture there. Describe the subject from its look.
                 4. A shot that starts from the still of the shot before keeps that scene: say how the camera moves on and what changes.
                 5. Never ask for text, letters, captions or logos in the picture.
