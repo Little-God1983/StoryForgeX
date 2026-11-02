@@ -86,7 +86,7 @@ internal sealed class StoryboardStage(IStoryboardAgent agent, CellReader cells, 
             // The cast so far counts as on the list: the answer's own list need name only who is new.
             var output = answer.Output is null ? null : answer.Output with
             {
-                Cast = [.. sheet.Cast.Select(c => new CastOutput(c.Name, c.Kind.ToString().ToLowerInvariant(), c.KeyReason)), .. answer.Output.Cast ?? []],
+                Cast = [.. sheet.Cast.Select(c => new CastOutput(c.Name, c.Kind.ToString().ToLowerInvariant(), c.KeyReason, c.Look)), .. answer.Output.Cast ?? []],
             };
             problems = StoryboardCheck.Problems(output, segments, request.MaxClipSeconds);
             if (problems.Count == 0)
@@ -215,6 +215,7 @@ internal sealed class StoryboardStage(IStoryboardAgent agent, CellReader cells, 
             voices[segment.Id] = version;
         }
         var profile = await profiles.GetVersionAsync(setup.Script.Storyboard.ProfileId, setup.Script.Storyboard.Version, cancellationToken);
+        var facts = (await cells.ApprovedFactSheetAsync(context.Project.Id, cancellationToken))?.Sheet.Facts.Where(f => !f.LeftOut).ToList() ?? [];
         return (new StoryboardRequest(
             context.Project.Id,
             setup.Brief,
@@ -222,7 +223,8 @@ internal sealed class StoryboardStage(IStoryboardAgent agent, CellReader cells, 
             profile.Content.Instructions,
             setup.Script.Model,
             (setup.Pacing ?? profile.Content.Pacing ?? Pacing.Default).HeldTo(setup.Clips.MaxClipSeconds),
-            setup.Clips.MaxClipSeconds), voices);
+            setup.Clips.MaxClipSeconds,
+            Facts: facts), voices);
     }
 
     private void Fail(StageContext context, int attempt, IReadOnlyList<string> problems, bool last)

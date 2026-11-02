@@ -43,7 +43,22 @@ public enum CastKind
 
 /// <summary>Someone or something the storyboard shows, e.g. Karlach, the House of Hope, a soul coin.</summary>
 /// <param name="KeyReason">Why it carries the story although it is shown only once; empty otherwise.</param>
-public sealed record CastMember(string Name, CastKind Kind, string KeyReason);
+/// <param name="Look">
+/// What it looks like, once for the whole video: appearance, size against something familiar, the
+/// traits the facts fix. Every prompt uses it where no picture carries it.
+/// </param>
+/// <param name="LookByYou">You typed the look: it counts as given, even against a fact.</param>
+public sealed record CastMember(string Name, CastKind Kind, string KeyReason, string Look = "", bool LookByYou = false);
+
+/// <summary>The earlier still the shot writer picked for someone seen again.</summary>
+/// <param name="Cast">Who, as the cast list spells them.</param>
+/// <param name="ShotKey">The earlier shot whose still is the reference.</param>
+public sealed record EarlierStill(string Cast, string ShotKey);
+
+/// <summary>A contradiction with a fact the shot writer and the fact check could not settle.</summary>
+/// <param name="Where">The shot ("S02-1") or cast member it is about; empty when the facts could not be checked at all.</param>
+/// <param name="FactId">"F06"; empty when no one fact is meant.</param>
+public sealed record FactDisagreement(string Where, string FactId, string Problem);
 
 /// <summary>
 /// One shot: one clip, within one segment. It covers <paramref name="WordCount"/> words of the
@@ -53,6 +68,10 @@ public sealed record CastMember(string Name, CastKind Kind, string KeyReason);
 /// <param name="Key">Stable for the shot's life, e.g. "S01/3f9a"; the screen numbers shots by position instead.</param>
 /// <param name="Cast">Who and what is in it, at most <see cref="MaxCast"/>.</param>
 /// <param name="ContinuesPrevious">Same scene as the shot before, the camera moves on.</param>
+/// <param name="EarlierStills">
+/// Per cast member seen before, the earlier still to paint them from, most fitting first; none for
+/// someone no earlier still fits.
+/// </param>
 public sealed record Shot(
     string Key,
     string SegmentId,
@@ -62,7 +81,8 @@ public sealed record Shot(
     double End,
     string Description,
     IReadOnlyList<string> Cast,
-    bool ContinuesPrevious)
+    bool ContinuesPrevious,
+    IReadOnlyList<EarlierStill>? EarlierStills = null)
 {
     /// <summary>Raised whenever the stored shape changes, so older shots can still be read.</summary>
     public const int SchemaVersion = 1;
@@ -75,7 +95,9 @@ public sealed record Shot(
 
 /// <summary>The storyboard as a whole: who and what it shows, and what it was cut from.</summary>
 /// <param name="VoiceVersions">Per segment, the voice version whose word timings the shots follow.</param>
-public sealed record StoryboardSheet(IReadOnlyList<CastMember> Cast, IReadOnlyDictionary<string, int> VoiceVersions, Pacing Pacing);
+/// <param name="FactDisagreements">What the fact check still disagrees with, for you to decide; null when nothing.</param>
+public sealed record StoryboardSheet(
+    IReadOnlyList<CastMember> Cast, IReadOnlyDictionary<string, int> VoiceVersions, Pacing Pacing, IReadOnlyList<FactDisagreement>? FactDisagreements = null);
 
 /// <summary>One shot's Board cell as the matrix shows it.</summary>
 /// <param name="Number">Its place in its segment, from 1: shown as "S01·2".</param>

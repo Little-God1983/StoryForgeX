@@ -17,6 +17,7 @@ internal sealed record StoryboardSegment(Segment Segment, SegmentWords Words);
 /// Re-cutting some segments only (a rerun): the cast list of the storyboard so far, whose names the
 /// new shots use. Null for the whole storyboard.
 /// </param>
+/// <param name="Facts">The approved facts not left out: looks and shots keep to them.</param>
 internal sealed record StoryboardRequest(
     Guid ProjectId,
     string Brief,
@@ -25,7 +26,8 @@ internal sealed record StoryboardRequest(
     string Model,
     Pacing Pacing,
     int MaxClipSeconds,
-    IReadOnlyList<CastMember>? Cast = null);
+    IReadOnlyList<CastMember>? Cast = null,
+    IReadOnlyList<Fact>? Facts = null);
 
 /// <summary>The model that plans the shots. It has no tools: the script in the prompt is all it knows.</summary>
 internal interface IStoryboardAgent
@@ -108,6 +110,7 @@ internal sealed class ClaudeCliStoryboardAgent(ClaudeCli claude, IOptions<StoryF
             prompt.AppendLine(CultureInfo.InvariantCulture, $"{segment.Id} {segment.Title} ({ShotTiming.Seconds(words.Seconds)} s):");
             prompt.AppendLine(string.Join(' ', words.Words.Select((w, i) => string.Create(CultureInfo.InvariantCulture, $"[{i}] {w.Text} {w.Start:0.##}"))));
         }
+        AppendFacts(prompt, request.Facts);
         prompt.AppendLine();
         prompt.AppendLine(CultureInfo.InvariantCulture,
             $"""
@@ -119,11 +122,13 @@ internal sealed class ClaudeCliStoryboardAgent(ClaudeCli claude, IOptions<StoryF
             5. Cut in a pause: after the end of a sentence first, else after a comma.
             6. For every shot say what is seen (subject, setting, light, camera), who and what is in it (at most {Shot.MaxCast}, the ones that matter most), and whether it continues the shot before (same scene, the camera moves on).
             7. The cast list holds everyone and everything that is shown: characters, places and objects. Only what is shown, never what is only named. Give keyReason only for something shown in just one shot that carries the story, and say why; leave it empty otherwise.
+            8. Give everyone on the cast list one look, kept for the whole video: their appearance, their size against something familiar ("the size of a fist"), and the traits the facts fix. Facts come first and are kept, not bent, in the looks and in every shot: blind means no eyes are visible, not one eye. Where the facts say nothing, use what you know of the setting.
+            9. In earlierStills, for everyone in a shot who is in an earlier shot too, name the earlier shot whose still best shows them for this shot, as S03-1 (segment, then the shot's number in it). Prefer the earliest shot that fits. Leave the shot empty when no earlier still fits, e.g. the orb is wrapped in hide there and bare here. Put the most fitting entry first: a workflow that takes one picture uses only that one.
             """);
         if (request.Cast is { } cast)
         {
             prompt.AppendLine(CultureInfo.InvariantCulture,
-                $"8. The cast of the video so far: {string.Join(", ", cast.Select(c => $"{c.Name} ({c.Kind.ToString().ToLowerInvariant()})"))}. Name them so in the shots. Your cast list needs only who and what these shots show that is not on it yet.");
+                $"10. The cast of the video so far: {string.Join(", ", cast.Select(c => $"{c.Name} ({c.Kind.ToString().ToLowerInvariant()})"))}. Name them so in the shots. Your cast list needs only who and what these shots show that is not on it yet.");
         }
         AppendProfile(prompt, request.Instructions);
         return prompt.ToString();
@@ -151,6 +156,20 @@ internal sealed class ClaudeCliStoryboardAgent(ClaudeCli claude, IOptions<StoryF
             $"It keeps its place and length. Say what is seen, who and what is in it (names from the cast list, at most {Shot.MaxCast}), and whether it continues the shot before.");
         AppendProfile(prompt, request.Instructions);
         return prompt.ToString();
+    }
+
+    private static void AppendFacts(StringBuilder prompt, IReadOnlyList<Fact>? facts)
+    {
+        if (facts is not { Count: > 0 })
+        {
+            return;
+        }
+        prompt.AppendLine();
+        prompt.AppendLine("The facts of this video:");
+        foreach (var fact in facts.Where(f => !f.LeftOut))
+        {
+            prompt.AppendLine(CultureInfo.InvariantCulture, $"{fact.Id}: {fact.Statement}");
+        }
     }
 
     private static void AppendProfile(StringBuilder prompt, string instructions)

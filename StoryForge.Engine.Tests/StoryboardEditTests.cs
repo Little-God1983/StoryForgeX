@@ -27,10 +27,10 @@ public sealed class StoryboardEditTests : IDisposable
     private static StoryboardOutput Board(params int[] firstWords)
     {
         var good = StoryboardRunTests.Good();
-        return good with
+        return (good with
         {
-            Segments = [new("S01", [.. firstWords.Select((w, i) => new ShotOutput(w, $"S01 shot {i + 1}", ["Karlach"], false))]), .. good.Segments.Skip(1)],
-        };
+            Segments = [new("S01", [.. firstWords.Select((w, i) => new ShotOutput(w, $"S01 shot {i + 1}", ["Karlach"], false, []))]), .. good.Segments.Skip(1)],
+        }).WithPicks();
     }
 
     private async Task<(IStoryForgeClient Client, Guid ProjectId, StoryboardView View)> PlannedAsync(StoryboardOutput? board = null)

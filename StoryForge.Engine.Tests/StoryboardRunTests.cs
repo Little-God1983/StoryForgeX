@@ -54,10 +54,10 @@ public sealed class StoryboardRunTests : IDisposable
     }
 
     /// <summary>A good storyboard for the script of <see cref="ScriptRunTests.Good"/>: 150 words a segment, a shot every 10 words (5 s).</summary>
-    internal static StoryboardOutput Good() => new(
-        [new("Karlach", "character", ""), new("Soul coin", "object", ""), new("Mammon's mint", "place", "Where every coin is made.")],
+    internal static StoryboardOutput Good() => new StoryboardOutput(
+        [new("Karlach", "character", "", "The look of Karlach."), new("Soul coin", "object", "", "The look of Soul coin."), new("Mammon's mint", "place", "Where every coin is made.", "The look of Mammon's mint.")],
         [.. new[] { "S01", "S02", "S03", "S04" }.Select(id => new SegmentShotsOutput(id,
-            [.. Enumerable.Range(0, 15).Select(i => new ShotOutput(i * 10, $"{id} shot {i + 1}", i == 0 ? ["Soul coin"] : ["Karlach"], i % 2 == 1))]))]);
+            [.. Enumerable.Range(0, 15).Select(i => new ShotOutput(i * 10, $"{id} shot {i + 1}", i == 0 ? ["Soul coin"] : ["Karlach"], i % 2 == 1, []))]))]).WithPicks();
 
     private async Task<List<(string Key, StageState State, int? Version, Shot Shot)>> ShotsAsync()
     {
@@ -75,6 +75,38 @@ public sealed class StoryboardRunTests : IDisposable
         (await ScriptRunTests.WaitForAsync(
             () => client.GetProjectAsync(projectId),
             p => states.Contains(p.Stages.Single(s => s.Stage == stage).State))).Stages.Single(s => s.Stage == stage).State;
+
+    [Fact]
+    public async Task Picks_become_shot_keys_and_looks_are_stored()
+    {
+        var good = Good();
+        var first = good.Segments[0];
+        _board.Answer(good with
+        {
+            Segments = [first with { Shots = [first.Shots[0], first.Shots[1], first.Shots[2] with { EarlierStills = [new("Karlach", "S01-2")] }, .. first.Shots.Skip(3)] }, .. good.Segments.Skip(1)],
+        });
+        var client = await StartAsync();
+
+        var project = await VoiceApprovedAsync(client);
+
+        await StageAsync(client, project.Id, PipelineStage.Storyboard, StageState.NeedsReview);
+        var shots = await ShotsAsync();
+        Assert.Equal([new EarlierStill("Karlach", shots[1].Key)], shots[2].Shot.EarlierStills);
+        var view = await client.GetStoryboardAsync(project.Id);
+        Assert.Equal("The look of Karlach.", view.Cast.Single(c => c.Name == "Karlach").Look);
+    }
+
+    [Fact]
+    public async Task The_shot_writer_gets_the_approved_facts()
+    {
+        _board.Answer(Good());
+        var client = await StartAsync();
+
+        var project = await VoiceApprovedAsync(client);
+
+        await StageAsync(client, project.Id, PipelineStage.Storyboard, StageState.NeedsReview);
+        Assert.Equal(["F01", "F02", "F03"], _board.Requests.Single().Facts!.Select(f => f.Id));
+    }
 
     [Fact]
     public async Task An_approved_voice_starts_the_storyboard_and_it_waits_for_review()
@@ -189,7 +221,7 @@ public sealed class StoryboardRunTests : IDisposable
         var project = await VoiceApprovedAsync(client);
         await StageAsync(client, project.Id, PipelineStage.Storyboard, StageState.NeedsReview);
         var before = await ShotsAsync();
-        _board.AnswerShot(new ShotRewriteOutput("Karlach turns the coin in her fingers.", ["karlach", "Soul coin"], true));
+        _board.AnswerShot(new ShotRewriteOutput("Karlach turns the coin in her fingers.", ["karlach", "Soul coin"], true, []));
 
         await client.RegenerateSegmentAsync(project.Id, PipelineStage.Storyboard, before[1].Key);
         await ScriptRunTests.WaitForAsync(ShotsAsync, s => s.Single(x => x.Key == before[1].Key).Version == 2);

@@ -14,9 +14,9 @@ namespace StoryForge.Engine.Tests;
 public sealed partial class StillsRunTests
 {
     /// <summary>One segment cut again: 10 shots of 15 words, Raphael new on the cast list, Karlach spelled otherwise.</summary>
-    private static StoryboardOutput Recut(string id) => new(
-        [new("karlach", "character", ""), new("Raphael", "character", "")],
-        [new SegmentShotsOutput(id, [.. Enumerable.Range(0, 10).Select(i => new ShotOutput(i * 15, $"{id} new shot {i + 1}", i == 0 ? ["Raphael"] : ["karlach"], false))])]);
+    private static StoryboardOutput Recut(string id) => new StoryboardOutput(
+        [new("karlach", "character", "", "The look of karlach."), new("Raphael", "character", "", "The look of Raphael.")],
+        [new SegmentShotsOutput(id, [.. Enumerable.Range(0, 10).Select(i => new ShotOutput(i * 15, $"{id} new shot {i + 1}", i == 0 ? ["Raphael"] : ["karlach"], false, []))])]).WithPicks();
 
     /// <summary>Ticks a gate of the project, as if it was set up with it.</summary>
     private async Task GateAsync(Guid projectId, PipelineStage stage)
@@ -197,7 +197,7 @@ public sealed partial class StillsRunTests
         var project = await ReferencesApprovedAsync(client);
         await StillsAsync(client, project.Id);
         // As the prompt asks: Raphael, new, on the list; Karlach, on it already, only in the shots.
-        _board.Answer(Recut("S02") with { Cast = [new("Raphael", "character", "")] });
+        _board.Answer(Recut("S02") with { Cast = [new("Raphael", "character", "", "The look of Raphael.")] });
 
         await client.RerunFromHereAsync(project.Id, PipelineStage.Voice, "S02");
 
