@@ -341,7 +341,7 @@ internal sealed class ClipsStage(
                 throw new StageFailedException($"The video profile{(own ? "" : $" {name}")} does not say where '{key}' goes. Map it to the workflow's node in the profile.");
             }
         }
-        // The project's clip size (the delivery's), whichever profile makes it: nothing is upscaled later.
+        // The project's clip size, whichever profile makes it.
         var size = setup.Clips.Size;
         var max = own ? setup.Clips.MaxClipSeconds : profile.MaxClipSeconds ?? setup.Clips.MaxClipSeconds;
         return new Animator(workflow, profile, name, own, size, max, await folders.RootAsync(cancellationToken), ProjectFolders.Of(context.Project), []);

@@ -58,7 +58,7 @@ public sealed record CutList(IReadOnlyList<Cut> Cuts, double ClipSoundDb, IReadO
 /// <summary>One version of the Assembly: a cut list and the video rendered from it.</summary>
 /// <param name="File">The video, relative to the projects folder.</param>
 /// <param name="Seconds">How long it runs: the narration's length.</param>
-/// <param name="Size">The delivery size it was rendered at; larger clips are cropped to it.</param>
+/// <param name="Size">The delivery size it was rendered at; clips are scaled up or cropped to it.</param>
 /// <param name="Clips">Per shot key, the version of its clip it was cut from.</param>
 /// <param name="Voices">Per segment, the version of its voice it was cut to.</param>
 /// <param name="BasedOn">For your edit of a cut list, the version it was edited from; null for Claude's.</param>
