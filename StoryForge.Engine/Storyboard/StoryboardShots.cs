@@ -83,7 +83,8 @@ internal sealed class StoryboardShots(
             sheet?.Cast ?? [],
             words,
             pacing,
-            setup.Clips.MaxClipSeconds);
+            setup.Clips.MaxClipSeconds,
+            sheet?.FactDisagreements ?? []);
     }
 
     /// <summary>The pacing a storyboard planned now would use: the project's own, else its storyboard profile's.</summary>

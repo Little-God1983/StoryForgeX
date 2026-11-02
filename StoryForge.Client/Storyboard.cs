@@ -72,6 +72,7 @@ public sealed record FactDisagreement(string Where, string FactId, string Proble
 /// Per cast member seen before, the earlier still to paint them from, most fitting first; none for
 /// someone no earlier still fits.
 /// </param>
+/// <param name="FactDisagreements">What the fact check still disagrees with in this shot, for you to decide; null when nothing.</param>
 public sealed record Shot(
     string Key,
     string SegmentId,
@@ -82,7 +83,8 @@ public sealed record Shot(
     string Description,
     IReadOnlyList<string> Cast,
     bool ContinuesPrevious,
-    IReadOnlyList<EarlierStill>? EarlierStills = null)
+    IReadOnlyList<EarlierStill>? EarlierStills = null,
+    IReadOnlyList<FactDisagreement>? FactDisagreements = null)
 {
     /// <summary>Raised whenever the stored shape changes, so older shots can still be read.</summary>
     public const int SchemaVersion = 1;
@@ -95,7 +97,7 @@ public sealed record Shot(
 
 /// <summary>The storyboard as a whole: who and what it shows, and what it was cut from.</summary>
 /// <param name="VoiceVersions">Per segment, the voice version whose word timings the shots follow.</param>
-/// <param name="FactDisagreements">What the fact check still disagrees with, for you to decide; null when nothing.</param>
+/// <param name="FactDisagreements">What the fact check still disagrees with in the looks, or that it could not check; null when nothing.</param>
 public sealed record StoryboardSheet(
     IReadOnlyList<CastMember> Cast, IReadOnlyDictionary<string, int> VoiceVersions, Pacing Pacing, IReadOnlyList<FactDisagreement>? FactDisagreements = null);
 
@@ -145,7 +147,8 @@ public sealed record StoryboardView(
     IReadOnlyList<CastMember> Cast,
     IReadOnlyDictionary<string, IReadOnlyList<SpokenWord>> Words,
     Pacing Pacing,
-    int MaxClipSeconds);
+    int MaxClipSeconds,
+    IReadOnlyList<FactDisagreement>? FactDisagreements = null);
 
 /// <summary>Your change to a shot; a null field stays as it is.</summary>
 public sealed record ShotChange(string? Description = null, IReadOnlyList<string>? Cast = null, bool? ContinuesPrevious = null);

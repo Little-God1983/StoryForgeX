@@ -318,7 +318,7 @@ public sealed class StoryboardCheckTests
     public void Every_answer_schema_passes_through_cmd_unchanged()
     {
         // claude.cmd runs through cmd.exe: a number field once came out as a pattern with ^ and |.
-        foreach (var schema in new[] { ClaudeCliStoryboardAgent.Schema, ClaudeCliStoryboardAgent.ShotSchema, ClaudeCliScriptAgent.Schema, ClaudeCliScriptAgent.SegmentSchema })
+        foreach (var schema in new[] { ClaudeCliStoryboardAgent.Schema, ClaudeCliStoryboardAgent.ShotSchema, ClaudeCliStoryboardFactCheck.Schema, ClaudeCliScriptAgent.Schema, ClaudeCliScriptAgent.SegmentSchema })
         {
             CmdShim.RequireSafe("claude.cmd", ClaudeCli.Arguments(null, [], "system.md", schema, "", null));
         }

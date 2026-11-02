@@ -2,6 +2,7 @@ using StoryForge.Client;
 using StoryForge.Engine.Pipeline;
 using StoryForge.Engine.Profiles;
 using StoryForge.Engine.Research;
+using StoryForge.Engine.Stills;
 
 namespace StoryForge.Engine.Storyboard;
 
@@ -12,7 +13,7 @@ namespace StoryForge.Engine.Storyboard;
 /// the stage fails with the last problem as its reason. Each shot is a cell of its own, and can be
 /// planned again on its own; its place and length stay.
 /// </summary>
-internal sealed class StoryboardStage(IStoryboardAgent agent, CellReader cells, ProfileStore profiles, TimeProvider clock) : ISegmentWorker
+internal sealed class StoryboardStage(IStoryboardAgent agent, IStoryboardFactCheck facts, CellReader cells, ProfileStore profiles, TimeProvider clock) : ISegmentWorker
 {
     /// <summary>The first answer and two corrections.</summary>
     public const int Tries = 3;
@@ -39,10 +40,17 @@ internal sealed class StoryboardStage(IStoryboardAgent agent, CellReader cells, 
             if (problems.Count == 0)
             {
                 var shots = StoryboardCheck.ToShots(answer.Output!, segments, await cells.UsedShotKeysAsync(context.Project.Id, cancellationToken));
-                var sheet = new StoryboardSheet(StoryboardCheck.ToCast(answer.Output!), voices, request.Pacing);
+                var cast = StoryboardCheck.ToCast(answer.Output!);
+                var found = await FactsAsync(context, request, cast, shots, cancellationToken);
+                if (SendBack(context, found, attempt, session, out problems))
+                {
+                    continue;
+                }
+                (shots, var rest) = Noted(context, shots, found);
+                var sheet = new StoryboardSheet(cast, voices, request.Pacing, rest.Count > 0 ? rest : null);
                 Report(context, string.Create(System.Globalization.CultureInfo.InvariantCulture,
                     $"{shots.Count} shots · shortest {ShotTiming.Seconds(shots.Min(s => s.Seconds))} s · longest {ShotTiming.Seconds(shots.Max(s => s.Seconds))} s · {sheet.Cast.Count} in the cast"));
-                var hash = Hash(context.Project.Setup, voices, request.Pacing);
+                var hash = Hash(context.Project.Setup, voices, request.Pacing, request.Facts);
                 return new StageResult(
                     StoredJson.Write(sheet),
                     Shot.SchemaVersion,
@@ -95,6 +103,13 @@ internal sealed class StoryboardStage(IStoryboardAgent agent, CellReader cells, 
                 var cast = StoryboardCheck.ToCast(output!);
                 // ToShots spells the cast as the list does, the cast so far first.
                 var shots = StoryboardCheck.ToShots(output!, segments, await cells.UsedShotKeysAsync(context.Project.Id, cancellationToken));
+                var found = await FactsAsync(context, request, cast, shots, cancellationToken);
+                if (SendBack(context, found, attempt, session, out problems))
+                {
+                    continue;
+                }
+                (shots, var rest) = Noted(context, shots, found);
+                IReadOnlyList<FactDisagreement> notes = [.. (sheet.FactDisagreements ?? []).Union(rest)];
                 var cutFrom = sheet.VoiceVersions.ToDictionary();
                 foreach (var id in scope.Where(voices.ContainsKey))
                 {
@@ -102,9 +117,9 @@ internal sealed class StoryboardStage(IStoryboardAgent agent, CellReader cells, 
                 }
                 Report(context, string.Create(System.Globalization.CultureInfo.InvariantCulture,
                     $"{string.Join(", ", scope.Order(StringComparer.Ordinal))} cut again: {shots.Count} shots · shortest {ShotTiming.Seconds(shots.Min(s => s.Seconds))} s · longest {ShotTiming.Seconds(shots.Max(s => s.Seconds))} s"));
-                var hash = Hash(context.Project.Setup, cutFrom, request.Pacing);
+                var hash = Hash(context.Project.Setup, cutFrom, request.Pacing, request.Facts);
                 return new StageResult(
-                    StoredJson.Write(new StoryboardSheet(cast, cutFrom, request.Pacing)),
+                    StoredJson.Write(new StoryboardSheet(cast, cutFrom, request.Pacing, notes.Count > 0 ? notes : null)),
                     Shot.SchemaVersion,
                     hash,
                     [.. shots.Select(s => new CellResult(s.Key, StoredJson.Write(s), Shot.SchemaVersion, hash))]);
@@ -146,8 +161,19 @@ internal sealed class StoryboardStage(IStoryboardAgent agent, CellReader cells, 
                     Cast = StoryboardCheck.CastOf(answer.Output.Cast, names),
                     ContinuesPrevious = answer.Output.ContinuesPrevious,
                 };
-                Report(context, $"{label} planned again");
-                return new CellResult(key, StoredJson.Write(again), Shot.SchemaVersion, Hash(context.Project.Setup, sheet.VoiceVersions, sheet.Pacing));
+                var found = await StoryboardFacts.CheckAsync(
+                    facts,
+                    new FactCheckRequest(context.Project.Id, request.Model, request.Facts ?? [], sheet.Cast, [new CheckedShot(StillPromptCheck.Name(label), again.Description)]),
+                    context.Activity,
+                    cancellationToken);
+                if (SendBack(context, found, attempt, session, out problems))
+                {
+                    continue;
+                }
+                // One shot's cell is all this stores, so all the check still says stays with the shot.
+                again = again with { FactDisagreements = found.Count > 0 ? found : null };
+                Report(context, found.Count > 0 ? $"{label} planned again; the fact check still disagrees: it waits for you" : $"{label} planned again");
+                return new CellResult(key, StoredJson.Write(again), Shot.SchemaVersion, Hash(context.Project.Setup, sheet.VoiceVersions, sheet.Pacing, request.Facts));
             }
             Fail(context, attempt, problems, last: attempt == Tries || session is null);
             if (session is null)
@@ -160,7 +186,7 @@ internal sealed class StoryboardStage(IStoryboardAgent agent, CellReader cells, 
     }
 
     /// <summary>Everything a storyboard is made from; the same inputs give the same hash (#11 compares them).</summary>
-    internal static string Hash(ProjectSetup setup, IReadOnlyDictionary<string, int> voices, Pacing pacing) => InputHash.Of(new
+    internal static string Hash(ProjectSetup setup, IReadOnlyDictionary<string, int> voices, Pacing pacing, IReadOnlyList<Fact>? facts) => InputHash.Of(new
     {
         stage = PipelineStage.Storyboard,
         schema = Shot.SchemaVersion,
@@ -170,7 +196,48 @@ internal sealed class StoryboardStage(IStoryboardAgent agent, CellReader cells, 
         profile = setup.Script.Storyboard,
         pacing,
         maxClip = setup.Clips.MaxClipSeconds,
+        facts = (facts ?? []).Select(f => new { f.Id, f.Statement }),
     });
+
+    /// <summary>What the fact check says of the cast and of these shots, the ones just answered.</summary>
+    private Task<IReadOnlyList<FactDisagreement>> FactsAsync(
+        StageContext context, StoryboardRequest request, IReadOnlyList<CastMember> cast, IReadOnlyList<Shot> shots, CancellationToken cancellationToken) =>
+        StoryboardFacts.CheckAsync(
+            facts,
+            new FactCheckRequest(
+                context.Project.Id,
+                request.Model,
+                request.Facts ?? [],
+                cast,
+                [.. shots.Select(s => new CheckedShot(StillPromptCheck.Name(ShotTiming.Label(shots, s.Key)), s.Description))]),
+            context.Activity,
+            cancellationToken);
+
+    /// <summary>
+    /// A contradiction goes back to the shot writer while it has tries left. After them the answer
+    /// stands: the storyboard waits for your approval anyway, and you decide with the note in view.
+    /// </summary>
+    private bool SendBack(StageContext context, IReadOnlyList<FactDisagreement> found, int attempt, string? session, out IReadOnlyList<string> problems)
+    {
+        problems = StoryboardFacts.Problems(found);
+        if (problems.Count == 0 || attempt == Tries || session is null)
+        {
+            problems = [];
+            return false;
+        }
+        Fail(context, attempt, problems, last: false);
+        return true;
+    }
+
+    /// <summary>The shots with what the check still says of each, and the rest of what it says, for the sheet.</summary>
+    private (IReadOnlyList<Shot> Shots, IReadOnlyList<FactDisagreement> Others) Noted(StageContext context, IReadOnlyList<Shot> shots, IReadOnlyList<FactDisagreement> found)
+    {
+        if (found.Count > 0)
+        {
+            Report(context, found[0] == StoryboardFacts.Unchecked ? found[0].Problem : $"the fact check still disagrees with {found.Count} {(found.Count == 1 ? "thing" : "things")}: they wait for you");
+        }
+        return StoryboardFacts.Keep([.. shots.Select(s => (s, StillPromptCheck.Name(ShotTiming.Label(shots, s.Key))))], found);
+    }
 
     /// <summary>
     /// What the model is asked from: the approved segments and their voices (or with

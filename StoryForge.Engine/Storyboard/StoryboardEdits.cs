@@ -36,7 +36,14 @@ internal sealed class StoryboardEdits(
             {
                 throw new ArgumentException($"A shot takes at most {Shot.MaxCast}: what Minimax takes per clip.");
             }
-            var changed = shot with { Description = description, Cast = cast, ContinuesPrevious = change.ContinuesPrevious ?? shot.ContinuesPrevious };
+            var changed = shot with
+            {
+                Description = description,
+                Cast = cast,
+                ContinuesPrevious = change.ContinuesPrevious ?? shot.ContinuesPrevious,
+                // What you write counts as given: the fact check's note was about the old words.
+                FactDisagreements = description == shot.Description ? shot.FactDisagreements : null,
+            };
             return changed.Description == shot.Description && changed.Cast.SequenceEqual(shot.Cast) && changed.ContinuesPrevious == shot.ContinuesPrevious
                 ? []
                 : [Change.Replace(changed)];

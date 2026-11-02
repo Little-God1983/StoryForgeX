@@ -17,6 +17,7 @@ public sealed class StoryboardEditTests : IDisposable
     private readonly EngineTestHost _engine = new();
     private readonly ScriptRunTests.FakeScriptAgent _script = new();
     private readonly StoryboardRunTests.FakeStoryboardAgent _board = new();
+    private readonly StoryboardRunTests.FakeFactCheck _facts = new();
 
     public void Dispose() => _engine.Dispose();
 
@@ -33,6 +34,21 @@ public sealed class StoryboardEditTests : IDisposable
         }).WithPicks();
     }
 
+    [Fact]
+    public async Task Editing_what_a_shot_shows_clears_its_fact_note()
+    {
+        var problem = new FactProblemOutput("S01-1", "F01", "F01 says otherwise.");
+        _board.Answer(StoryboardRunTests.Good()).Answer(StoryboardRunTests.Good());
+        _facts.Answer(problem).Answer(problem).Answer(problem);
+        var (client, projectId, view) = await PlannedAsync(StoryboardRunTests.Good());
+        var key = view.Shots[0].Key;
+        Assert.NotNull(view.Shots[0].Shot.FactDisagreements);
+
+        await client.EditShotAsync(projectId, key, new ShotChange(Description: "What you want."));
+
+        Assert.Null((await client.GetStoryboardAsync(projectId)).Shots[0].Shot.FactDisagreements);
+    }
+
     private async Task<(IStoryForgeClient Client, Guid ProjectId, StoryboardView View)> PlannedAsync(StoryboardOutput? board = null)
     {
         _board.Answer(board ?? StoryboardRunTests.Good());
@@ -41,6 +57,7 @@ public sealed class StoryboardEditTests : IDisposable
             services.Replace(ServiceDescriptor.Singleton<IResearchAgent>(new ScriptRunTests.ThreeFacts()));
             services.Replace(ServiceDescriptor.Singleton<IScriptAgent>(_script));
             services.Replace(ServiceDescriptor.Singleton<IStoryboardAgent>(_board));
+            services.Replace(ServiceDescriptor.Singleton<IStoryboardFactCheck>(_facts));
             StoryboardRunTests.UseVoice<StoryboardRunTests.WordsVoice>(services);
         });
         _script.Answer(ScriptRunTests.Good());

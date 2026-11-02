@@ -91,6 +91,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IStageWorker, ReferencesStage>();
         services.AddSingleton<ReferenceViews>();
         services.AddSingleton<ReferenceEdits>();
+        services.AddSingleton<IStoryboardFactCheck, ClaudeCliStoryboardFactCheck>();
         services.AddSingleton<IStillPromptAgent, ClaudeCliStillPromptAgent>();
         services.AddSingleton<IStageWorker, StillsStage>();
         services.AddSingleton<StillCells>();
