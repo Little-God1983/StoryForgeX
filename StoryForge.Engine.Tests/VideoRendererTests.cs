@@ -112,29 +112,15 @@ public sealed partial class VideoRendererTests : IDisposable
     }
 
     [Fact]
-    public async Task Clips_are_fitted_to_the_delivery_with_lanczos()
+    public void Clips_are_fitted_to_the_delivery_with_lanczos()
     {
         // New projects make clips smaller than the delivery (#85): every clip is scaled up in every render.
-        var root = Path.Combine(_engine.DataDirectory, "media");
-        string? filter = null;
-        var processes = new FakeProcessRunner().Answer("ffmpeg", arguments =>
-        {
-            var script = Regex.Match(arguments, "-filter_complex_script \"([^\"]+)\"");
-            if (!script.Success)
-            {
-                return new ProcessRunResult(1, "", "Input #0, mov,mp4\n  Stream #0:0: Video: h264\n");
-            }
-            filter = File.ReadAllText(script.Groups[1].Value);
-            return new ProcessRunResult(1, "", "stop here\n");
-        });
-        var host = await _engine.StartAsync(services => services.Replace(ServiceDescriptor.Singleton<IProcessRunner>(processes)));
-        var renderer = ActivatorUtilities.CreateInstance<FfmpegVideoRenderer>(host.Services);
         var timeline = new Timeline([Shot("a", 0, 4), Shot("b", 4, 7)], [("narration.wav", 7)]);
         var plan = CutPlan.Render(new CutList([new Cut("a", CutTransition.Cut, 0, 0, 0, "")], -20, []), timeline, new GenerationSize("16:9", 1920, 1080), 24);
 
-        await Assert.ThrowsAsync<Pipeline.StageFailedException>(() => renderer.RenderAsync(plan, root, Path.Combine(root, "assembly", "video.mp4"), 24, new Progress<string>(), CancellationToken.None));
+        var graph = FfmpegVideoRenderer.Graph(plan, ["clips/a.mp4", "clips/b.mp4"], new HashSet<string>(), 24);
 
-        Assert.Contains("scale=1920:1080:force_original_aspect_ratio=increase:flags=lanczos,crop=1920:1080", filter);
+        Assert.Contains("scale=1920:1080:force_original_aspect_ratio=increase:flags=lanczos,crop=1920:1080", graph);
     }
 
     private static CutShot Shot(string key, double start, double end) =>

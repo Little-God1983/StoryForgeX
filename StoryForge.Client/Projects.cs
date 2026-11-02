@@ -65,7 +65,7 @@ public sealed record ReferencesSetup(string Provider, string Model, ProfileRef P
 /// <param name="Size">The size stills are generated at: the delivery size rounded up to 32, unless set otherwise.</param>
 public sealed record StillsSetup(string Provider, string Model, ProfileRef Profile, GenerationSize Size);
 
-/// <param name="Size">The size clips are generated at: a faster size than the delivery, unless set otherwise. Assembly fits them to the delivery, scaling up or cropping.</param>
+/// <param name="Size">The size clips are generated at: a faster size on larger deliveries, unless set otherwise. Assembly fits them to the delivery, scaling up or cropping.</param>
 public sealed record ClipsSetup(string Provider, string Model, ProfileRef Profile, int MaxClipSeconds, GenerationSize Size);
 
 /// <param name="Aspect">"16:9", "9:16" or "1:1".</param>
