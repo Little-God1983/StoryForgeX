@@ -90,7 +90,7 @@
       </StackPanel>
     </DataTemplate>
 
-    <!-- "1920 × 1088 · delivery size" / "Custom…" with width × height boxes. -->
+    <!-- "1920 × 1088 · delivery size" or "1344 × 768 · faster" / "Custom…" with width × height boxes. -->
     <DataTemplate x:Key="SizeTemplate" DataType="{x:Type np:GenerationSizeViewModel}">
       <StackPanel>
         <ComboBox ItemsSource="{Binding Options}" DisplayMemberPath="Label" SelectedIndex="{Binding SelectedIndex}" FontFamily="{StaticResource MonoFont}"

@@ -155,7 +155,7 @@ public sealed partial class NewProjectPageViewModel : PageViewModel
 
     public GenerationSizeViewModel StillSize { get; } = new("the stills are scaled up for the clips.");
 
-    public GenerationSizeViewModel ClipSize { get; } = new("Assembly scales the clips up.");
+    public GenerationSizeViewModel ClipSize { get; } = new("Assembly scales the clips up.", faster: true);
 
     public MaxClipViewModel MaxClip { get; } = new();
 
@@ -177,7 +177,7 @@ public sealed partial class NewProjectPageViewModel : PageViewModel
     private string _aspect = "16:9";
 
     /// <summary>
-    /// Delivery resolutions for the aspect: 768p, 1080p and 1440p tiers. Stills and clips are made
+    /// Delivery resolutions for the aspect: 768p, 1080p and 1440p tiers. Stills are made
     /// at this size, so 4K is left out until we see how 1440p performs.
     /// </summary>
     public IReadOnlyList<Choice<GenerationSize>> DeliveryChoices => Aspect switch
