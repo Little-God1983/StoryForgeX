@@ -42,6 +42,7 @@ internal sealed class EngineTestHost : IDisposable
         builder.Services.Replace(ServiceDescriptor.Singleton<IResearchAgent>(new NoModel()));
         builder.Services.Replace(ServiceDescriptor.Singleton<IScriptAgent>(new NoModel()));
         builder.Services.Replace(ServiceDescriptor.Singleton<IStoryboardAgent>(new NoModel()));
+        builder.Services.Replace(ServiceDescriptor.Singleton<IStoryboardFactCheck>(new NoModel()));
         builder.Services.Replace(ServiceDescriptor.Singleton<IPictureCheck>(new NoModel()));
         builder.Services.Replace(ServiceDescriptor.Singleton<IPictureSource>(new NoModel()));
         builder.Services.Replace(ServiceDescriptor.Singleton<IComfyUi>(new NoModel()));
@@ -63,9 +64,13 @@ internal sealed class EngineTestHost : IDisposable
         (await StartAsync(replace)).Services.GetRequiredService<IStoryForgeClient>();
 
     /// <summary>A model (or ComfyUI, or ffmpeg) that is not there: every stage that asks it fails with a plain reason.</summary>
-    private sealed class NoModel : IResearchAgent, IScriptAgent, IStoryboardAgent, IPictureCheck, IPictureSource, IComfyUi, IAudioConverter, ICutListAgent, IVideoRenderer
+    private sealed class NoModel : IResearchAgent, IScriptAgent, IStoryboardAgent, IStoryboardFactCheck, IPictureCheck, IPictureSource, IComfyUi, IAudioConverter, ICutListAgent, IVideoRenderer
     {
         private const string Reason = "No model in this test.";
+
+        /// <summary>Nothing to raise, so tests about something else need no fact check of their own.</summary>
+        public Task<FactCheckOutput?> CheckAsync(FactCheckRequest request, IProgress<ActivityLine> activity, CancellationToken cancellationToken) =>
+            Task.FromResult<FactCheckOutput?>(new FactCheckOutput([]));
 
         public Task<ResearchAnswer> AskAsync(ResearchRequest request, ResearchAnswer? previous, IReadOnlyList<string> problems,
             IProgress<ActivityLine> activity, CancellationToken cancellationToken) => throw new StageFailedException(Reason);

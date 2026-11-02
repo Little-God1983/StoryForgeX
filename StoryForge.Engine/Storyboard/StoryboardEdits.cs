@@ -3,6 +3,7 @@ using StoryForge.Client;
 using StoryForge.Engine.Data;
 using StoryForge.Engine.Pipeline;
 using StoryForge.Engine.Projects;
+using StoryForge.Engine.References;
 
 namespace StoryForge.Engine.Storyboard;
 
@@ -36,7 +37,15 @@ internal sealed class StoryboardEdits(
             {
                 throw new ArgumentException($"A shot takes at most {Shot.MaxCast}: what Minimax takes per clip.");
             }
-            var changed = shot with { Description = description, Cast = cast, ContinuesPrevious = change.ContinuesPrevious ?? shot.ContinuesPrevious };
+            var changed = shot with
+            {
+                Description = description,
+                Cast = cast,
+                ContinuesPrevious = change.ContinuesPrevious ?? shot.ContinuesPrevious,
+                // What you write counts as given: the fact check's note was about the old words.
+                FactDisagreements = description == shot.Description ? shot.FactDisagreements : null,
+                EarlierStills = PicksOf(shot, cast),
+            };
             return changed.Description == shot.Description && changed.Cast.SequenceEqual(shot.Cast) && changed.ContinuesPrevious == shot.ContinuesPrevious
                 ? []
                 : [Change.Replace(changed)];
@@ -59,8 +68,69 @@ internal sealed class StoryboardEdits(
             {
                 throw new ArgumentException($"{board.Label(board.Index)} has {Shot.MaxCast} in it already: what Minimax takes per clip. Take one out first.");
             }
-            return [Change.Replace(shot with { Cast = cast })];
+            return [Change.Replace(shot with { Cast = cast, EarlierStills = PicksOf(shot, cast) })];
         }, cancellationToken, keepApproval: true);
+
+    /// <summary>
+    /// Your look for someone on the cast list: the sheet's next version, keeping its state, as a look
+    /// is no shot to approve again. What the fact check said of the old look goes with it. Once they
+    /// have a reference, its Look box owns the look.
+    /// </summary>
+    public async Task SetLookAsync(Guid projectId, string name, string look, CancellationToken cancellationToken)
+    {
+        look = look.Trim();
+        if (look.Length == 0)
+        {
+            throw new ArgumentException("A look cannot be empty: say what they look like.");
+        }
+        if (runner.IsAnyBusy(projectId, Stage) || runner.IsAnyBusy(projectId, PipelineStage.Stills))
+        {
+            throw new InvalidOperationException("The storyboard or the stills are being made. Try again when they are done.");
+        }
+        var sheet = await cells.CurrentStoryboardAsync(projectId, cancellationToken)
+            ?? throw new KeyNotFoundException($"Project {projectId} has no storyboard yet.");
+        var member = sheet.Cast.FirstOrDefault(c => ReferenceList.Same(c.Name, name))
+            ?? throw new KeyNotFoundException($"{name.Trim()} is not on the cast list.");
+        if ((await cells.CurrentReferencesAsync(projectId, cancellationToken))?.References.Any(r => ReferenceList.IsNamed(r, member.Name)) == true)
+        {
+            throw new InvalidOperationException($"{member.Name} has a reference: edit the look under References.");
+        }
+        if (member.Look == look)
+        {
+            return;
+        }
+        var notes = sheet.FactDisagreements?.Where(d => !ReferenceList.Same(d.Where, member.Name)).ToList();
+        var changed = sheet with
+        {
+            Cast = [.. sheet.Cast.Select(c => c == member ? c with { Look = look, LookByYou = true } : c)],
+            FactDisagreements = notes is { Count: > 0 } ? notes : null,
+        };
+        await using (var db = await contextFactory.CreateDbContextAsync(cancellationToken))
+        {
+            var now = clock.GetUtcNow();
+            var cell = await db.Cells.FirstAsync(c => c.ProjectId == projectId && c.Stage == Stage && c.Key == "", cancellationToken);
+            var current = await db.CellVersions.FirstAsync(v => v.ProjectId == projectId && v.Stage == Stage && v.Key == "" && v.Version == cell.CurrentVersion, cancellationToken);
+            var next = 1 + await db.CellVersions.Where(v => v.ProjectId == projectId && v.Stage == Stage && v.Key == "").MaxAsync(v => v.Version, cancellationToken);
+            db.CellVersions.Add(new CellVersionEntry
+            {
+                ProjectId = projectId,
+                Stage = Stage,
+                Key = "",
+                Version = next,
+                Origin = VersionOrigin.Edited,
+                BasedOn = current.Version,
+                InputHash = current.InputHash,
+                SchemaVersion = Shot.SchemaVersion,
+                OutputJson = StoredJson.Write(changed),
+                CreatedAt = now,
+            });
+            cell.ApprovedVersion = cell.ApprovedVersion == cell.CurrentVersion ? next : cell.ApprovedVersion;
+            cell.CurrentVersion = next;
+            cell.UpdatedAt = now;
+            await db.SaveChangesAsync(cancellationToken);
+        }
+        runner.Publish(new StageUpdate(projectId, Stage, (await cells.StateAsync(projectId, Stage, cancellationToken)), Key: ""));
+    }
 
     /// <summary>Moves a shot's start or end by <paramref name="words"/>; the shot on the other side of the cut takes or gives the words.</summary>
     public Task MoveCutAsync(Guid projectId, string shotKey, ShotEdge edge, int words, CancellationToken cancellationToken) =>
@@ -125,13 +195,26 @@ internal sealed class StoryboardEdits(
             }
             var next = board.Segment[board.Index + 1];
             var merged = board.Retime(board.Shot, board.Shot.FirstWord, board.Shot.WordCount + next.WordCount, label);
-            return [Change.Replace(merged), Change.Remove(next.Key)];
+            // Who picked the shot going away now has the one it joined, if it still shows them.
+            var pickers = board.All.Where(s => s.Key != merged.Key && s.Key != next.Key && s.EarlierStills?.Any(p => p.ShotKey == next.Key) == true)
+                .Select(s => Change.Picks(s with
+                {
+                    EarlierStills = [.. s.EarlierStills!.Where(p => p.ShotKey != next.Key || merged.Cast.Contains(p.Cast)).Select(p => p.ShotKey == next.Key ? p with { ShotKey = merged.Key } : p)],
+                }));
+            return [Change.Replace(merged), Change.Remove(next.Key), .. pickers];
         }, cancellationToken);
 
+    /// <summary>The shot's picks for who is in it now.</summary>
+    private static IReadOnlyList<EarlierStill>? PicksOf(Shot shot, IReadOnlyList<string> cast) =>
+        shot.EarlierStills is null ? null : [.. shot.EarlierStills.Where(p => cast.Contains(p.Cast))];
+
     /// <summary>What one edit does to one shot's cell.</summary>
-    private sealed record Change(Shot? Shot, string Key, bool IsNew)
+    /// <param name="KeepApproval">Only its picks changed, because of another shot: what you approved stands.</param>
+    private sealed record Change(Shot? Shot, string Key, bool IsNew, bool KeepApproval = false)
     {
         public static Change Replace(Shot shot) => new(shot, shot.Key, false);
+
+        public static Change Picks(Shot shot) => new(shot, shot.Key, false, KeepApproval: true);
 
         public static Change Add(Shot shot) => new(shot, shot.Key, true);
 
@@ -140,7 +223,8 @@ internal sealed class StoryboardEdits(
 
     /// <summary>The shot being changed, among the shots of its segment, and the words they are timed by.</summary>
     /// <param name="Keys">Every shot key of the storyboard, so a new shot gets one of its own.</param>
-    private sealed record Board(StoryboardSheet Sheet, IReadOnlyList<Shot> Segment, int Index, SegmentWords Words, int MaxClipSeconds, HashSet<string> Keys)
+    /// <param name="All">Every shot of the storyboard.</param>
+    private sealed record Board(StoryboardSheet Sheet, IReadOnlyList<Shot> Segment, int Index, SegmentWords Words, int MaxClipSeconds, HashSet<string> Keys, IReadOnlyList<Shot> All)
     {
         public Shot Shot => Segment[Index];
 
@@ -178,7 +262,7 @@ internal sealed class StoryboardEdits(
         {
             throw new KeyNotFoundException($"The voice {shot.SegmentId} was cut from is gone.");
         }
-        var changes = plan(new Board(sheet, segment, segment.IndexOf(shot), new SegmentWords(shot.SegmentId, clip.Words, clip.Seconds), setup.Clips.MaxClipSeconds, [.. await cells.UsedShotKeysAsync(projectId, cancellationToken)]));
+        var changes = plan(new Board(sheet, segment, segment.IndexOf(shot), new SegmentWords(shot.SegmentId, clip.Words, clip.Seconds), setup.Clips.MaxClipSeconds, [.. await cells.UsedShotKeysAsync(projectId, cancellationToken)], shots));
         if (changes.Count == 0)
         {
             return;
@@ -227,7 +311,7 @@ internal sealed class StoryboardEdits(
                     Stage = Stage,
                     Key = change.Key,
                     Version = next,
-                    Origin = VersionOrigin.Edited,
+                    Origin = change.KeepApproval && current is not null ? current.Origin : VersionOrigin.Edited,
                     BasedOn = current?.Version,
                     // A new half was made from the same inputs as the shot it was split from.
                     InputHash = current?.InputHash ?? (await db.CellVersions.FirstAsync(v => v.ProjectId == projectId && v.Stage == Stage && v.Key == shotKey, cancellationToken)).InputHash,
@@ -235,7 +319,7 @@ internal sealed class StoryboardEdits(
                     OutputJson = StoredJson.Write(change.Shot),
                     CreatedAt = now,
                 });
-                var review = gated && !(keepApproval && cell.State == StageState.Approved);
+                var review = gated && !((keepApproval || change.KeepApproval) && cell.State == StageState.Approved);
                 cell.CurrentVersion = next;
                 cell.State = review ? StageState.NeedsReview : StageState.Approved;
                 cell.ApprovedVersion = review ? cell.ApprovedVersion : next;

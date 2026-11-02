@@ -685,6 +685,16 @@ internal sealed class FakeStoryForgeClient : IStoryForgeClient
         Task.FromResult(Storyboards.GetValueOrDefault(projectId)
             ?? new StoryboardView(projectId, StageState.NotStarted, null, [], [], [], new Dictionary<string, IReadOnlyList<SpokenWord>>(), Pacing.Default, 20));
 
+    /// <summary>The looks saved, in order.</summary>
+    public List<(string Name, string Look)> LookChanges { get; } = [];
+
+    public Task SetCastLookAsync(Guid projectId, string name, string look, CancellationToken cancellationToken = default)
+    {
+        ThrowIfFailing();
+        LookChanges.Add((name, look));
+        return Task.CompletedTask;
+    }
+
     public Task EditShotAsync(Guid projectId, string shotKey, ShotChange change, CancellationToken cancellationToken = default)
     {
         ThrowIfFailing();

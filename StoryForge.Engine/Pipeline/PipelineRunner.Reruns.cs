@@ -209,22 +209,43 @@ internal sealed partial class PipelineRunner
     }
 
     /// <summary>
-    /// The stills a rerun makes again from these shots (or these reference images), and the ones that
-    /// start from those or from a shot that is gone; your own pictures stay.
+    /// The stills a rerun makes again from these shots (or these reference images), and the ones
+    /// painted from those, all the way down, or continuing a shot that is gone; your own pictures stay,
+    /// and what is painted from one has nothing to be made again for. A still that picked a shot now
+    /// gone stays too: its shot picks again, and it shows as out of date until you make it.
     /// </summary>
     internal static HashSet<string> Redo(PipelineStage stage, IReadOnlySet<string> keys, IReadOnlyDictionary<string, Still> stills, IReadOnlySet<string> shots)
     {
         var direct = stills.Where(s => !s.Value.YourFile && (stage == PipelineStage.Storyboard ? keys.Contains(s.Key) : s.Value.References.Any(keys.Contains)))
             .Select(s => s.Key).ToHashSet();
-        var redo = new HashSet<string>(direct);
         foreach (var (key, still) in stills)
         {
-            if (!still.YourFile && still.ContinuesFrom is { } from && (direct.Contains(from) || (stage == PipelineStage.Storyboard && !shots.Contains(from))))
+            if (!still.YourFile && stage == PipelineStage.Storyboard && still.ContinuesFrom is { } from && !shots.Contains(from))
             {
-                redo.Add(key);
+                direct.Add(key);
             }
         }
-        return redo;
+        return Reached(direct, stills);
+    }
+
+    /// <summary>These stills and every still painted from them, all the way down; your own pictures are made of nothing.</summary>
+    internal static HashSet<string> Reached(IEnumerable<string> from, IReadOnlyDictionary<string, Still> stills)
+    {
+        var reached = new HashSet<string>(from);
+        bool grew;
+        do
+        {
+            grew = false;
+            foreach (var (key, still) in stills)
+            {
+                if (!still.YourFile && !reached.Contains(key) && still.PaintedFrom().Any(reached.Contains))
+                {
+                    grew = reached.Add(key) || grew;
+                }
+            }
+        }
+        while (grew);
+        return reached;
     }
 
     /// <summary>After a rerun's cut failed: the segments Retry on the storyboard cuts again; null for the whole storyboard.</summary>

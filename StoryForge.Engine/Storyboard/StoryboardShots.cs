@@ -83,7 +83,12 @@ internal sealed class StoryboardShots(
             sheet?.Cast ?? [],
             words,
             pacing,
-            setup.Clips.MaxClipSeconds);
+            setup.Clips.MaxClipSeconds,
+            sheet?.FactDisagreements ?? [])
+        {
+            ReferencedCast = (await cells.CurrentReferencesAsync(projectId, cancellationToken))?.References.GroupBy(r => r.Name).ToDictionary(r => r.Key, r => r.First().Look)
+                ?? new Dictionary<string, string>(),
+        };
     }
 
     /// <summary>The pacing a storyboard planned now would use: the project's own, else its storyboard profile's.</summary>

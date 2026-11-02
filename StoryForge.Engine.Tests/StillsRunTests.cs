@@ -79,10 +79,10 @@ public sealed partial class StillsRunTests : IDisposable
     /// the first and Karlach in the rest; <paramref name="continues"/> says which shots (by place in
     /// their segment) continue the one before; by default every second one.
     /// </summary>
-    private static StoryboardOutput Board(Func<int, bool>? continues = null) => new(
-        [new("Karlach", "character", ""), new("Soul coin", "object", ""), new("Mammon's mint", "place", "Where every coin is made.")],
+    private static StoryboardOutput Board(Func<int, bool>? continues = null) => new StoryboardOutput(
+        [new("Karlach", "character", "", "The look of Karlach."), new("Soul coin", "object", "", "The look of Soul coin."), new("Mammon's mint", "place", "Where every coin is made.", "The look of Mammon's mint.")],
         [.. new[] { "S01", "S02", "S03", "S04" }.Select(id => new SegmentShotsOutput(id,
-            [.. Enumerable.Range(0, 15).Select(i => new ShotOutput(i * 10, $"{id} shot {i + 1}", i == 0 ? ["Soul coin"] : ["Karlach"], (continues ?? (n => n % 2 == 1))(i)))]))]);
+            [.. Enumerable.Range(0, 15).Select(i => new ShotOutput(i * 10, $"{id} shot {i + 1}", i == 0 ? ["Soul coin"] : ["Karlach"], (continues ?? (n => n % 2 == 1))(i), []))]))]).WithPicks();
 
     /// <summary>A project whose references are made and approved, so the stills start.</summary>
     /// <param name="beforeApproval">Runs just before the references are approved, which starts the stills.</param>
@@ -674,7 +674,7 @@ public sealed partial class StillsRunTests : IDisposable
         var keys = await KeysAsync(client, project.Id);
         var asked = _prompts.Requests.Single().Shots[1];
         Assert.Equal(["Karlach"], asked.Described.Select(p => p.Name));
-        Assert.Equal("the still of S01-2, Karlach as the picture shows.", view.Stills.Single(s => s.Key == keys["S01·2"]).Still!.Prompt);
+        Assert.Equal("the still of S01-2, The look of Karlach.", view.Stills.Single(s => s.Key == keys["S01·2"]).Still!.Prompt);
     }
 
     [Fact]
@@ -695,7 +695,7 @@ public sealed partial class StillsRunTests : IDisposable
         var third = _prompts.Requests.Single().Shots[2];
         Assert.Empty(third.Pictures);
         Assert.Equal(["Karlach"], third.Described.Select(p => p.Name));
-        Assert.Equal("the still of S01-3, Karlach as the picture shows.", view.Stills.Single(s => s.Key == keys["S01·3"]).Still!.Prompt);
+        Assert.Equal("the still of S01-3, The look of Karlach.", view.Stills.Single(s => s.Key == keys["S01·3"]).Still!.Prompt);
     }
 
     [Fact]

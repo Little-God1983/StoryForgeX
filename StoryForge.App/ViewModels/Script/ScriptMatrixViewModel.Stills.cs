@@ -244,25 +244,37 @@ public sealed partial class ScriptMatrixViewModel
         }.Where(p => p.Length > 0))
         : "";
 
-    /// <summary>"Made from R01/1 · starts from the still of S01·1"; empty for your own picture.</summary>
-    public string StillMadeFrom
+    /// <summary>The reference images it was made from, beside <see cref="StillSources"/>; empty for your own picture.</summary>
+    public string StillMadeFrom => SelectedStill?.Still is not { YourFile: false } still ? ""
+        : still.References.Count > 0 ? $"Also made from reference images {string.Join(", ", still.References)}"
+        : StillSources.Count == 0 ? "Made from the prompt alone"
+        : "";
+
+    /// <summary>The stills it was painted with: the one before for a continuation, and those picked, one per shot.</summary>
+    public IReadOnlyList<StillSourceRow> StillSources
     {
         get
         {
             if (SelectedStill?.Still is not { YourFile: false } still)
             {
-                return "";
+                return [];
             }
-            var parts = new List<string>();
-            if (still.ContinuesFrom is { } from)
+            var shots = Rows.SelectMany(r => r.Shots).ToList();
+            var sources = new List<StillSourceRow>();
+            if (still.ContinuesFrom is { } from && shots.FirstOrDefault(s => s.Key == from) is var before)
             {
-                var label = Rows.SelectMany(r => r.Shots).FirstOrDefault(s => s.Key == from)?.Label ?? from;
-                parts.Add($"starts from the still of {label} (continues it)");
+                sources.Add(new StillSourceRow(before?.Still.Still?.Path, $"{before?.Label ?? "A shot now gone"} (continues it)"));
             }
-            parts.Add(still.References.Count > 0 ? $"reference images {string.Join(", ", still.References)}" : "no reference image");
-            return "Made from " + string.Join(" · ", parts);
+            foreach (var picked in (still.EarlierStills ?? []).GroupBy(e => e.ShotKey))
+            {
+                var shot = shots.FirstOrDefault(s => s.Key == picked.Key);
+                sources.Add(new StillSourceRow(shot?.Still.Still?.Path, $"{shot?.Label ?? "A shot now gone"}, {string.Join(" and ", picked.Select(e => e.Cast))}"));
+            }
+            return sources;
         }
     }
+
+    public bool HasStillSources => StillSources.Count > 0;
 
     /// <summary>"Waits in the batch: Continue pipeline makes it again (with your prompt)."; empty when it is not queued.</summary>
     public string StillQueuedText => SelectedStill is { Queued: true } queued
@@ -333,7 +345,7 @@ public sealed partial class ScriptMatrixViewModel
 
     private void RefreshStillPanel()
     {
-        foreach (var name in new[] { nameof(StillPicture), nameof(StillIsMissing), nameof(StillPromptTitle), nameof(StillPrompt), nameof(StillDetails), nameof(StillMadeFrom), nameof(StillQueuedText), nameof(StillIsQueued) })
+        foreach (var name in new[] { nameof(StillPicture), nameof(StillIsMissing), nameof(StillPromptTitle), nameof(StillPrompt), nameof(StillDetails), nameof(StillMadeFrom), nameof(StillSources), nameof(HasStillSources), nameof(StillQueuedText), nameof(StillIsQueued) })
         {
             OnPropertyChanged(name);
         }

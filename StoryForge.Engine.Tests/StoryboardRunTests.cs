@@ -23,11 +23,14 @@ public sealed class StoryboardRunTests : IDisposable
 
     public void Dispose() => _engine.Dispose();
 
+    private readonly FakeFactCheck _facts = new();
+
     private Task<IStoryForgeClient> StartAsync() => _engine.StartClientAsync(services =>
     {
         services.Replace(ServiceDescriptor.Singleton<IResearchAgent>(new ScriptRunTests.ThreeFacts()));
         services.Replace(ServiceDescriptor.Singleton<IScriptAgent>(_script));
         services.Replace(ServiceDescriptor.Singleton<IStoryboardAgent>(_board));
+        services.Replace(ServiceDescriptor.Singleton<IStoryboardFactCheck>(_facts));
         UseVoice<WordsVoice>(services);
     });
 
@@ -54,10 +57,10 @@ public sealed class StoryboardRunTests : IDisposable
     }
 
     /// <summary>A good storyboard for the script of <see cref="ScriptRunTests.Good"/>: 150 words a segment, a shot every 10 words (5 s).</summary>
-    internal static StoryboardOutput Good() => new(
-        [new("Karlach", "character", ""), new("Soul coin", "object", ""), new("Mammon's mint", "place", "Where every coin is made.")],
+    internal static StoryboardOutput Good() => new StoryboardOutput(
+        [new("Karlach", "character", "", "The look of Karlach."), new("Soul coin", "object", "", "The look of Soul coin."), new("Mammon's mint", "place", "Where every coin is made.", "The look of Mammon's mint.")],
         [.. new[] { "S01", "S02", "S03", "S04" }.Select(id => new SegmentShotsOutput(id,
-            [.. Enumerable.Range(0, 15).Select(i => new ShotOutput(i * 10, $"{id} shot {i + 1}", i == 0 ? ["Soul coin"] : ["Karlach"], i % 2 == 1))]))]);
+            [.. Enumerable.Range(0, 15).Select(i => new ShotOutput(i * 10, $"{id} shot {i + 1}", i == 0 ? ["Soul coin"] : ["Karlach"], i % 2 == 1, []))]))]).WithPicks();
 
     private async Task<List<(string Key, StageState State, int? Version, Shot Shot)>> ShotsAsync()
     {
@@ -75,6 +78,215 @@ public sealed class StoryboardRunTests : IDisposable
         (await ScriptRunTests.WaitForAsync(
             () => client.GetProjectAsync(projectId),
             p => states.Contains(p.Stages.Single(s => s.Stage == stage).State))).Stages.Single(s => s.Stage == stage).State;
+
+    [Fact]
+    public async Task Picks_become_shot_keys_and_looks_are_stored()
+    {
+        var good = Good();
+        var first = good.Segments[0];
+        _board.Answer(good with
+        {
+            Segments = [first with { Shots = [first.Shots[0], first.Shots[1], first.Shots[2] with { EarlierStills = [new("Karlach", "S01-2")] }, .. first.Shots.Skip(3)] }, .. good.Segments.Skip(1)],
+        });
+        var client = await StartAsync();
+
+        var project = await VoiceApprovedAsync(client);
+
+        await StageAsync(client, project.Id, PipelineStage.Storyboard, StageState.NeedsReview);
+        var shots = await ShotsAsync();
+        Assert.Equal([new EarlierStill("Karlach", shots[1].Key)], shots[2].Shot.EarlierStills);
+        var view = await client.GetStoryboardAsync(project.Id);
+        Assert.Equal("The look of Karlach.", view.Cast.Single(c => c.Name == "Karlach").Look);
+    }
+
+    [Fact]
+    public async Task The_shot_writer_gets_the_approved_facts()
+    {
+        _board.Answer(Good());
+        var client = await StartAsync();
+
+        var project = await VoiceApprovedAsync(client);
+
+        await StageAsync(client, project.Id, PipelineStage.Storyboard, StageState.NeedsReview);
+        Assert.Equal(["F01", "F02", "F03"], _board.Requests.Single().Facts!.Select(f => f.Id));
+    }
+
+    [Fact]
+    public async Task A_contradiction_goes_back_to_the_shot_writer()
+    {
+        _board.Answer(Good()).Answer(Good());
+        _facts.Answer(new FactProblemOutput("S02-1", "F01", "F01 says one soul; this shows two."));
+        var client = await StartAsync();
+
+        var project = await VoiceApprovedAsync(client);
+
+        await StageAsync(client, project.Id, PipelineStage.Storyboard, StageState.NeedsReview);
+        Assert.Equal(2, _board.Requests.Count);
+        Assert.Equal(["S02-1 contradicts F01: F01 says one soul; this shows two."], _board.Problems[1]);
+        Assert.All(await ShotsAsync(), s => Assert.Null(s.Shot.FactDisagreements));
+    }
+
+    [Fact]
+    public async Task A_contradiction_about_a_shot_surviving_the_tries_reaches_the_gate_on_that_shot()
+    {
+        _board.Answer(Good()).Answer(Good()).Answer(Good());
+        var problem = new FactProblemOutput("S02-1", "F01", "F01 says one soul; this shows two.");
+        _facts.Answer(problem).Answer(problem).Answer(problem);
+        var client = await StartAsync();
+
+        var project = await VoiceApprovedAsync(client);
+
+        Assert.Equal(StageState.NeedsReview, await StageAsync(client, project.Id, PipelineStage.Storyboard, StageState.NeedsReview, StageState.Failed));
+        var shots = await ShotsAsync();
+        var noted = shots.Single(s => s.Shot.FactDisagreements is { Count: > 0 });
+        Assert.Equal(("S02", 0), (noted.Shot.SegmentId, noted.Shot.FirstWord));
+        Assert.Equal(new FactDisagreement("S02-1", "F01", "F01 says one soul; this shows two."), noted.Shot.FactDisagreements!.Single());
+        Assert.Empty((await client.GetStoryboardAsync(project.Id)).FactDisagreements!);
+    }
+
+    [Fact]
+    public async Task A_contradiction_about_a_look_surviving_the_tries_reaches_the_gate_on_the_sheet()
+    {
+        _board.Answer(Good()).Answer(Good()).Answer(Good());
+        var problem = new FactProblemOutput("Karlach", "F02", "F02 says she has no horns.");
+        _facts.Answer(problem).Answer(problem).Answer(problem);
+        var client = await StartAsync();
+
+        var project = await VoiceApprovedAsync(client);
+
+        await StageAsync(client, project.Id, PipelineStage.Storyboard, StageState.NeedsReview);
+        Assert.Equal(new FactDisagreement("Karlach", "F02", "F02 says she has no horns."), (await client.GetStoryboardAsync(project.Id)).FactDisagreements!.Single());
+    }
+
+    [Fact]
+    public async Task An_unreadable_fact_check_reaches_the_gate_with_a_note()
+    {
+        _board.Answer(Good());
+        _facts.AnswerNothing().AnswerNothing().AnswerNothing();
+        var client = await StartAsync();
+
+        var project = await VoiceApprovedAsync(client);
+
+        Assert.Equal(StageState.NeedsReview, await StageAsync(client, project.Id, PipelineStage.Storyboard, StageState.NeedsReview, StageState.Failed));
+        Assert.Single(_board.Requests);
+        Assert.Equal(3, _facts.Requests.Count);
+        Assert.Equal(new FactDisagreement("", "", "The facts could not be checked."), (await client.GetStoryboardAsync(project.Id)).FactDisagreements!.Single());
+    }
+
+    [Fact]
+    public async Task A_fact_check_that_cannot_be_asked_reaches_the_gate_with_a_note()
+    {
+        _board.Answer(Good());
+        _facts.AnswerFailure("Claude CLI stopped.").AnswerFailure("Claude CLI stopped.").AnswerFailure("Claude CLI stopped.");
+        var client = await StartAsync();
+
+        var project = await VoiceApprovedAsync(client);
+
+        Assert.Equal(StageState.NeedsReview, await StageAsync(client, project.Id, PipelineStage.Storyboard, StageState.NeedsReview, StageState.Failed));
+        Assert.Equal(new FactDisagreement("", "", "The facts could not be checked."), (await client.GetStoryboardAsync(project.Id)).FactDisagreements!.Single());
+    }
+
+    [Fact]
+    public async Task The_check_reads_every_shot_of_a_whole_storyboard_and_the_looks()
+    {
+        _board.Answer(Good());
+        var client = await StartAsync();
+
+        var project = await VoiceApprovedAsync(client);
+
+        await StageAsync(client, project.Id, PipelineStage.Storyboard, StageState.NeedsReview);
+        var request = _facts.Requests.Single();
+        Assert.Equal(60, request.Shots.Count);
+        Assert.Equal(new CheckedShot("S02-1", "S02 shot 1"), request.Shots[15]);
+        Assert.Equal("The look of Karlach.", request.Cast.Single(c => c.Name == "Karlach").Look);
+        Assert.Equal(["F01", "F02", "F03"], request.Facts.Select(f => f.Id));
+    }
+
+    [Fact]
+    public async Task Only_the_shot_just_written_again_is_checked_and_a_contradiction_goes_back()
+    {
+        _board.Answer(Good());
+        var client = await StartAsync();
+        var project = await VoiceApprovedAsync(client);
+        await StageAsync(client, project.Id, PipelineStage.Storyboard, StageState.NeedsReview);
+        var before = await ShotsAsync();
+        _board.AnswerShot(new ShotRewriteOutput("Karlach has two heads.", ["Karlach"], true, [new("Karlach", "")]))
+            .AnswerShot(new ShotRewriteOutput("Karlach turns the coin.", ["Karlach"], true, [new("Karlach", "")]));
+        _facts.Answer(new FactProblemOutput("S01-2", "F02", "F02 says one head."));
+
+        await client.RegenerateSegmentAsync(project.Id, PipelineStage.Storyboard, before[1].Key);
+        await ScriptRunTests.WaitForAsync(ShotsAsync, s => s.Single(x => x.Key == before[1].Key).Version == 2);
+
+        Assert.All(_facts.Requests.Skip(1), r => Assert.Equal("S01-2", r.Shots.Single().Label));
+        Assert.Equal("Karlach turns the coin.", (await ShotsAsync()).Single(x => x.Key == before[1].Key).Shot.Description);
+    }
+
+    [Fact]
+    public async Task A_rewrite_still_contradicting_after_the_tries_carries_the_note_on_the_shot()
+    {
+        _board.Answer(Good());
+        var client = await StartAsync();
+        var project = await VoiceApprovedAsync(client);
+        await StageAsync(client, project.Id, PipelineStage.Storyboard, StageState.NeedsReview);
+        var before = await ShotsAsync();
+        var shot = new ShotRewriteOutput("Karlach has two heads.", ["Karlach"], true, [new("Karlach", "")]);
+        _board.AnswerShot(shot).AnswerShot(shot).AnswerShot(shot);
+        var problem = new FactProblemOutput("S01-2", "F02", "F02 says one head.");
+        _facts.Answer(problem).Answer(problem).Answer(problem);
+
+        await client.RegenerateSegmentAsync(project.Id, PipelineStage.Storyboard, before[1].Key);
+        await ScriptRunTests.WaitForAsync(ShotsAsync, s => s.Single(x => x.Key == before[1].Key).Version == 2);
+
+        Assert.Equal("F02", (await ShotsAsync()).Single(x => x.Key == before[1].Key).Shot.FactDisagreements!.Single().FactId);
+    }
+
+    [Fact]
+    public void The_fact_check_is_told_a_look_you_typed_is_given()
+    {
+        var prompt = ClaudeCliStoryboardFactCheck.Prompt(new FactCheckRequest(
+            Guid.NewGuid(),
+            "",
+            [new Fact("F01", "Nosulgor is blind.", "u", "q")],
+            [new CastMember("Nosulgor", CastKind.Character, "", "One eye, huge.", LookByYou: true), new CastMember("Troll", CastKind.Character, "", "Grey.")],
+            [new CheckedShot("S02-1", "Nosulgor sleeps.")]));
+
+        Assert.Contains("F01: Nosulgor is blind.", prompt);
+        Assert.Contains("Nosulgor (given, do not raise it): One eye, huge.", prompt);
+        Assert.Contains("Troll: Grey.", prompt);
+        Assert.Contains("S02-1: Nosulgor sleeps.", prompt);
+    }
+
+    [Fact]
+    public async Task With_no_facts_nothing_is_asked()
+    {
+        var check = new CountingAsk();
+        var request = new FactCheckRequest(Guid.NewGuid(), "", [], [], []);
+
+        Assert.Empty(await StoryboardFacts.CheckAsync(check, request, new Progress<ActivityLine>(), default));
+        Assert.Equal(0, check.Asked);
+    }
+
+    private sealed class CountingAsk : IStoryboardFactCheck
+    {
+        public int Asked { get; private set; }
+
+        public Task<FactCheckOutput?> CheckAsync(FactCheckRequest request, IProgress<ActivityLine> activity, CancellationToken cancellationToken)
+        {
+            Asked++;
+            return Task.FromResult<FactCheckOutput?>(null);
+        }
+    }
+
+    [Fact]
+    public async Task The_facts_go_into_the_storyboards_hash()
+    {
+        var setup = await ProjectTests.ValidSetup(await StartAsync());
+        var voices = new Dictionary<string, int> { ["S01"] = 1 };
+
+        Assert.NotEqual(
+            StoryboardStage.Hash(setup, voices, Pacing.Default, [new Fact("F01", "One soul.", "u", "q")]),
+            StoryboardStage.Hash(setup, voices, Pacing.Default, [new Fact("F01", "Two souls.", "u", "q")]));
+    }
 
     [Fact]
     public async Task An_approved_voice_starts_the_storyboard_and_it_waits_for_review()
@@ -182,6 +394,22 @@ public sealed class StoryboardRunTests : IDisposable
     }
 
     [Fact]
+    public async Task A_shot_written_again_answers_its_picks()
+    {
+        _board.Answer(Good());
+        var client = await StartAsync();
+        var project = await VoiceApprovedAsync(client);
+        await StageAsync(client, project.Id, PipelineStage.Storyboard, StageState.NeedsReview);
+        var before = await ShotsAsync();
+        _board.AnswerShot(new ShotRewriteOutput("Karlach turns the coin.", ["Karlach"], false, [new("Karlach", "S01-2")]));
+
+        await client.RegenerateSegmentAsync(project.Id, PipelineStage.Storyboard, before[2].Key);
+        await ScriptRunTests.WaitForAsync(ShotsAsync, s => s.Single(x => x.Key == before[2].Key).Version == 2);
+
+        Assert.Equal([new EarlierStill("Karlach", before[1].Key)], (await ShotsAsync()).Single(x => x.Key == before[2].Key).Shot.EarlierStills);
+    }
+
+    [Fact]
     public async Task A_shot_written_again_keeps_its_timing_and_the_others_stay()
     {
         _board.Answer(Good());
@@ -189,7 +417,7 @@ public sealed class StoryboardRunTests : IDisposable
         var project = await VoiceApprovedAsync(client);
         await StageAsync(client, project.Id, PipelineStage.Storyboard, StageState.NeedsReview);
         var before = await ShotsAsync();
-        _board.AnswerShot(new ShotRewriteOutput("Karlach turns the coin in her fingers.", ["karlach", "Soul coin"], true));
+        _board.AnswerShot(new ShotRewriteOutput("Karlach turns the coin in her fingers.", ["karlach", "Soul coin"], true, [new("Soul coin", "")]));
 
         await client.RegenerateSegmentAsync(project.Id, PipelineStage.Storyboard, before[1].Key);
         await ScriptRunTests.WaitForAsync(ShotsAsync, s => s.Single(x => x.Key == before[1].Key).Version == 2);
@@ -252,6 +480,43 @@ public sealed class StoryboardRunTests : IDisposable
             var words = segment.Narration.Split(' ', StringSplitOptions.RemoveEmptyEntries);
             return new VoiceClip(segment.Id, version, $"{segment.Id}.wav", words.Length * every, 1, [new VoicePart(segment.Narration, words.Length * every)],
                 [.. words.Select((w, i) => new SpokenWord(w, i * every, i * every + 0.4))]);
+        }
+    }
+
+    /// <summary>The fact check: no contradiction unless a test queues one; records what it was asked.</summary>
+    internal sealed class FakeFactCheck : IStoryboardFactCheck
+    {
+        private readonly Queue<Func<FactCheckOutput?>> _answers = new();
+
+        public List<FactCheckRequest> Requests { get; } = [];
+
+        public FakeFactCheck Answer(params FactProblemOutput[] contradictions)
+        {
+            _answers.Enqueue(() => new FactCheckOutput(contradictions));
+            return this;
+        }
+
+        /// <summary>An answer that could not be read.</summary>
+        public FakeFactCheck AnswerNothing()
+        {
+            _answers.Enqueue(() => null);
+            return this;
+        }
+
+        /// <summary>The model could not be asked.</summary>
+        public FakeFactCheck AnswerFailure(string reason)
+        {
+            _answers.Enqueue(() => throw new StageFailedException(reason));
+            return this;
+        }
+
+        public Task<FactCheckOutput?> CheckAsync(FactCheckRequest request, IProgress<ActivityLine> activity, CancellationToken cancellationToken)
+        {
+            lock (Requests)
+            {
+                Requests.Add(request);
+                return Task.FromResult(_answers.TryDequeue(out var answer) ? answer() : new FactCheckOutput([]));
+            }
         }
     }
 

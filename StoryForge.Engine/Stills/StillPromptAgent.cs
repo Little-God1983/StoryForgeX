@@ -2,6 +2,7 @@ using System.ComponentModel;
 using System.Globalization;
 using System.Text;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using Microsoft.Extensions.Options;
 using StoryForge.Client;
 using StoryForge.Engine.Research;
@@ -11,13 +12,15 @@ namespace StoryForge.Engine.Stills;
 
 /// <summary>A picture a still is made from, as the prompt names it: "picture 1 shows Karlach".</summary>
 /// <param name="Look">What it looks like, in words; empty when unknown.</param>
-internal sealed record StillPicture(string Name, string Look);
+/// <param name="FromShot">An earlier still: the shot it is the still of, e.g. "S03-1".</param>
+/// <param name="KeepSurroundings">An earlier still of a place: it brings its surroundings along.</param>
+internal sealed record StillPicture(string Name, string Look, string? FromShot = null, bool KeepSurroundings = false);
 
 /// <summary>A shot as the prompt writer sees it: what the storyboard says, what is heard, what it starts from.</summary>
 /// <param name="Label">"S01·2".</param>
 /// <param name="Pictures">The pictures the image model gets with the prompt, in order; empty for text only.</param>
 /// <param name="FromShotBefore">The first picture is the still of the shot before: the camera moves on in the same scene.</param>
-/// <param name="Described">Who is in it with a reference but no picture (the workflow takes one): in words only.</param>
+/// <param name="Described">Who is in it with no picture of their own: in words only.</param>
 internal sealed record StillShot(
     string Label, string Description, IReadOnlyList<string> Cast, string Heard, IReadOnlyList<StillPicture> Pictures, bool FromShotBefore, IReadOnlyList<StillPicture> Described);
 
@@ -45,9 +48,29 @@ internal sealed record StillPromptOutput(
     [property: Description("The image prompt for this shot: what is seen, written for the image model.")] string Prompt);
 
 /// <summary>Checks the model's prompts: one for every shot asked for, none empty, none for a shot not asked for.</summary>
-internal static class StillPromptCheck
+internal static partial class StillPromptCheck
 {
-    public static IReadOnlyList<string> Problems(StillPromptsOutput? output, IReadOnlyList<StillShot> shots) => Problems(output, [.. shots.Select(s => s.Label)]);
+    /// <summary>One prompt per shot, none naming a picture that shot does not come with.</summary>
+    public static IReadOnlyList<string> Problems(StillPromptsOutput? output, IReadOnlyList<StillShot> shots)
+    {
+        var problems = Problems(output, [.. shots.Select(s => s.Label)]);
+        return problems.Count > 0 ? problems : [.. shots.SelectMany(shot => PictureProblems(shot, output!.Prompts.First(p => p is not null && Same(shot.Label, p.Shot)).Prompt))];
+    }
+
+    private static IEnumerable<string> PictureProblems(StillShot shot, string prompt)
+    {
+        var named = PictureNumber().Matches(prompt).Select(m => int.Parse(m.Groups[1].Value, CultureInfo.InvariantCulture)).Where(n => n > shot.Pictures.Count).Distinct();
+        foreach (var number in named)
+        {
+            yield return shot.Pictures.Count == 0
+                ? $"{Name(shot.Label)} names picture {number}, but this shot comes with no pictures: describe the subject in words."
+                : $"{Name(shot.Label)} names picture {number}, but this shot comes with only {shot.Pictures.Count}: describe the subject in words.";
+        }
+    }
+
+    /// <summary>"picture 2", "Pictures 1", not "picture of 3".</summary>
+    [GeneratedRegex(@"\bpictures?\s+(\d{1,2})\b", RegexOptions.IgnoreCase)]
+    private static partial Regex PictureNumber();
 
     /// <summary>The same for any shots by label, e.g. the clips' motion prompts.</summary>
     public static IReadOnlyList<string> Problems(StillPromptsOutput? output, IReadOnlyList<string> labels)
@@ -100,9 +123,9 @@ internal sealed class ClaudeCliStillPromptAgent(ClaudeCli claude, IOptions<Story
     internal const string SystemPrompt =
         """
         You write the image prompts of StoryForge X, which makes narrated videos. Every shot of the
-        storyboard becomes one still picture, made by an image model from your prompt and from the
-        pictures it is given of who and what is in the shot. You describe what is seen; you never ask
-        for text, letters or logos in the picture.
+        storyboard becomes one still picture, made by an image model from your prompt and, when there
+        are any, from the pictures it is given of who and what is in the shot. You describe what is seen;
+        you never ask for text, letters or logos in the picture.
         """;
 
     internal static string Schema { get; } = OutputSchema.Json<StillPromptsOutput>();
@@ -164,23 +187,42 @@ internal sealed class ClaudeCliStillPromptAgent(ClaudeCli claude, IOptions<Story
             for (var i = 0; i < shot.Pictures.Count; i++)
             {
                 var picture = shot.Pictures[i];
+                if (picture.FromShot is { } earlier)
+                {
+                    var from = picture.KeepSurroundings ? $"{picture.Name}, with its surroundings" : $"take {picture.Name} from it, not its surroundings";
+                    prompt.AppendLine(CultureInfo.InvariantCulture, $"Picture {i + 1} is the still of {earlier}: {from}.{(picture.Look.Length > 0 ? $" {picture.Name}: {picture.Look}" : "")}");
+                    continue;
+                }
                 var shows = i == 0 && shot.FromShotBefore ? "the still of the shot before (same scene)" : picture.Name;
                 prompt.AppendLine(CultureInfo.InvariantCulture, $"Picture {i + 1} shows {shows}{(picture.Look.Length > 0 ? $": {picture.Look}" : "")}");
             }
             foreach (var described in shot.Described)
             {
-                prompt.AppendLine(CultureInfo.InvariantCulture, $"In no picture, so describe how they look: {described.Name}{(described.Look.Length > 0 ? $": {described.Look}" : "")}");
+                var how = shot.FromShotBefore ? "As they look, whatever the still before shows" : "In no picture, so describe how they look";
+                prompt.AppendLine(CultureInfo.InvariantCulture, $"{how}: {described.Name}{(described.Look.Length > 0 ? $": {described.Look}" : "")}");
             }
         }
         prompt.AppendLine();
-        prompt.AppendLine(
-            """
-            How to write them:
-            1. One prompt per shot, for the shot as the storyboard describes it: subject, setting, light, camera.
-            2. When a shot comes with pictures, the image model sees them: name who is in which picture ("the woman from picture 1") and say what they do in this shot. Do not describe their looks again in other words.
-            3. A shot that starts from the still of the shot before keeps that scene: say how the camera moves on and what changes.
-            4. Never ask for text, letters, captions or logos in the picture.
-            """);
+        prompt.AppendLine("How to write them:");
+        prompt.AppendLine("1. One prompt per shot, for the shot as the storyboard describes it: subject, setting, light, camera.");
+        if (request.Shots.Any(s => s.Pictures.Count > 0))
+        {
+            prompt.AppendLine(
+                """
+                2. Only a shot listed above with a picture number comes with pictures, and the image model sees those: name who is in which ("the woman from picture 1") and say what they do in this shot. Do not describe the rest of their looks again in other words, but state their size and the traits their look fixes, because a picture does not carry size and must not undo a trait.
+                3. A shot that lists no picture comes with none: never name a picture there. Describe the subject from its look.
+                4. A shot that starts from the still of the shot before keeps that scene: say how the camera moves on and what changes.
+                5. Never ask for text, letters, captions or logos in the picture.
+                """);
+        }
+        else
+        {
+            prompt.AppendLine(
+                """
+                2. Describe every subject from its look: appearance, size and the traits it fixes.
+                3. Never ask for text, letters, captions or logos in the picture.
+                """);
+        }
         if (!string.IsNullOrWhiteSpace(request.Instructions))
         {
             prompt.AppendLine();

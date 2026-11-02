@@ -121,6 +121,7 @@ public sealed partial class StillsRunTests
         // VRAM freed once before the video model loads; Claude wrote every motion prompt in one go, from the shot and its still.
         Assert.Equal(1, _comfy.Freed);
         var request = Assert.Single(_motion.Requests);
+        Assert.Equal([new StoryForge.Engine.Stills.StillPicture("Soul coin", "The look of Soul coin.")], request.Shots[0].Cast);
         Assert.Equal(60, request.Shots.Count);
         Assert.Equal(("S01 shot 1", "the still of S01-1, painted dark fantasy", clip.Seconds), (request.Shots[0].Description, request.Shots[0].Still, request.Shots[0].Seconds));
     }

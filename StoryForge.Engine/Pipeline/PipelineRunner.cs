@@ -626,6 +626,18 @@ internal sealed partial class PipelineRunner(
                 child.UpdatedAt = clock.GetUtcNow();
             }
         }
+        foreach (var kept in result.Kept ?? [])
+        {
+            if (await db.Cells.FirstOrDefaultAsync(c => c.ProjectId == job.ProjectId && c.Stage == job.Stage && c.Key == kept.Key) is { } child)
+            {
+                var approved = child.ApprovedVersion == child.CurrentVersion;
+                // Whose it is stays as it was: this changes no words of yours.
+                var origin = await db.CellVersions.Where(v => v.ProjectId == job.ProjectId && v.Stage == job.Stage && v.Key == kept.Key && v.Version == child.CurrentVersion).Select(v => v.Origin).FirstAsync();
+                AddVersion(db, child, await NextVersionAsync(db, job.ProjectId, job.Stage, kept.Key), kept.OutputJson, kept.SchemaVersion, kept.InputHash, origin: origin);
+                child.ApprovedVersion = approved ? child.CurrentVersion : child.ApprovedVersion;
+                child.UpdatedAt = clock.GetUtcNow();
+            }
+        }
         if (goingOn.Count > 0)
         {
             // Cut again from these voices: the rerun has moved on from them.
@@ -846,7 +858,7 @@ internal sealed partial class PipelineRunner(
         return [.. sheet.References.Where(r => images.All(i => !i.Key.StartsWith(r.Id + "/", StringComparison.Ordinal) || i.CurrentVersion is null)).Select(r => r.Name)];
     }
 
-    private void AddVersion(StoryForgeDbContext db, CellEntry cell, int version, string outputJson, int schemaVersion, string inputHash, string? note = null)
+    private void AddVersion(StoryForgeDbContext db, CellEntry cell, int version, string outputJson, int schemaVersion, string inputHash, string? note = null, VersionOrigin origin = VersionOrigin.Generated)
     {
         db.CellVersions.Add(new CellVersionEntry
         {
@@ -854,7 +866,7 @@ internal sealed partial class PipelineRunner(
             Stage = cell.Stage,
             Key = cell.Key,
             Version = version,
-            Origin = VersionOrigin.Generated,
+            Origin = origin,
             InputHash = inputHash,
             SchemaVersion = schemaVersion,
             OutputJson = outputJson,

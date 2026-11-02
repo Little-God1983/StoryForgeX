@@ -143,6 +143,9 @@ internal sealed class InProcessStoryForgeClient(
     public Task EditShotAsync(Guid projectId, string shotKey, ShotChange change, CancellationToken cancellationToken = default) =>
         shotEdits.EditAsync(projectId, shotKey, change, cancellationToken);
 
+    public Task SetCastLookAsync(Guid projectId, string name, string look, CancellationToken cancellationToken = default) =>
+        shotEdits.SetLookAsync(projectId, name, look, cancellationToken);
+
     public Task MoveCutAsync(Guid projectId, string shotKey, ShotEdge edge, int words, CancellationToken cancellationToken = default) =>
         shotEdits.MoveCutAsync(projectId, shotKey, edge, words, cancellationToken);
 

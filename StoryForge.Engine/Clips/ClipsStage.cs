@@ -230,7 +230,9 @@ internal sealed class ClipsStage(
         IReadOnlyDictionary<string, string> Labels,
         IReadOnlyDictionary<string, string> Heard,
         IReadOnlyDictionary<string, (Still Still, int Version)> Stills,
-        string Root);
+        string Root,
+        IReadOnlyList<CastMember> Cast,
+        IReadOnlyList<Reference> References);
 
     private async Task<Plan> PlanAsync(StageContext context, CancellationToken cancellationToken)
     {
@@ -257,7 +259,10 @@ internal sealed class ClipsStage(
                 heard[shot.Key] = string.Join(' ', words.Skip(shot.FirstWord).Take(shot.WordCount).Select(w => w.Text));
             }
         }
-        return new Plan(shots, shots.ToDictionary(s => s.Key, s => ShotTiming.Label(shots, s.Key)), heard, stills, await folders.RootAsync(cancellationToken));
+        var references = project.Setup.References.Consistency == Consistency.TextToImageOnly
+            ? []
+            : (await cells.CurrentReferencesAsync(project.Id, cancellationToken))?.References ?? [];
+        return new Plan(shots, shots.ToDictionary(s => s.Key, s => ShotTiming.Label(shots, s.Key)), heard, stills, await folders.RootAsync(cancellationToken), board?.Cast ?? [], references);
     }
 
     /// <summary>Claude's motion prompt for each shot, by label; a failed check goes back to it, twice.</summary>
@@ -277,7 +282,8 @@ internal sealed class ClipsStage(
             [.. shots.Select(s => new ClipShot(
                 plan.Labels[s.Shot.Key], s.Shot.Description, plan.Heard.GetValueOrDefault(s.Shot.Key, ""),
                 plan.Stills.TryGetValue(s.Shot.Key, out var still) ? still.Still.Prompt : "",
-                Length(s.Shot.Seconds, s.Animator.MaxClipSeconds).Seconds))],
+                Length(s.Shot.Seconds, s.Animator.MaxClipSeconds).Seconds,
+                [.. s.Shot.Cast.Select(name => new StillPicture(name, StillsStage.LookOf(plan.Cast, plan.References, name)))]))],
             // The project's profile says how to write them; a clip switched to another is written the same way.
             (await profiles.GetVersionAsync(setup.Clips.Profile.ProfileId, setup.Clips.Profile.Version, cancellationToken)).Content.Instructions,
             setup.Script.Model);

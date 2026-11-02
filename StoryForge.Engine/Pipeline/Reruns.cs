@@ -172,7 +172,15 @@ internal sealed class Reruns(
             return new Plan($"Nothing is made from {key}'s {what} yet.", true, [], true);
         }
         var head = keep ? $"This keeps your edit of {key}'s {what} and remakes {Join(parts)}" : $"This remakes {Join([$"{key}'s {what}", .. parts])}";
-        return new Plan($"{head}. Other segments stay as they are.{tail}", keep, remade, false);
+        // Painted from the shots going away: they pick again, and you decide when to make them.
+        var later = spoken ? shots.Count(s => !own.Contains(s.Key) && !remade.Contains(s.Key) && stills.GetValueOrDefault(s.Key) is { YourFile: false } still && still.EarlierStills?.Any(p => own.Contains(p.ShotKey)) == true) : 0;
+        var others = later switch
+        {
+            0 => "Other segments stay as they are.",
+            1 => "Other segments' shots stay, but 1 later still goes out of date: its shot picks again from the new ones.",
+            _ => $"Other segments' shots stay, but {later} later stills go out of date: their shots pick again from the new ones.",
+        };
+        return new Plan($"{head}. {others}{tail}", keep, remade, false);
     }
 
     private static Plan ShotPlan(string key, bool keep, IReadOnlyDictionary<string, Still> stills, bool stillsMade, Func<string, string> label)
@@ -184,7 +192,7 @@ internal sealed class Reruns(
         {
             parts.Add("its still");
             parts.AddRange(After(key, stills, label));
-            remade = [key, .. stills.Where(s => !s.Value.YourFile && s.Value.ContinuesFrom == key).Select(s => s.Key)];
+            remade = [key, .. Later(key, stills)];
         }
         if (keep && parts.Count == 0)
         {
@@ -197,7 +205,7 @@ internal sealed class Reruns(
 
     private static Plan StillPlan(string key, IReadOnlyDictionary<string, Still> stills, Func<string, string> label)
     {
-        var after = stills.Where(s => !s.Value.YourFile && s.Value.ContinuesFrom == key).Select(s => s.Key).ToList();
+        var after = Later(key, stills);
         if (stills.GetValueOrDefault(key) is not { YourFile: true })
         {
             return new Plan(
@@ -207,7 +215,7 @@ internal sealed class Reruns(
         // Your own picture stays; what starts from it is made again.
         return after.Count == 0
             ? new Plan($"Your own picture of {label(key)} stays, and no still starts from it: nothing is made again.", true, [], true)
-            : new Plan($"This keeps your own picture of {label(key)} and remakes {Join([.. After(key, stills, label)])}. Other stills stay as they are.", true, after, false);
+            : new Plan($"This keeps your own picture of {label(key)} and remakes {Join([.. After(key, stills, label)])}. Other stills stay as they are.", true, [.. after], false);
     }
 
     private async Task<Plan> ImagePlanAsync(
@@ -234,9 +242,13 @@ internal sealed class Reruns(
         return new Plan($"{text}. Other stills stay as they are.{wait}", true, [.. direct], false);
     }
 
-    /// <summary>"the still of S04·3, which starts from it": the stills after this one's that start from it.</summary>
+    /// <summary>The stills painted from this shot's still, all the way down.</summary>
+    private static IReadOnlyList<string> Later(string key, IReadOnlyDictionary<string, Still> stills) =>
+        [.. PipelineRunner.Reached([key], stills).Where(k => k != key)];
+
+    /// <summary>"the still of S04·3, which starts from it": the stills that start from this one, or are painted from it.</summary>
     private static IEnumerable<string> After(string key, IReadOnlyDictionary<string, Still> stills, Func<string, string> label) =>
-        stills.Where(s => !s.Value.YourFile && s.Value.ContinuesFrom == key).Select(s => $"the still of {label(s.Key)}, which starts from it");
+        Later(key, stills).Select(k => $"the still of {label(k)}, which {(stills[k].ContinuesFrom == key ? "starts" : "is painted")} from it");
 
     /// <summary>"a, b and c".</summary>
     private static string Join(IReadOnlyList<string> parts) =>

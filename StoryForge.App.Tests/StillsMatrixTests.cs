@@ -1,4 +1,5 @@
 using StoryForge.App.ViewModels.Pages;
+using StoryForge.App.ViewModels.Script;
 using StoryForge.Client;
 
 namespace StoryForge.App.Tests;
@@ -93,7 +94,8 @@ public sealed class StillsMatrixTests
         Assert.Equal("Karlach walks on", script.StillPrompt);
         Assert.Equal("Prompt (from the storyboard + the still profile)", script.StillPromptTitle);
         Assert.Equal("seed 9 · 1344×768 · wf qwen.json · inputs abcdef12…", script.StillDetails);
-        Assert.Equal("Made from starts from the still of S01·1 (continues it) · reference images R01/1", script.StillMadeFrom);
+        Assert.Equal("Also made from reference images R01/1", script.StillMadeFrom);
+        Assert.Equal([new StillSourceRow(null, "S01·1 (continues it)")], script.StillSources);
         Assert.Equal(["v1", "v2"], script.SelectedVersions.Select(v => v.Label));
         // The file is not on this machine: the panel says it is gone.
         Assert.True(script.StillIsMissing);
@@ -194,6 +196,47 @@ public sealed class StillsMatrixTests
         Assert.Equal("Your own picture (the prompt it stands in for)", script.StillPromptTitle);
         Assert.Equal("1920×1080 · inputs abcdef12…", script.StillDetails);
         Assert.Equal("", script.StillMadeFrom);
+        Assert.Empty(script.StillSources);
+    }
+
+    [Fact]
+    public async Task The_still_lists_the_earlier_stills_it_was_painted_with()
+    {
+        var picked = new Still("S02/0001", @"media\stills\a.png", "Karlach again", 9, new GenerationSize("16:9", 1344, 768), "qwen.json", [],
+            EarlierStills: [new EarlierStill("Karlach", "S01/0002"), new EarlierStill("Soul coin", "S01/0002"), new EarlierStill("Crypt", "S01/0001")]);
+        var (matrix, _) = await OpenAsync(new StillsView(Guid.Empty, StageState.NeedsReview, null, [],
+            [Made("S01/0001"), Made("S01/0002"), Made("S02/0001", still: picked)], true));
+        var script = matrix.Script!;
+
+        script.Rows[1].Shots[0].Still.SelectCommand.Execute(null);
+
+        Assert.Equal([new StillSourceRow(null, "S01·2, Karlach and Soul coin"), new StillSourceRow(null, "S01·1, Crypt")], script.StillSources);
+        Assert.Equal("", script.StillMadeFrom);
+    }
+
+    [Fact]
+    public async Task A_source_whose_shot_is_gone_says_so()
+    {
+        var picked = new Still("S02/0001", @"media\stills\a.png", "Karlach again", 9, new GenerationSize("16:9", 1344, 768), "qwen.json", [],
+            EarlierStills: [new EarlierStill("Karlach", "S01/dead")]);
+        var (matrix, _) = await OpenAsync(new StillsView(Guid.Empty, StageState.NeedsReview, null, [], [Made("S02/0001", still: picked)], true));
+        var script = matrix.Script!;
+
+        script.Rows[1].Shots[0].Still.SelectCommand.Execute(null);
+
+        Assert.Equal([new StillSourceRow(null, "A shot now gone, Karlach")], script.StillSources);
+    }
+
+    [Fact]
+    public async Task A_still_with_no_pictures_says_so()
+    {
+        var alone = new Still("S02/0001", @"media\stills\a.png", "Karlach", 9, new GenerationSize("16:9", 1344, 768), "qwen.json", []);
+        var (matrix, _) = await OpenAsync(new StillsView(Guid.Empty, StageState.NeedsReview, null, [], [Made("S02/0001", still: alone)], true));
+        var script = matrix.Script!;
+
+        script.Rows[1].Shots[0].Still.SelectCommand.Execute(null);
+
+        Assert.Equal("Made from the prompt alone", script.StillMadeFrom);
     }
 
     [Fact]

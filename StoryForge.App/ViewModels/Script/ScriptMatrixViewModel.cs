@@ -718,6 +718,7 @@ public sealed partial class ScriptMatrixViewModel(
         }
         IsEditing = false;
         IsEditingShot = false;
+        IsEditingLook = false;
         IsEditingPrompt = false;
         SelectedClipModel = null;   // a video profile is picked for one clip, not the next
         CloseNote();

@@ -17,6 +17,7 @@ public sealed class StoryboardEditTests : IDisposable
     private readonly EngineTestHost _engine = new();
     private readonly ScriptRunTests.FakeScriptAgent _script = new();
     private readonly StoryboardRunTests.FakeStoryboardAgent _board = new();
+    private readonly StoryboardRunTests.FakeFactCheck _facts = new();
 
     public void Dispose() => _engine.Dispose();
 
@@ -27,10 +28,162 @@ public sealed class StoryboardEditTests : IDisposable
     private static StoryboardOutput Board(params int[] firstWords)
     {
         var good = StoryboardRunTests.Good();
+        return (good with
+        {
+            Segments = [new("S01", [.. firstWords.Select((w, i) => new ShotOutput(w, $"S01 shot {i + 1}", ["Karlach"], false, []))]), .. good.Segments.Skip(1)],
+        }).WithPicks();
+    }
+
+    /// <summary><see cref="StoryboardRunTests.Good"/>, with S01·4 painted from the Karlach of S01·3.</summary>
+    private static StoryboardOutput Picking()
+    {
+        var good = StoryboardRunTests.Good();
+        var first = good.Segments[0];
         return good with
         {
-            Segments = [new("S01", [.. firstWords.Select((w, i) => new ShotOutput(w, $"S01 shot {i + 1}", ["Karlach"], false))]), .. good.Segments.Skip(1)],
+            Segments = [first with { Shots = [.. first.Shots.Take(3), first.Shots[3] with { EarlierStills = [new("Karlach", "S01-3")] }, .. first.Shots.Skip(4)] }, .. good.Segments.Skip(1)],
         };
+    }
+
+    [Fact]
+    public async Task A_merge_moves_a_pick_to_the_surviving_shot()
+    {
+        var (client, projectId, view) = await PlannedAsync(Picking());
+        var picker = view.Shots.Single(s => s.Label == "S01·4").Key;
+        var kept = view.Shots.Single(s => s.Label == "S01·2").Key;
+
+        await client.MergeShotAsync(projectId, kept);
+
+        var shot = (await client.GetStoryboardAsync(projectId)).Shots.Single(s => s.Key == picker).Shot;
+        Assert.Equal([new EarlierStill("Karlach", kept)], shot.EarlierStills);
+    }
+
+    [Fact]
+    public async Task A_shot_a_merge_moves_a_pick_on_is_not_counted_as_yours()
+    {
+        var (client, projectId, view) = await PlannedAsync(Picking());
+        var picker = view.Shots.Single(s => s.Label == "S01\u00b74").Key;
+
+        await client.MergeShotAsync(projectId, view.Shots.Single(s => s.Label == "S01\u00b72").Key);
+
+        Assert.Equal(VersionOrigin.Generated, (await client.GetStoryboardAsync(projectId)).Shots.Single(s => s.Key == picker).Versions[^1].Origin);
+    }
+
+    [Fact]
+    public async Task A_merge_drops_a_pick_when_the_surviving_shot_does_not_show_them()
+    {
+        var (client, projectId, view) = await PlannedAsync(Picking());
+        var picker = view.Shots.Single(s => s.Label == "S01·4").Key;
+        var kept = view.Shots.Single(s => s.Label == "S01·2").Key;
+        await client.EditShotAsync(projectId, kept, new ShotChange(Cast: ["Soul coin"]));
+
+        await client.MergeShotAsync(projectId, kept);
+
+        Assert.Empty((await client.GetStoryboardAsync(projectId)).Shots.Single(s => s.Key == picker).Shot.EarlierStills!);
+    }
+
+    [Fact]
+    public async Task A_split_gives_the_second_half_the_picks_of_the_shot()
+    {
+        var (client, projectId, view) = await PlannedAsync(Picking());
+        var picker = view.Shots.Single(s => s.Label == "S01·4");
+
+        await client.SplitShotAsync(projectId, picker.Key, picker.Shot.FirstWord + 5);
+
+        var after = await client.GetStoryboardAsync(projectId);
+        var second = after.Shots.Single(s => s.Label == "S01·5");
+        Assert.Equal(picker.Shot.EarlierStills, second.Shot.EarlierStills);
+    }
+
+    [Fact]
+    public async Task Taking_someone_out_of_a_shot_drops_their_pick()
+    {
+        var (client, projectId, view) = await PlannedAsync(Picking());
+        var picker = view.Shots.Single(s => s.Label == "S01·4").Key;
+
+        await client.EditShotAsync(projectId, picker, new ShotChange(Cast: ["Soul coin"]));
+
+        Assert.Empty((await client.GetStoryboardAsync(projectId)).Shots.Single(s => s.Key == picker).Shot.EarlierStills!);
+    }
+
+    [Fact]
+    public async Task Adding_someone_gives_no_pick()
+    {
+        var (client, projectId, view) = await PlannedAsync(Picking());
+        var picker = view.Shots.Single(s => s.Label == "S01·4").Key;
+
+        await client.EditShotAsync(projectId, picker, new ShotChange(Cast: ["Karlach", "Soul coin"]));
+
+        Assert.Equal([new EarlierStill("Karlach", view.Shots.Single(s => s.Label == "S01·3").Key)], (await client.GetStoryboardAsync(projectId)).Shots.Single(s => s.Key == picker).Shot.EarlierStills);
+    }
+
+    [Fact]
+    public async Task Editing_a_look_makes_a_new_sheet_version_and_marks_it_yours()
+    {
+        var (client, projectId, _) = await PlannedAsync();
+
+        await client.SetCastLookAsync(projectId, " karlach ", "  Horned, with one eye.  ");
+
+        var view = await client.GetStoryboardAsync(projectId);
+        var karlach = view.Cast.Single(c => c.Name == "Karlach");
+        Assert.Equal(("Horned, with one eye.", true), (karlach.Look, karlach.LookByYou));
+        Assert.Equal(StageState.NeedsReview, view.State);
+        Assert.False(view.Cast.Single(c => c.Name == "Soul coin").LookByYou);
+    }
+
+    [Fact]
+    public async Task An_empty_look_is_refused()
+    {
+        var (client, projectId, _) = await PlannedAsync();
+
+        await Assert.ThrowsAsync<ArgumentException>(() => client.SetCastLookAsync(projectId, "Karlach", "  "));
+    }
+
+    [Fact]
+    public async Task Someone_not_on_the_cast_list_has_no_look_to_edit()
+    {
+        var (client, projectId, _) = await PlannedAsync();
+
+        await Assert.ThrowsAsync<KeyNotFoundException>(() => client.SetCastLookAsync(projectId, "Raphael", "Red."));
+    }
+
+    [Fact]
+    public async Task The_same_look_changes_nothing()
+    {
+        var (client, projectId, _) = await PlannedAsync();
+
+        await client.SetCastLookAsync(projectId, "Karlach", "The look of Karlach.");
+
+        Assert.False((await client.GetStoryboardAsync(projectId)).Cast.Single(c => c.Name == "Karlach").LookByYou);
+    }
+
+    [Fact]
+    public async Task Editing_a_look_clears_the_fact_note_about_it()
+    {
+        var problem = new FactProblemOutput("Karlach", "F01", "F01 says otherwise.");
+        _board.Answer(StoryboardRunTests.Good()).Answer(StoryboardRunTests.Good());
+        _facts.Answer(problem).Answer(problem).Answer(problem);
+        var (client, projectId, view) = await PlannedAsync(StoryboardRunTests.Good());
+        Assert.Single(view.FactDisagreements!);
+
+        await client.SetCastLookAsync(projectId, "Karlach", "What you want.");
+
+        Assert.Empty((await client.GetStoryboardAsync(projectId)).FactDisagreements!);
+    }
+
+    [Fact]
+    public async Task Editing_what_a_shot_shows_clears_its_fact_note()
+    {
+        var problem = new FactProblemOutput("S01-1", "F01", "F01 says otherwise.");
+        _board.Answer(StoryboardRunTests.Good()).Answer(StoryboardRunTests.Good());
+        _facts.Answer(problem).Answer(problem).Answer(problem);
+        var (client, projectId, view) = await PlannedAsync(StoryboardRunTests.Good());
+        var key = view.Shots[0].Key;
+        Assert.NotNull(view.Shots[0].Shot.FactDisagreements);
+
+        await client.EditShotAsync(projectId, key, new ShotChange(Description: "What you want."));
+
+        Assert.Null((await client.GetStoryboardAsync(projectId)).Shots[0].Shot.FactDisagreements);
     }
 
     private async Task<(IStoryForgeClient Client, Guid ProjectId, StoryboardView View)> PlannedAsync(StoryboardOutput? board = null)
@@ -41,6 +194,7 @@ public sealed class StoryboardEditTests : IDisposable
             services.Replace(ServiceDescriptor.Singleton<IResearchAgent>(new ScriptRunTests.ThreeFacts()));
             services.Replace(ServiceDescriptor.Singleton<IScriptAgent>(_script));
             services.Replace(ServiceDescriptor.Singleton<IStoryboardAgent>(_board));
+            services.Replace(ServiceDescriptor.Singleton<IStoryboardFactCheck>(_facts));
             StoryboardRunTests.UseVoice<StoryboardRunTests.WordsVoice>(services);
         });
         _script.Answer(ScriptRunTests.Good());

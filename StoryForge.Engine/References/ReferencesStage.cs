@@ -118,7 +118,7 @@ internal sealed class ReferencesStage(
         {
             // Claude saw how it looks: the sheet keeps it, so its next images are made the same way.
             var now = await cells.CurrentReferencesAsync(context.Project.Id, cancellationToken);
-            if (now?.References.FirstOrDefault(r => r.Id == referenceId) is { Look.Length: 0 } still)
+            if (now?.References.FirstOrDefault(r => r.Id == referenceId) is { } still && still.Look == reference.Look)
             {
                 await sheets.WriteAsync(
                     context.Project.Id, now with { References = [.. now.References.Select(r => r == still ? still with { Look = updated.Look } : r)] }, [], cancellationToken);
@@ -261,8 +261,12 @@ internal sealed class ReferencesStage(
             {
                 Report(context, ActivityKind.Check, $"{reference.Name}: Claude does not see it in {picture.Id}; made from it because you chose it");
             }
-            // What Claude saw, even in a picture it did not know: the image is made from it.
-            var looked = reference.Look.Length > 0 ? reference : reference with { Look = verdict.Look };
+            // What Claude saw, even in a picture it did not know: the image is made from it. A look
+            // the shot writer wrote stands against a picture found, not against one you chose.
+            var writers = yours && verdict.Look.Length > 0
+                && (await cells.CurrentStoryboardAsync(context.Project.Id, cancellationToken))?.Cast.FirstOrDefault(c => c.Name == reference.Name) is { LookByYou: false } member
+                && member.Look == reference.Look;
+            var looked = reference.Look.Length > 0 && !writers ? reference : reference with { Look = verdict.Look };
             var made = verdict.Complete || !verdict.Usable ? ImageMaking.FromPicture : ImageMaking.PartlyMadeUp;
             // Only the picture Claude looked at: another one on the page could show anyone.
             PoolImage[] sources = [picture];

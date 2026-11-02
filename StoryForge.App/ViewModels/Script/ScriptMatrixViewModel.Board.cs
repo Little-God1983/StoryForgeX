@@ -220,6 +220,44 @@ public sealed partial class ScriptMatrixViewModel
     /// <summary>The cast it can still take: everyone on the cast list not in it yet.</summary>
     public IReadOnlyList<string> BoardCastChoices => [.. (_board?.Cast ?? []).Select(c => c.Name).Where(n => !BoardCast.Contains(n))];
 
+    /// <summary>The look of everyone in the shot, and how many shots it holds for.</summary>
+    public IReadOnlyList<BoardLookRow> BoardLooks => [.. BoardCast.Select(name =>
+    {
+        var referenced = _board?.ReferencedCast.GetValueOrDefault(name);
+        var shots = (_board?.Shots ?? []).Count(s => s.Shot.Cast.Contains(name));
+        // A reference with no look yet goes by the shot writer's, as the stills do.
+        var look = referenced is { Length: > 0 } ? referenced : _board?.Cast.FirstOrDefault(c => c.Name == name)?.Look ?? "";
+        return new BoardLookRow(name, look, shots, referenced is not null);
+    })];
+
+    public bool HasBoardLooks => BoardLooks.Count > 0;
+
+    /// <summary>At the gate, so you know before you approve; each note itself is on the panel of its shot.</summary>
+    public string BoardGateFactNote
+    {
+        get
+        {
+            var notes = (_board?.FactDisagreements?.Count ?? 0) + (_board?.Shots ?? []).Sum(s => s.Shot.FactDisagreements?.Count ?? 0);
+            return notes == 0 ? "" : $"The fact check still disagrees on {notes} {(notes == 1 ? "thing" : "things")}. Each shows on the Board panel of its shot.";
+        }
+    }
+
+    private static bool SameName(string a, string b) => string.Equals(a.Trim(), b.Trim(), StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>What the fact check still disagrees with in this shot and the looks of who is in it, or that it could not check.</summary>
+    public IReadOnlyList<string> BoardFactNotes
+    {
+        get
+        {
+            var mine = (SelectedShot?.Shot.Shot.FactDisagreements ?? []).Select(d => d.FactId.Length == 0 ? d.Problem : $"The fact check still disagrees ({d.FactId}): {d.Problem}");
+            // Free text from a model: what names no one on the cast list exactly shows on every shot, so you see it before you approve.
+            var cast = _board?.Cast.Select(c => c.Name).ToList() ?? [];
+            var sheet = (_board?.FactDisagreements ?? []).Where(d => !cast.Any(c => SameName(c, d.Where)) || BoardCast.Any(c => SameName(c, d.Where)))
+                .Select(d => d.Where.Length == 0 ? d.Problem : $"The fact check still disagrees about {d.Where} ({d.FactId}): {d.Problem}");
+            return SelectedShot is null ? [] : [.. mine, .. sheet];
+        }
+    }
+
     /// <summary>"Continues the shot before": ticking it saves the shot's next version.</summary>
     public bool BoardContinues
     {
@@ -255,8 +293,22 @@ public sealed partial class ScriptMatrixViewModel
 
     public bool IsNotEditingShot => !IsEditingShot;
 
-    /// <summary>Neither the script's text, a shot's description nor a still's prompt is being edited: the panel's own buttons show.</summary>
-    public bool IsNotEditingAny => !IsEditing && !IsEditingShot && !IsEditingPrompt;
+    /// <summary>Neither the script's text, a shot's description, a look nor a still's prompt is being edited: the panel's own buttons show.</summary>
+    public bool IsNotEditingAny => !IsEditing && !IsEditingShot && !IsEditingLook && !IsEditingPrompt;
+
+    /// <summary>The look box is open.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsNotEditingAny))]
+    [NotifyCanExecuteChangedFor(nameof(SaveLookCommand))]
+    private bool _isEditingLook;
+
+    /// <summary>Whose look the box is open for.</summary>
+    [ObservableProperty]
+    private string _editLookName = "";
+
+    [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(SaveLookCommand))]
+    private string _editLookText = "";
 
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(SaveShotDescriptionCommand))]
@@ -274,6 +326,32 @@ public sealed partial class ScriptMatrixViewModel
         EditShotDescription = BoardShows;
         IsEditingShot = true;
     }
+
+    // Once someone has a reference, its Look box owns the look.
+    private bool CanEditLook(string? name) => CanEditShot() && BoardLooks.Any(l => l.Name == name && !l.ReadOnly);
+
+    [RelayCommand(CanExecute = nameof(CanEditLook))]
+    private void StartEditLook(string? name)
+    {
+        EditLookName = name!;
+        EditLookText = BoardLooks.First(l => l.Name == name).Look;
+        IsEditingLook = true;
+    }
+
+    private bool CanSaveLook() => IsEditingLook && EditLookText.Trim().Length > 0;
+
+    [RelayCommand(CanExecute = nameof(CanSaveLook))]
+    private async Task SaveLookAsync()
+    {
+        await ActAsync("save the look", () => client.SetCastLookAsync(ProjectId, EditLookName, EditLookText.Trim()));
+        if (ActionError is null)
+        {
+            IsEditingLook = false;   // saved; when it was not, your text stays to try again
+        }
+    }
+
+    [RelayCommand]
+    private void CancelEditLook() => IsEditingLook = false;
 
     private bool CanSaveShotDescription() => IsEditingShot && EditShotDescription.Trim().Length > 0;
 
@@ -360,13 +438,13 @@ public sealed partial class ScriptMatrixViewModel
     /// <summary>The selected shot changed, or another one is selected: the panel reads it again.</summary>
     private void RefreshBoardPanel()
     {
-        foreach (var name in new[] { nameof(BoardShows), nameof(BoardWords), nameof(BoardStartWord), nameof(BoardEndWord), nameof(BoardCast), nameof(BoardCastChoices), nameof(BoardContinues), nameof(CanEditBoard) })
+        foreach (var name in new[] { nameof(BoardShows), nameof(BoardWords), nameof(BoardStartWord), nameof(BoardEndWord), nameof(BoardCast), nameof(BoardCastChoices), nameof(BoardLooks), nameof(HasBoardLooks), nameof(BoardFactNotes), nameof(BoardGateFactNote), nameof(BoardContinues), nameof(CanEditBoard) })
         {
             OnPropertyChanged(name);
         }
         foreach (var command in new IRelayCommand[]
         {
-            StartEditShotCommand, AddCastCommand, RemoveCastCommand, StartEarlierCommand, StartLaterCommand, EndEarlierCommand, EndLaterCommand,
+            StartEditShotCommand, StartEditLookCommand, AddCastCommand, RemoveCastCommand, StartEarlierCommand, StartLaterCommand, EndEarlierCommand, EndLaterCommand,
             SplitAtCommand, MergeWithNextCommand,
         })
         {
