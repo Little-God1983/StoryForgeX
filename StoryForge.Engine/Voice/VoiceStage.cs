@@ -53,7 +53,7 @@ internal sealed class VoiceStage(
             VoiceClip clip;
             try
             {
-                clip = await SpeakAsync(context, speaker, segment, version, cancellationToken);
+                clip = await SpeakAsync(context, speaker, segment, version, lastOfRun: i == segments.Count - 1, cancellationToken);
             }
             catch (StageFailedException ex)
             {
@@ -85,7 +85,7 @@ internal sealed class VoiceStage(
             throw new StageFailedException($"The script has no segment {key}.");
         }
         var speaker = await SpeakerAsync(context, cancellationToken);
-        var clip = await SpeakAsync(context, speaker, found.Segment, found.Version, cancellationToken);
+        var clip = await SpeakAsync(context, speaker, found.Segment, found.Version, lastOfRun: true, cancellationToken);
         return new CellResult(key, StoredJson.Write(clip), VoiceClip.SchemaVersion, Hash(context.Project.Setup, found.Segment, found.Version));
     }
 
@@ -103,8 +103,8 @@ internal sealed class VoiceStage(
         language = setup.Output.Language,
     });
 
-    /// <summary>What every part is spoken with: the workflow, the profile, the uploaded reference audio, and where the audio goes.</summary>
-    private sealed record Speaker(JsonObject Workflow, ProfileContent Profile, string? Reference, string Root, string Folder, string Language, string Project);
+    /// <summary>What every part is spoken with: the workflow, the profile, the uploaded reference audio, where the audio goes, and Settings' "Free VRAM between stages".</summary>
+    private sealed record Speaker(JsonObject Workflow, ProfileContent Profile, string? Reference, string Root, string Folder, string Language, string Project, bool FreeVram);
 
     private async Task<Speaker> SpeakerAsync(StageContext context, CancellationToken cancellationToken)
     {
@@ -114,8 +114,8 @@ internal sealed class VoiceStage(
             throw new StageFailedException($"The voice is spoken through ComfyUI for now, and this project uses {setup.Voice.Provider}.");
         }
         var profile = (await profiles.GetVersionAsync(setup.Voice.Profile.ProfileId, setup.Voice.Profile.Version, cancellationToken)).Content;
-        var templates = (await settings.LoadAsync(cancellationToken)).ComfyUi.WorkflowTemplatesFolder;
-        var workflow = await WorkflowTemplate.LoadAsync(templates, profile.WorkflowTemplate, cancellationToken);
+        var machine = (await settings.LoadAsync(cancellationToken)).ComfyUi;
+        var workflow = await WorkflowTemplate.LoadAsync(machine.WorkflowTemplatesFolder, profile.WorkflowTemplate, cancellationToken);
         if (!WorkflowTemplate.Maps(profile.Inputs, TextKey))
         {
             throw new StageFailedException($"The voice profile does not say where the text goes. Map '{TextKey}' to the TTS node's text, e.g. #11.text.");
@@ -131,10 +131,10 @@ internal sealed class VoiceStage(
             reference = await comfy.UploadAsync(file, cancellationToken);
             Report(context, ActivityKind.Model, $"reference audio {Path.GetFileName(file)} uploaded to ComfyUI");
         }
-        return new Speaker(workflow, profile, reference, await folders.RootAsync(cancellationToken), ProjectFolders.Of(context.Project), setup.Output.Language, setup.Name);
+        return new Speaker(workflow, profile, reference, await folders.RootAsync(cancellationToken), ProjectFolders.Of(context.Project), setup.Output.Language, setup.Name, machine.FreeVramBetweenStages);
     }
 
-    private async Task<VoiceClip> SpeakAsync(StageContext context, Speaker speaker, Segment segment, int version, CancellationToken cancellationToken)
+    private async Task<VoiceClip> SpeakAsync(StageContext context, Speaker speaker, Segment segment, int version, bool lastOfRun, CancellationToken cancellationToken)
     {
         var parts = NarrationParts.Split(segment.Narration, speaker.Language);
         if (parts.Count == 0)
@@ -156,11 +156,27 @@ internal sealed class VoiceStage(
             for (var i = 0; i < parts.Count; i++)
             {
                 var name = parts.Count == 1 ? segment.Id : $"{segment.Id} part {i + 1} of {parts.Count}";
+                var workflow = Workflow(speaker, parts[i], seed);
+                // The very last part lets go of the voice models, for the stages after Voice. Not
+                // every part: the next one would only load them again.
+                var last = lastOfRun && i == parts.Count - 1;
+                var unloads = speaker.FreeVram && WorkflowTemplate.SetUnloadAfter(workflow, speaker.Profile.Inputs, TextKey, last);
                 var files = await comfy.RunAsync(
-                    Workflow(speaker, parts[i], seed),
+                    workflow,
                     $"StoryForge · {speaker.Project} · {name}",
                     new Progress(line => Report(context, ActivityKind.Model, $"{name}: {line}")),
                     cancellationToken);
+                if (last && speaker.FreeVram)
+                {
+                    if (unloads)
+                    {
+                        Report(context, ActivityKind.Check, "voice models unloaded from the GPU");
+                    }
+                    else
+                    {
+                        Report(context, ActivityKind.Failed, "could not turn on an unload_after switch in the voice workflow, so its models may stay on the GPU and slow down Stills and Clips");
+                    }
+                }
                 var spoken = files.FirstOrDefault(f => f.Kind == "audio")
                     ?? throw new StageFailedException("The workflow saved no audio. It needs a node that saves it, e.g. Save Audio.");
                 // Named apart: a workflow that saves WAV must not have ffmpeg write over its input.

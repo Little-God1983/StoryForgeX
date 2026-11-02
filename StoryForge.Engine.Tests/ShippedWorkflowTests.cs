@@ -41,4 +41,19 @@ public sealed class ShippedWorkflowTests
         // One node saves a picture, so the one the app keeps is the one made.
         Assert.Equal(["SaveImageAdvanced"], filled.Select(n => (string)n.Value!["class_type"]!).Where(t => t.Contains("Save", StringComparison.Ordinal) || t.Contains("Compare", StringComparison.Ordinal)));
     }
+
+    [Fact]
+    public async Task The_Breeze_workflow_lets_go_of_Whisper_at_once_and_of_Breeze_after_the_last_part()
+    {
+        var workflow = await WorkflowTemplate.LoadAsync(Folder(), "BreezeTTS - 3. Voice Direction by Into the Latent.json", CancellationToken.None);
+        IReadOnlyList<WorkflowInput> inputs = [new(VoiceStage.TextKey, "#11.text")];
+        static bool Unloads(JsonObject w, string node) => (bool)w[node]!["inputs"]!["unload_after"]!;
+
+        // Plain switches, or a new export would quietly leave the voice models on the graphics card (#80).
+        Assert.True(WorkflowTemplate.SetUnloadAfter(workflow, inputs, VoiceStage.TextKey, last: false));
+        Assert.Equal((false, true), (Unloads(workflow, "11"), Unloads(workflow, "19")));
+
+        Assert.True(WorkflowTemplate.SetUnloadAfter(workflow, inputs, VoiceStage.TextKey, last: true));
+        Assert.Equal((true, true), (Unloads(workflow, "11"), Unloads(workflow, "19")));
+    }
 }

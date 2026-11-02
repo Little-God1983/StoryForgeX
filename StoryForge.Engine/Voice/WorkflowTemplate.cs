@@ -11,6 +11,8 @@ namespace StoryForge.Engine.Voice;
 /// </summary>
 internal static class WorkflowTemplate
 {
+    private const string UnloadAfter = "unload_after";
+
     /// <exception cref="StageFailedException">No templates folder or file, not JSON, or not the API format.</exception>
     /// <param name="kind">The profile's kind as its messages name it: "voice", "image".</param>
     public static async Task<JsonObject> LoadAsync(string folder, string file, CancellationToken cancellationToken, string kind = "voice")
@@ -79,6 +81,49 @@ internal static class WorkflowTemplate
             fields[name] = value.DeepClone();
         }
         return copy;
+    }
+
+    /// <summary>
+    /// Sets the workflow's own "unload_after" switches: on, a node lets go of its model when it has
+    /// run. Models in a node pack's own cache (Breeze TTS, Whisper) go no other way: ComfyUI's /free
+    /// cannot reach them. The nodes <paramref name="key"/> reaches work anew each time, so they keep
+    /// their models until <paramref name="last"/>. Any other (Whisper reading the reference voice)
+    /// gives the same answer each time and ComfyUI remembers it: its switch stays on, because a switch
+    /// turned on later may never be seen, ComfyUI answering from a result it kept for that setting.
+    /// Only a plain on/off is a switch; a wired input stays as the workflow has it.
+    /// </summary>
+    /// <returns>Whether a node <paramref name="key"/> reaches has such a switch.</returns>
+    public static bool SetUnloadAfter(JsonObject workflow, IReadOnlyList<WorkflowInput> inputs, string key, bool last)
+    {
+        var working = Reached(workflow, inputs, key);
+        var found = false;
+        foreach (var (id, node) in workflow)
+        {
+            if (node?["inputs"] is JsonObject fields && fields[UnloadAfter] is JsonValue value && value.GetValueKind() is JsonValueKind.True or JsonValueKind.False)
+            {
+                fields[UnloadAfter] = !working.Contains(id) || last;
+                found |= working.Contains(id);
+            }
+        }
+        return found;
+    }
+
+    /// <summary>The nodes <paramref name="key"/> goes into, and those they feed through wires.</summary>
+    private static HashSet<string> Reached(JsonObject workflow, IReadOnlyList<WorkflowInput> inputs, string key)
+    {
+        var reached = inputs.Where(i => i.Key.Trim() == key && !string.IsNullOrWhiteSpace(i.Node)).Select(i => Parse(i).Node).ToHashSet();
+        for (var grew = true; grew;)
+        {
+            grew = false;
+            foreach (var (id, node) in workflow)
+            {
+                if (node?["inputs"] is JsonObject fields && fields.Any(f => f.Value is JsonArray { Count: > 0 } wire && reached.Contains(wire[0]?.ToString() ?? "")))
+                {
+                    grew |= reached.Add(id);
+                }
+            }
+        }
+        return reached;
     }
 
     /// <summary>Whether the profile maps <paramref name="key"/> to a node.</summary>
