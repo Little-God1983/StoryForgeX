@@ -79,6 +79,7 @@ public sealed class ProviderStatusBoardTests
         public Task<IReadOnlyList<string>> GetWorkflowTemplatesAsync(CancellationToken cancellationToken = default) => _inner.GetWorkflowTemplatesAsync(cancellationToken);
         public Task<Project> CreateProjectAsync(ProjectSetup setup, CancellationToken cancellationToken = default) => _inner.CreateProjectAsync(setup, cancellationToken);
         public Task<Project> GetProjectAsync(Guid projectId, CancellationToken cancellationToken = default) => _inner.GetProjectAsync(projectId, cancellationToken);
+        public Task<Project> UseNewerProfileAsync(Guid projectId, PipelineStage stage, CancellationToken cancellationToken = default) => _inner.UseNewerProfileAsync(projectId, stage, cancellationToken);
         public event EventHandler<StageUpdate>? StageUpdated
         {
             add => _inner.StageUpdated += value;

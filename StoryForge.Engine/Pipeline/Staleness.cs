@@ -61,7 +61,9 @@ internal sealed class Staleness(
             var changed = (await db.Cells.AsNoTracking().Where(c => c.ProjectId == projectId).Select(c => c.UpdatedAt).ToListAsync(cancellationToken))
                 .DefaultIfEmpty().Max();
             var count = await db.CellVersions.AsNoTracking().CountAsync(v => v.ProjectId == projectId, cancellationToken);
-            stamp = (changed, count);
+            // The setup is hashed too, and a stage moved to a newer profile (#75) changes it without a cell.
+            var setup = await db.Projects.AsNoTracking().Where(p => p.Id == projectId).Select(p => p.UpdatedAt).FirstOrDefaultAsync(cancellationToken);
+            stamp = (changed, count, setup);
         }
         if (_last.TryGetValue(projectId, out var last) && last.Stamp.Equals(stamp))
         {

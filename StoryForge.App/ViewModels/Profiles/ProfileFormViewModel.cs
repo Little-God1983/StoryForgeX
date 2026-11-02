@@ -204,7 +204,11 @@ public sealed partial class ProfileFormViewModel : ObservableValidator
             PacingTypical = NumberText.Format(content.Pacing?.TypicalSeconds);
             PacingMax = NumberText.Format(content.Pacing?.MaxSeconds);
             Voice = content.Voice;
-            Replace(Inputs, content.Inputs.Select(i => new WorkflowInputRowViewModel(i.Key, i.Node, IsReadOnly)));
+            // An older version shows what it was saved with; the one you edit also gets a row for every
+            // value its stage fills that it lacks (#75), empty, which counts as no change.
+            var missing = IsReadOnly ? [] : ProfileKinds.InputKeys(Kind).Where(k => content.Inputs.All(i => i.Key.Trim() != k));
+            Replace(Inputs, [.. content.Inputs.Select(i => new WorkflowInputRowViewModel(i.Key, i.Node, IsReadOnly)),
+                .. missing.Select(k => new WorkflowInputRowViewModel(k, "", IsReadOnly))]);
             Replace(Sizes, content.Sizes.Select(s => new SizeRowViewModel(s.Aspect, s.Width, s.Height, IsReadOnly)));
             Replace(ReferenceFiles, content.ReferenceFiles);
             ValidateAllProperties();

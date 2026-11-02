@@ -113,7 +113,7 @@ public sealed partial class ResultMatrixPageViewModel : PageViewModel
     [ObservableProperty]
     private ScriptMatrixViewModel? _script;
 
-    /// <summary>The script's first load after a project opened; tests await it.</summary>
+    /// <summary>The script's load after a project opened, or after coming back from Profiles; tests await it.</summary>
     public Task ScriptLoading { get; private set; } = Task.CompletedTask;
 
     /// <summary>What reacting to the last engine update started; tests await it.</summary>
@@ -131,6 +131,21 @@ public sealed partial class ResultMatrixPageViewModel : PageViewModel
         Script?.Playback.Stop();   // the project before keeps no file open
         Script = new ScriptMatrixViewModel(_client, project.Id, _newPlayer?.Invoke(), _pickPicture, _confirm);
         ScriptLoading = Script.LoadAsync();
+    }
+
+    /// <summary>Back from Profiles or Settings: a profile fixed there is offered on a failed stage's line (#75).</summary>
+    public async Task RefreshAsync()
+    {
+        if (Script is null)
+        {
+            return;
+        }
+        ScriptLoading = Script.LoadAsync();
+        await ScriptLoading;
+        if (References is { } references)
+        {
+            await references.LoadAsync();
+        }
     }
 
     /// <summary>Opens a project from Recent projects.</summary>

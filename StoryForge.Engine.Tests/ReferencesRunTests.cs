@@ -165,10 +165,15 @@ public sealed partial class ReferencesRunTests : IDisposable
     public async Task The_images_are_made_with_the_image_references_profile_not_the_stills_one()
     {
         var client = await StartAsync();
-        // A stills profile with no workflow at all: the references must not need it.
+        // A stills profile whose workflow is not in the templates folder: the references must not need it.
+        // (One with no workflow at all is refused at the start since #75.)
         var stills = await client.CreateProfileAsync(ProfileKind.Image, "Painted dark fantasy");
         var starter = await client.GetProfileVersionAsync(stills.Id);
-        var saved = await client.SaveProfileVersionAsync(stills.Id, starter.Content with { Inputs = [new("prompt", "#6.text"), new("image", "#1.image")] });
+        var saved = await client.SaveProfileVersionAsync(stills.Id, starter.Content with
+        {
+            WorkflowTemplate = "stills-only.json",
+            Inputs = [new("prompt", "#6.text"), new("image", "#1.image")],
+        });
         var project = await StoryboardApprovedAsync(client, s => s with
         {
             References = s.References with { ReviewList = false },

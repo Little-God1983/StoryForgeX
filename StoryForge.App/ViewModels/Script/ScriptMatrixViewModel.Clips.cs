@@ -64,7 +64,7 @@ public sealed partial class ScriptMatrixViewModel
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsClipsRunning), nameof(IsClipsReview), nameof(IsClipsApproved), nameof(IsClipsFailed), nameof(CanStartClips))]
     [NotifyCanExecuteChangedFor(nameof(ApproveRemainingClipsCommand), nameof(MakeClipsCommand), nameof(CancelClipsCommand),
-        nameof(ApproveSegmentCommand), nameof(RegenerateSegmentCommand), nameof(RerunFromHereCommand))]
+        nameof(ApproveSegmentCommand), nameof(RegenerateSegmentCommand), nameof(RerunFromHereCommand), nameof(UseNewerClipsProfileCommand))]
     private StageState _clipsState;
 
     public bool IsClipsRunning => ClipsState == StageState.Running;

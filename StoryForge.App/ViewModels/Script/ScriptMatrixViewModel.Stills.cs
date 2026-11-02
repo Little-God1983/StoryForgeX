@@ -63,7 +63,7 @@ public sealed partial class ScriptMatrixViewModel
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsStillsRunning), nameof(IsStillsReview), nameof(IsStillsApproved), nameof(IsStillsFailed), nameof(CanMakeStills))]
     [NotifyCanExecuteChangedFor(nameof(ApproveRemainingStillsCommand), nameof(ContinuePipelineCommand), nameof(CancelStillsCommand),
-        nameof(ApproveSegmentCommand), nameof(RegenerateSegmentCommand), nameof(RerunFromHereCommand))]
+        nameof(ApproveSegmentCommand), nameof(RegenerateSegmentCommand), nameof(RerunFromHereCommand), nameof(UseNewerStillsProfileCommand))]
     private StageState _stillsState;
 
     public bool IsStillsRunning => StillsState == StageState.Running;

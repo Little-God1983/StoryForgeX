@@ -271,6 +271,33 @@ internal sealed class FakeStoryForgeClient : IStoryForgeClient
             ? Task.FromResult(project)
             : Task.FromException<Project>(new KeyNotFoundException($"There is no project {projectId}."));
 
+    public List<(Guid ProjectId, PipelineStage Stage)> NewerProfileUses { get; } = [];
+
+    /// <summary>Thrown by <see cref="UseNewerProfileAsync"/> instead of moving, when set.</summary>
+    public Exception? UseNewerProfileFailure { get; set; }
+
+    /// <summary>Moves the stage's slot to its profile's newest version, like the engine (which also checks the stage failed).</summary>
+    public Task<Project> UseNewerProfileAsync(Guid projectId, PipelineStage stage, CancellationToken cancellationToken = default)
+    {
+        NewerProfileUses.Add((projectId, stage));
+        if (UseNewerProfileFailure is { } failure)
+        {
+            return Task.FromException<Project>(failure);
+        }
+        var index = Projects.FindIndex(p => p.Id == projectId);
+        var s = Projects[index].Setup;
+        ProfileRef Newest(ProfileRef own) => own with { Version = _profiles.Single(p => p.Summary.Id == own.ProfileId).Summary.LatestVersion };
+        var moved = stage switch
+        {
+            PipelineStage.Voice => s with { Voice = s.Voice with { Profile = Newest(s.Voice.Profile) } },
+            PipelineStage.References => s with { References = s.References with { Profile = Newest(s.References.Profile) } },
+            PipelineStage.Stills => s with { Stills = s.Stills with { Profile = Newest(s.Stills.Profile) } },
+            _ => s with { Clips = s.Clips with { Profile = Newest(s.Clips.Profile) } },
+        };
+        Projects[index] = Projects[index] with { Setup = moved };
+        return Task.FromResult(Projects[index]);
+    }
+
     public event EventHandler<StageUpdate>? StageUpdated;
 
     /// <summary>The stages a whole run of is under way, as announced through <see cref="Raise"/>.</summary>
