@@ -221,7 +221,7 @@ internal sealed partial class StillsStage(
     [GeneratedRegex(@"\s*,(\s*,)+\s*")]
     private static partial Regex EmptyParts();
 
-    /// <summary>A reference image a still is made from: "picture 2 shows Karlach".</summary>
+    /// <summary>A reference image a still is made from: "&lt;image2&gt; shows Karlach".</summary>
     /// <param name="Key">The image's cell, "R01/1".</param>
     /// <param name="File">The picture; null for a reference whose image is gone (in words only).</param>
     internal sealed record ShotPicture(string Key, int Version, string Name, string Look, string? File);

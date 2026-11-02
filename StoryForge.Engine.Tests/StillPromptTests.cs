@@ -45,20 +45,34 @@ public sealed class StillPromptTests
         Assert.Contains("his eye sockets stay empty", prompt);
     }
 
+    [Fact]
+    public void The_clip_rules_say_the_pictures_of_a_still_do_not_come_along()
+    {
+        var prompt = ClaudeCliClipPromptAgent.FirstPrompt(new ClipPromptRequest(Guid.NewGuid(), "A lore video.",
+            [new ClipShot("S02·1", "Nosulgor sleeps.", "", "Nosulgor from <image1> sleeps.", 5, [])], "", ""));
+
+        Assert.Contains("never name them", prompt);
+    }
+
     [Theory]
+    [InlineData("the dragon from <image1>")]
     [InlineData("the dragon from picture 1")]
     [InlineData("the dragon from Picture 1, in a cave")]
     [InlineData("pictures 1 and 2 together")]
     public void A_prompt_naming_a_picture_when_none_is_sent_is_sent_back(string prompt) =>
-        Assert.Contains("S01-1 names picture 1, but this shot comes with no pictures: describe the subject in words.", Problems(Shot("S01·1"), prompt));
+        Assert.Contains("S01-1 names <image1>, but this shot comes with no pictures: describe the subject in words.", Problems(Shot("S01·1"), prompt));
 
     [Fact]
     public void A_prompt_naming_a_picture_beyond_those_sent_is_sent_back() =>
-        Assert.Contains("S01-1 names picture 3, but this shot comes with only 2: describe the subject in words.", Problems(Shot("S01·1", [Troll, Troll]), "Picture 3 shows it."));
+        Assert.Contains("S01-1 names <image3>, but this shot comes with only 2: describe the subject in words.", Problems(Shot("S01·1", [Troll, Troll]), "<image3> shows it."));
 
     [Fact]
     public void A_prompt_naming_a_picture_that_is_sent_passes() =>
-        Assert.Empty(Problems(Shot("S01·1", [Troll, Troll]), "The trolls from picture 2."));
+        Assert.Empty(Problems(Shot("S01·1", [Troll, Troll]), "The trolls from <image2>."));
+
+    [Fact]
+    public void A_prompt_saying_picture_for_one_that_is_sent_is_told_the_tag() =>
+        Assert.Contains("S01-1 says picture 2: name it <image2>.", Problems(Shot("S01·1", [Troll, Troll]), "The trolls from picture 2."));
 
     [Fact]
     public void A_picture_of_a_thing_is_not_a_picture_number() =>
@@ -69,7 +83,7 @@ public sealed class StillPromptTests
     {
         var prompt = Prompt(Shot("S03·2", [new StillPicture("Trolls", "Hulking and grey.", "S03-1")]));
 
-        Assert.Contains("Picture 1 is the still of S03-1: take Trolls from it, not its surroundings. Trolls: Hulking and grey.", prompt);
+        Assert.Contains("<image1> is the still of S03-1: take Trolls from it, not its surroundings. Trolls: Hulking and grey.", prompt);
     }
 
     [Fact]
@@ -77,12 +91,12 @@ public sealed class StillPromptTests
     {
         var prompt = Prompt(Shot("S03·2", [new StillPicture("The vault", "A low stone vault.", "S03-1", KeepSurroundings: true)]));
 
-        Assert.Contains("Picture 1 is the still of S03-1: The vault, with its surroundings. The vault: A low stone vault.", prompt);
+        Assert.Contains("<image1> is the still of S03-1: The vault, with its surroundings. The vault: A low stone vault.", prompt);
     }
 
     [Fact]
     public void A_look_is_given_for_a_reference_picture_too() =>
-        Assert.Contains("Picture 1 shows Trolls: Hulking and grey.", Prompt(Shot("S03·2", [Troll])));
+        Assert.Contains("<image1> shows Trolls: Hulking and grey.", Prompt(Shot("S03·2", [Troll])));
 
     [Fact]
     public void Someone_in_no_picture_is_described_from_their_look() =>
@@ -93,8 +107,8 @@ public sealed class StillPromptTests
     {
         var prompt = Prompt(Shot("S01·1", described: [Troll]));
 
-        Assert.DoesNotContain("from picture", prompt);
-        Assert.DoesNotContain("Picture 1", prompt);
+        Assert.DoesNotContain("from <image", prompt);
+        Assert.DoesNotContain("<image1> ", prompt);
     }
 
     [Fact]
@@ -103,7 +117,7 @@ public sealed class StillPromptTests
         var prompt = Prompt(Shot("S03·2", [Troll]));
 
         Assert.Contains("a picture does not carry size", prompt);
-        Assert.Contains("from picture 1", prompt);
+        Assert.Contains("the woman from <image1>", prompt);
     }
 
     [Fact]

@@ -10,7 +10,7 @@ using StoryForge.Engine.Script;
 
 namespace StoryForge.Engine.Stills;
 
-/// <summary>A picture a still is made from, as the prompt names it: "picture 1 shows Karlach".</summary>
+/// <summary>A picture a still is made from, as the prompt names it: "&lt;image1&gt; shows Karlach".</summary>
 /// <param name="Look">What it looks like, in words; empty when unknown.</param>
 /// <param name="FromShot">An earlier still: the shot it is the still of, e.g. "S03-1".</param>
 /// <param name="KeepSurroundings">An earlier still of a place: it brings its surroundings along.</param>
@@ -59,17 +59,26 @@ internal static partial class StillPromptCheck
 
     private static IEnumerable<string> PictureProblems(StillShot shot, string prompt)
     {
-        var named = PictureNumber().Matches(prompt).Select(m => int.Parse(m.Groups[1].Value, CultureInfo.InvariantCulture)).Where(n => n > shot.Pictures.Count).Distinct();
-        foreach (var number in named)
+        var named = PictureNumber().Matches(prompt)
+            .Select(m => (Number: int.Parse(m.Groups[1].Success ? m.Groups[1].Value : m.Groups[2].Value, CultureInfo.InvariantCulture), Tag: m.Groups[1].Success))
+            .Distinct();
+        foreach (var (number, tag) in named)
         {
-            yield return shot.Pictures.Count == 0
-                ? $"{Name(shot.Label)} names picture {number}, but this shot comes with no pictures: describe the subject in words."
-                : $"{Name(shot.Label)} names picture {number}, but this shot comes with only {shot.Pictures.Count}: describe the subject in words.";
+            if (number > shot.Pictures.Count)
+            {
+                yield return shot.Pictures.Count == 0
+                    ? $"{Name(shot.Label)} names <image{number}>, but this shot comes with no pictures: describe the subject in words."
+                    : $"{Name(shot.Label)} names <image{number}>, but this shot comes with only {shot.Pictures.Count}: describe the subject in words.";
+            }
+            else if (!tag)
+            {
+                yield return $"{Name(shot.Label)} says picture {number}: name it <image{number}>.";
+            }
         }
     }
 
-    /// <summary>"picture 2", "Pictures 1", not "picture of 3".</summary>
-    [GeneratedRegex(@"\bpictures?\s+(\d{1,2})\b", RegexOptions.IgnoreCase)]
+    /// <summary>"&lt;image2&gt;", the label Qwen 2.1 gets each picture with; also "picture 2", "Pictures 1", not "picture of 3".</summary>
+    [GeneratedRegex(@"<image(\d{1,2})>|\bpictures?\s+(\d{1,2})\b", RegexOptions.IgnoreCase)]
     private static partial Regex PictureNumber();
 
     /// <summary>The same for any shots by label, e.g. the clips' motion prompts.</summary>
@@ -190,11 +199,11 @@ internal sealed class ClaudeCliStillPromptAgent(ClaudeCli claude, IOptions<Story
                 if (picture.FromShot is { } earlier)
                 {
                     var from = picture.KeepSurroundings ? $"{picture.Name}, with its surroundings" : $"take {picture.Name} from it, not its surroundings";
-                    prompt.AppendLine(CultureInfo.InvariantCulture, $"Picture {i + 1} is the still of {earlier}: {from}.{(picture.Look.Length > 0 ? $" {picture.Name}: {picture.Look}" : "")}");
+                    prompt.AppendLine(CultureInfo.InvariantCulture, $"<image{i + 1}> is the still of {earlier}: {from}.{(picture.Look.Length > 0 ? $" {picture.Name}: {picture.Look}" : "")}");
                     continue;
                 }
                 var shows = i == 0 && shot.FromShotBefore ? "the still of the shot before (same scene)" : picture.Name;
-                prompt.AppendLine(CultureInfo.InvariantCulture, $"Picture {i + 1} shows {shows}{(picture.Look.Length > 0 ? $": {picture.Look}" : "")}");
+                prompt.AppendLine(CultureInfo.InvariantCulture, $"<image{i + 1}> shows {shows}{(picture.Look.Length > 0 ? $": {picture.Look}" : "")}");
             }
             foreach (var described in shot.Described)
             {
@@ -209,8 +218,8 @@ internal sealed class ClaudeCliStillPromptAgent(ClaudeCli claude, IOptions<Story
         {
             prompt.AppendLine(
                 """
-                2. Only a shot listed above with a picture number comes with pictures, and the image model sees those: name who is in which ("the woman from picture 1") and say what they do in this shot. Do not describe the rest of their looks again in other words, but state their size and the traits their look fixes, because a picture does not carry size and must not undo a trait. The first picture is the one the image model builds on, and the others supply what you take from them. A picture may show a detail this shot changes: say what is different in this shot, and leave it out.
-                3. A shot that lists no picture comes with none: never name a picture there. Describe the subject from its look.
+                2. Only a shot listed above with a tag such as <image1> comes with pictures, and the image model sees those: name who is in which by that tag, written exactly so ("the woman from <image1>"), and say what they do in this shot. Do not describe the rest of their looks again in other words, but state their size and the traits their look fixes, because a picture does not carry size and must not undo a trait. The first picture is the one the image model builds on, and the others supply what you take from them. A picture may show a detail this shot changes: say what is different in this shot, and leave it out.
+                3. A shot that lists no tag comes with no pictures: never write a tag there. Describe the subject from its look.
                 4. A shot that starts from the still of the shot before keeps that scene: say how the camera moves on and what changes.
                 5. Never ask for text, letters, captions or logos in the picture.
                 """);
