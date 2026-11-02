@@ -160,7 +160,7 @@ internal sealed class VoiceStage(
                 // The very last part lets go of the voice models, for the stages after Voice. Not
                 // every part: the next one would only load them again.
                 var last = lastOfRun && i == parts.Count - 1;
-                var unloads = speaker.FreeVram && WorkflowTemplate.SetUnloadAfter(workflow, last);
+                var unloads = speaker.FreeVram && WorkflowTemplate.SetUnloadAfter(workflow, speaker.Profile.Inputs, TextKey, last);
                 var files = await comfy.RunAsync(
                     workflow,
                     $"StoryForge · {speaker.Project} · {name}",

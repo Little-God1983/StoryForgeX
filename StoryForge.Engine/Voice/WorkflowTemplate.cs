@@ -84,20 +84,25 @@ internal static class WorkflowTemplate
     }
 
     /// <summary>
-    /// Sets the workflow's own "unload_after" switches: on, its nodes let go of their models when they
-    /// have run. Models in a node pack's own cache (Breeze TTS, Whisper) go no other way: ComfyUI's
-    /// /free cannot reach them. Only a plain on/off is a switch; a wired input stays as the workflow has it.
+    /// Sets the workflow's own "unload_after" switches: on, a node lets go of its model when it has
+    /// run. Models in a node pack's own cache (Breeze TTS, Whisper) go no other way: ComfyUI's /free
+    /// cannot reach them. The node <paramref name="key"/> goes into works anew each time, so it keeps
+    /// its model until <paramref name="last"/>. Any other (Whisper reading the reference voice) gives
+    /// the same answer each time and ComfyUI remembers it: its switch stays on, because a switch
+    /// turned on later may never be seen, ComfyUI answering from a result it kept for that setting.
+    /// Only a plain on/off is a switch; a wired input stays as the workflow has it.
     /// </summary>
-    /// <returns>Whether the workflow has such a switch.</returns>
-    public static bool SetUnloadAfter(JsonObject workflow, bool unload)
+    /// <returns>Whether the node <paramref name="key"/> goes into has such a switch.</returns>
+    public static bool SetUnloadAfter(JsonObject workflow, IReadOnlyList<WorkflowInput> inputs, string key, bool last)
     {
+        var working = Parse(inputs.First(i => i.Key.Trim() == key)).Node;
         var found = false;
-        foreach (var (_, node) in workflow)
+        foreach (var (id, node) in workflow)
         {
-            if (node?["inputs"] is JsonObject inputs && inputs[UnloadAfter] is JsonValue value && value.GetValueKind() is JsonValueKind.True or JsonValueKind.False)
+            if (node?["inputs"] is JsonObject fields && fields[UnloadAfter] is JsonValue value && value.GetValueKind() is JsonValueKind.True or JsonValueKind.False)
             {
-                inputs[UnloadAfter] = unload;
-                found = true;
+                fields[UnloadAfter] = id != working || last;
+                found |= id == working;
             }
         }
         return found;

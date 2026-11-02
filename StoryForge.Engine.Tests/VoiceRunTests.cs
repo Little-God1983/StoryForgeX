@@ -179,11 +179,32 @@ public sealed class VoiceRunTests : IDisposable
 
         var voice = await VoiceAsync(client, project.Id, StageState.Approved, StageState.Failed);
 
-        // Not on every part: the next one would load them again (about 20 s) only to let go once more.
-        bool[] onlyTheLast = [false, false, false, false, false, false, false, true];
-        Assert.Equal(onlyTheLast, _comfy.Workflows.Select(w => Unloads(w, "11")));
-        Assert.Equal(onlyTheLast, _comfy.Workflows.Select(w => Unloads(w, "19")));
+        // Breeze speaks every part: unloading sooner, the next part would load it again (about 20 s).
+        Assert.Equal([false, false, false, false, false, false, false, true], _comfy.Workflows.Select(w => Unloads(w, "11")));
+        // Whisper's answer never changes, so ComfyUI may not run it again: its switch cannot wait for the last part.
+        Assert.All(_comfy.Workflows, w => Assert.True(Unloads(w, "19")));
         Assert.Contains(voice.Activity, a => a.Text == "voice models unloaded from the GPU");
+    }
+
+    [Fact]
+    public async Task A_workflow_where_only_Whisper_has_the_switch_does_not_claim_the_voice_models_are_gone()
+    {
+        File.WriteAllText(Path.Combine(_templates, "mixed.json"), """
+            {
+              "1": { "class_type": "ITLBreezeTTSLoader", "inputs": { "attention": "sdpa", "fast_path": false } },
+              "2": { "class_type": "LoadAudio", "inputs": { "audio": "Amira.mp3" } },
+              "11": { "class_type": "ITLBreezeTTSVoiceDirection", "inputs": { "model": ["1", 0], "reference_audio": ["2", 0], "reference_text": ["19", 0], "text": "", "instruction": "", "seed": 1, "cfg_scale": 4, "unload_after": ["1", 0] } },
+              "19": { "class_type": "ITLWhisperTranscribe", "inputs": { "language": "auto", "unload_after": false, "model": ["20", 0], "audio": ["2", 0] } },
+              "20": { "class_type": "ITLWhisperLoader", "inputs": { "model": "large-v3-turbo", "device": "auto" } }
+            }
+            """);
+        var client = await StartAsync();
+        var project = await ScriptApprovedAsync(client, workflow: "mixed.json");
+
+        var voice = await VoiceAsync(client, project.Id, StageState.Approved, StageState.Failed);
+
+        Assert.DoesNotContain(voice.Activity, a => a.Text == "voice models unloaded from the GPU");
+        Assert.Contains(voice.Activity, a => a.Text.Contains(ModelsMayStay, StringComparison.Ordinal));
     }
 
     [Fact]
