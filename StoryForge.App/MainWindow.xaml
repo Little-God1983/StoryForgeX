@@ -3,13 +3,14 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:app="clr-namespace:StoryForge.App"
         xmlns:vm="clr-namespace:StoryForge.App.ViewModels"
         xmlns:pages="clr-namespace:StoryForge.App.ViewModels.Pages"
         xmlns:views="clr-namespace:StoryForge.App.Views"
         xmlns:client="clr-namespace:StoryForge.Client;assembly=StoryForge.Client"
         mc:Ignorable="d"
         d:DataContext="{d:DesignInstance Type=vm:MainViewModel}"
-        Title="StoryForge X"
+        Title="{x:Static app:AppVersion.WindowTitle}"
         Icon="/Assets/StoryForge.ico"
         Width="1440" Height="900" MinWidth="1100" MinHeight="700"
         WindowStartupLocation="CenterScreen"
@@ -63,6 +64,8 @@
             </Canvas>
           </Viewbox>
           <TextBlock Text="StoryForge X" Margin="10,0,0,0" FontSize="15" FontWeight="Bold" VerticalAlignment="Center" />
+          <TextBlock Text="{x:Static app:AppVersion.Number}" Margin="8,0,0,0" FontSize="12" Foreground="{StaticResource TextDimBrush}" VerticalAlignment="Center"
+                     AutomationProperties.Name="Version" />
           <TextBlock Text="{Binding Breadcrumb}" Margin="16,0,0,0" FontSize="13" Foreground="{StaticResource TextDimBrush}" VerticalAlignment="Center"
                      AutomationProperties.Name="Breadcrumb" />
         </StackPanel>
