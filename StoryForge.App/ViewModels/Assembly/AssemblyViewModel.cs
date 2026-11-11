@@ -470,7 +470,7 @@ public sealed partial class AssemblyViewModel(IStoryForgeClient client, Guid pro
             return;
         }
         var cuts = _draft.ToList();
-        await ActAsync(() => client.RenderCutListAsync(ProjectId, new CutList(cuts, sound, _view?.Video?.CutList.Music ?? []), _draftFrom));
+        await ActAsync("render the video again", () => client.RenderCutListAsync(ProjectId, new CutList(cuts, sound, _view?.Video?.CutList.Music ?? []), _draftFrom));
     }
 
     private bool CanRenderAgain() => HasEdits && !IsRunning && ClipsApproved && EditBlocked is null;
@@ -486,17 +486,17 @@ public sealed partial class AssemblyViewModel(IStoryForgeClient client, Guid pro
     }
 
     [RelayCommand(CanExecute = nameof(CanApprove))]
-    private Task ApproveAsync() => ActAsync(() => client.ApproveAsync(ProjectId, PipelineStage.Assembly, Version!.Value));
+    private Task ApproveAsync() => ActAsync("approve the video", () => client.ApproveAsync(ProjectId, PipelineStage.Assembly, Version!.Value));
 
     private bool CanApprove() => IsReview && Version is not null && !HasEdits;
 
     [RelayCommand(CanExecute = nameof(CanRegenerate))]
-    private Task RegenerateAsync() => ActAsync(() => client.RegenerateAsync(ProjectId, PipelineStage.Assembly));
+    private Task RegenerateAsync() => ActAsync("cut the video again", () => client.RegenerateAsync(ProjectId, PipelineStage.Assembly));
 
     private bool CanRegenerate() => !IsRunning && !IsNotStarted && ClipsApproved;
 
     [RelayCommand(CanExecute = nameof(CanMakeVideo))]
-    private Task MakeVideoAsync() => ActAsync(() => client.RegenerateAsync(ProjectId, PipelineStage.Assembly));
+    private Task MakeVideoAsync() => ActAsync("cut the video", () => client.RegenerateAsync(ProjectId, PipelineStage.Assembly));
 
     private bool CanMakeVideo() => IsNotStarted && ClipsApproved;
 
@@ -504,7 +504,7 @@ public sealed partial class AssemblyViewModel(IStoryForgeClient client, Guid pro
     private async Task CancelAsync()
     {
         var (draft, sound, version, from) = (_draft, ClipSound, _view?.Version, _draftFrom);
-        await ActAsync(() => client.CancelAsync(ProjectId, PipelineStage.Assembly));
+        await ActAsync("cancel the video", () => client.CancelAsync(ProjectId, PipelineStage.Assembly));
         // Your edits stay on screen to render again, as long as the video they were made on is shown and they fit its shots.
         if (Version == version && _view is { } view && Fits(draft, view.Shots))
         {
@@ -521,10 +521,14 @@ public sealed partial class AssemblyViewModel(IStoryForgeClient client, Guid pro
     /// <summary>Your cut list again when it was yours that failed; else Claude cuts it again.</summary>
     [RelayCommand(CanExecute = nameof(IsFailed))]
     private Task RetryAsync() => _view?.Waiting is { } waiting
-        ? ActAsync(() => client.RenderCutListAsync(ProjectId, waiting, _view.WaitingBasedOn))
-        : ActAsync(() => client.RegenerateAsync(ProjectId, PipelineStage.Assembly));
+        ? ActAsync("render the video again", () => client.RenderCutListAsync(ProjectId, waiting, _view.WaitingBasedOn))
+        : ActAsync("cut the video again", () => client.RegenerateAsync(ProjectId, PipelineStage.Assembly));
 
-    private async Task ActAsync(Func<Task> act)
+    /// <summary>
+    /// Runs one button's call to the engine. Whatever stops it, a refusal or something nobody
+    /// planned for, is said on the screen as "Could not …", the way the Script matrix says it.
+    /// </summary>
+    private async Task ActAsync(string what, Func<Task> act)
     {
         try
         {
@@ -532,9 +536,10 @@ public sealed partial class AssemblyViewModel(IStoryForgeClient client, Guid pro
             _wanted = null;
             await act();
         }
-        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or KeyNotFoundException)
+        catch (Exception ex)
         {
-            Error = ex.Message;
+            Debug.WriteLine($"Could not {what}: {ex}");
+            Error = $"Could not {what}: {ex.Message}";
             return;
         }
         HasEdits = false;

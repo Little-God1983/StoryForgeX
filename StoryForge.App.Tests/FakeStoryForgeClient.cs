@@ -919,12 +919,19 @@ internal sealed class FakeStoryForgeClient : IStoryForgeClient
     /// <summary>While set, Send to Resolve waits for it.</summary>
     public Task? ResolveGate { get; set; }
 
+    /// <summary>While set, Send to Resolve throws it.</summary>
+    public Exception? ResolveFailure { get; set; }
+
     public async Task<SentToResolve> SendToResolveAsync(Guid projectId, int version, string projectName, CancellationToken cancellationToken = default)
     {
         ResolveSends.Add((projectId, version, projectName));
         if (ResolveGate is { } gate)
         {
             await gate;
+        }
+        if (ResolveFailure is { } failure)
+        {
+            throw failure;
         }
         return ResolveAnswer ?? new SentToResolve(true, "done", null, projectName, 3);
     }
