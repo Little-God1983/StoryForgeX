@@ -27,8 +27,8 @@ repo. The build enforces most of the style through `.editorconfig` with `TreatWa
 | Commands | `[RelayCommand]` on a private method; `Task`-returning for async; `CanExecute = nameof(...)` |
 | Async | `Async` suffix, `CancellationToken cancellationToken` last (`= default` on the client interface) |
 | UI thread | `UiThread.Run(...)` for anything raised by the engine |
-| Errors to user | plain-language exception message → `Error` property → red `TextBlock` |
-| Load / background failures | catch all, `Debug.WriteLine` the exception, show "Could not …" or comment why not |
+| A button that fails | catch all, `Debug.WriteLine` the exception, show `Could not <what>: <message>` in the screen's red `TextBlock` |
+| Load / background failures | the same, or a comment saying why the user is not told |
 | Comments | say *why*, in plain words, with the concrete case (`"15:40:02"`, `#78`) |
 | Tests | `public sealed class XTests`; method names are sentences: `Saved_settings_survive_a_restart` |
 
@@ -54,24 +54,33 @@ public sealed partial class ProviderPillViewModel(ProviderId id, string name) : 
     [NotifyPropertyChangedFor(nameof(Text))]
     private ProviderState _state;
 
-    public string Text => $"{Name} · {ProviderStateText.For(State)}";
+    [ObservableProperty]
+    private string? _detail;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(Text))]
+    private bool _checked;
+
+    public string Text => $"{Name} · {(Checked ? ProviderStateText.For(State) : "checking…")}";
+
+    // trimmed: Update(status, checkedYet) sets the four properties
 }
 ```
 
-Commands, from `AssemblyViewModel`:
+Commands, from `AssemblyViewModel` (members picked from across the file):
 
 ```csharp
 [ObservableProperty]
 [NotifyCanExecuteChangedFor(nameof(EarlierCommand), nameof(LaterCommand))]
 private int _selectedCut = -1;
 
-public bool HasSelection => SelectedCut >= 0 && SelectedCut + 1 < Blocks.Count;
+public bool HasSelection => SelectedCut >= 0 && SelectedCut < _draft.Count && SelectedCut + 1 < Blocks.Count;
 
 [RelayCommand(CanExecute = nameof(HasSelection))]
 private void Earlier() => Move(-0.1);
 
 [RelayCommand(CanExecute = nameof(CanApprove))]
-private Task ApproveAsync() => ActAsync(() => client.ApproveAsync(ProjectId, PipelineStage.Assembly, Version!.Value));
+private Task ApproveAsync() => ActAsync("approve the video", () => client.ApproveAsync(ProjectId, PipelineStage.Assembly, Version!.Value));
 ```
 
 A large ViewModel is split into partial files by feature:
@@ -105,13 +114,17 @@ their own `DataContext`; they declare a design-time one.
     <BooleanToVisibilityConverter x:Key="Visible" />
   </UserControl.Resources>
   ...
-  <TextBlock Text="{Binding Error}" Foreground="{StaticResource ErrorTextBrush}"
-             Visibility="{Binding Error, Converter={views:NullToCollapsedConverter}}"
-             AutomationProperties.AutomationId="AssemblyRefused" />
+  <TextBlock Text="{Binding Stale}" ...
+             Visibility="{Binding Stale, Converter={views:NullToCollapsedConverter}}" AutomationProperties.AutomationId="AssemblyStale" />
+  <TextBlock Text="{Binding Error}" FontSize="13" Foreground="{StaticResource ErrorTextBrush}" TextWrapping="Wrap" Margin="0,0,0,10"
+             AutomationProperties.AutomationId="AssemblyRefused">
+    ...
 ```
 
 - Colours and styles come from `Themes/Theme.xaml` (`TextBrush`, `AccentBrush`, `PrimaryButtonStyle`,
-  `FieldStyle`, …). No hard-coded colours in views.
+  `FieldStyle`, …). New XAML takes its colours from there; add a brush to the theme when one is missing.
+  Six views still carry literal hex values for single bars and pills (about 125, most of them in
+  `ScriptMatrixView.xaml`). They are older code: don't copy them, and don't convert them in passing.
 - New converters go in `Views/Converters.cs` as `sealed class XConverter : MarkupExtension, IValueConverter`
   with `ProvideValue => this`, used inline as `{views:XConverter}`. `ConvertBack` throws `NotSupportedException`.
 - Every input and button gets `AutomationProperties.Name` (or `AutomationId` for text that tests find).
@@ -175,27 +188,47 @@ There is no `ILogger`. Do not add one without asking. Errors flow like this:
    (`"ComfyUI port must be between 1 and 65535."`).
 2. **A stage that cannot produce a result** throws `StageFailedException(reason)`; the runner stores
    the reason and the cell shows it.
-3. **ViewModels** catch exactly those types and show the message:
+3. **A button** (Approve, Save, Render again, …) catches everything, so no click fails silently and
+   nothing is left for the last-resort message box. The full exception goes to `Debug.WriteLine`,
+   and the screen's red text says `Could not <what>: <message>`. A refusal and a surprise look the
+   same on screen; the engine's message after the colon tells them apart. Each ViewModel with
+   several buttons has one helper for this, from `AssemblyViewModel`
+   (`ScriptMatrixViewModel.ActAsync` has the same shape):
 
 ```csharp
-private async Task ActAsync(Func<Task> act)
+private async Task ActAsync(string what, Func<Task> act)
 {
     try
     {
         Error = null;
+        _wanted = null;
         await act();
     }
-    catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or KeyNotFoundException)
+    catch (Exception ex)
     {
-        Error = ex.Message;
+        Debug.WriteLine($"Could not {what}: {ex}");
+        Error = $"Could not {what}: {ex.Message}";
         return;
     }
+    HasEdits = false;
     await LoadAsync();
 }
 ```
 
+   `what` finishes the sentence "Could not …": lower case, the verb and its object
+   (`"approve the video"`, `"save the shot"`, `"cut the video again"`). A command with a single call
+   carries the same try/catch in its own body.
+
+   Forms word one case differently, and still catch everything. When the engine answers a filled-in
+   form with an `ArgumentException` (a name that is taken, a port out of range), the message is
+   shown as it is, next to the form; anything else gets the lead-in:
+   `CreateError = ex is ArgumentException ? ex.Message : $"Could not create the profile: {ex.Message}";`
+   That is how `ProfilesPageViewModel.CreateAsync`, `NewProjectPageViewModel.StartAsync` and the
+   save in `SettingsPageViewModel` read. `ProfileEditorViewModel.TestRenderAsync` shows the bare
+   message for every failure. Match the screen you are in; don't unify these in passing.
+
 4. **Loads and background work** (a screen loading, timers, event listeners, fire-and-forget) catch
-   everything, write the full exception with `Debug.WriteLine`, and either say so on screen or
+   everything too, write the full exception with `Debug.WriteLine`, and either say so on screen or
    comment why the user is not told:
 
 ```csharp
@@ -279,10 +312,9 @@ Large test classes are split into partial files the same way as ViewModels (`Sti
 | Setting a ViewModel property from an engine event handler directly | `UiThread.Run(() => ...)` at the subscription |
 | `OnPropertyChanged("Text")`, `CanExecute = "HasSelection"` | `nameof(Text)`, `nameof(HasSelection)` |
 | App code naming an engine type (`SettingsStore`, `PipelineRunner`) | Go through `IStoryForgeClient`; extend it if needed |
-| A user action (Approve, Save) catching `Exception` | Catch the refusal types only, so a bug is not shown as a refusal; catch-all is for loads and background work |
-| An empty `catch` | `Debug.WriteLine($"... failed: {ex}")` plus an on-screen message or a comment saying why there is none |
+| A button whose failure can escape (no catch, or a catch for some exception types only) | Catch everything: `Debug.WriteLine` the exception and show `Could not <what>: <message>`, through the ViewModel's `ActAsync` || An empty `catch` | `Debug.WriteLine($"... failed: {ex}")` plus an on-screen message or a comment saying why there is none |
 | Calling real Claude CLI / ComfyUI / ffmpeg / the web in a test | A fake behind the interface, via `EngineTestHost` |
-| Hard-coded colours or font sizes for shared styles | `Theme.xaml` resources |
+| A new hard-coded colour in a view | A brush from `Theme.xaml`; add one if it is missing |
 | A new library, MVVM pattern or logging framework | Ask first |
 | Editing `<Version>` in `Directory.Build.props` | Left to `scripts/build.ps1` |
 

@@ -9,6 +9,8 @@ skill (`.claude/skills/csharp-conventions/SKILL.md`).
 https://claude.ai/artifact/PjhEHQtoisZtPRSuQKLsFV (screen mockups plus the decision log; build
 against its Settled column; it opens only from the owner's own account), and `.superpowers/` (specs
 and plans per issue; `pending-canvas-decisions.md` holds decisions not yet written onto the canvas).
+`.superpowers/` is not in git: it exists only in the main checkout at `E:\Repos\StoryForgeX`, so
+read it there when working in a worktree or a fresh clone.
 
 ## Solution layout (`StoryForgeX.slnx`, projects next to it, no `src/`)
 
@@ -35,8 +37,9 @@ dotnet test StoryForgeX.slnx --no-build          # full suite: ~1,400 tests, ~2.
 ```
 
 After every change: build, then run the tests of the area you touched, before reporting back.
-Run the full suite before a commit that ends a task. CI (`.github/workflows/ci.yml`) builds and
-tests in Release on `windows-latest`.
+Run the full suite before a commit that ends a task. CI (`.github/workflows/ci.yml`, Release build
+and test on `windows-latest`) is **switched off** on GitHub at the moment (seen 2026-11-11), so a
+PR shows no checks and the local full suite is the only gate.
 
 `TreatWarningsAsErrors` and `EnforceCodeStyleInBuild` are on (`Directory.Build.props`), so any
 `.editorconfig` rule at `warning` breaks the build: unused usings (IDE0005), block namespaces,
@@ -49,7 +52,9 @@ tests in Release on `windows-latest`.
   records for data, `required`/`init` where they fit.
 - Fields `_camelCase`, private constants and `static readonly` fields `PascalCase`.
 - Engine types are `internal sealed` by default (`InternalsVisibleTo` the test project).
-- No `ILogger` in the codebase. Errors reach the user as plain-language messages; see the skill.
+- No `ILogger` in the codebase. Errors reach the user as plain-language messages: a button that
+  fails catches everything, writes the exception with `Debug.WriteLine` and shows
+  `Could not <what>: <message>` on its screen. See the skill.
 
 ## WPF / MVVM
 
@@ -74,7 +79,8 @@ tests in Release on `windows-latest`.
   `Views/XView.xaml(.cs)`, a `DataTemplate` in `MainWindow.xaml`.
 - New engine feature: a folder per stage under `StoryForge.Engine/` (`Voice/`, `Stills/`, …),
   registered in `AddStoryForgeEngine`, exposed through `IStoryForgeClient` plus records in `StoryForge.Client`.
-- Tests: `StoryForge.<Project>.Tests/<Thing>Tests.cs`, flat, test names as sentences with underscores.
+- Tests: `StoryForge.<Project>.Tests/<Thing>Tests.cs`, flat (the one folder is
+  `StoryForge.Engine.Tests/Resolve/`), test names as sentences with underscores.
 
 ## Gotchas
 
