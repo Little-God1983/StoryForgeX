@@ -78,6 +78,17 @@ public sealed class AssemblyResolveTests
             (screen.ResolveText, screen.ResolveFailed));
     }
 
+    [Fact]
+    public async Task A_send_the_engine_refuses_says_so_like_every_other_button_that_fails()
+    {
+        var screen = await OpenAsync(Review());
+        _client.ResolveFailure = new InvalidOperationException("DaVinci Resolve is not installed.");
+
+        await screen.SendToResolveCommand.ExecuteAsync(null);
+
+        Assert.Equal(("Could not send to Resolve: DaVinci Resolve is not installed.", true), (screen.ResolveText, screen.ResolveFailed));
+    }
+
     /// <summary>Review of #71: the last send's answer stayed on screen under another version.</summary>
     [Fact]
     public async Task The_answer_of_a_send_belongs_to_its_version_and_goes_when_another_is_shown()

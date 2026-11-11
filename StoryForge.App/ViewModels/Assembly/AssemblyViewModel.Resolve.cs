@@ -63,11 +63,6 @@ public sealed partial class AssemblyViewModel
             // Another version was picked while it sent: say which one went.
             ResolveText = Version == version ? answer : $"Version {version}: {answer}";
         }
-        catch (Exception ex) when (ex is ArgumentException or KeyNotFoundException or InvalidOperationException)
-        {
-            ResolveFailed = true;
-            ResolveText = ex.Message;
-        }
         catch (Exception ex)
         {
             Debug.WriteLine($"Send to Resolve failed: {ex}");

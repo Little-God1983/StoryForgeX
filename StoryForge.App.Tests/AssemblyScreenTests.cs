@@ -173,8 +173,23 @@ public sealed class AssemblyScreenTests
         await screen.RenderAgainCommand.ExecuteAsync(null);
 
         Assert.Null(screen.EditProblem);
-        Assert.Equal(_client.CutListRefusal, screen.Error);
+        Assert.Equal($"Could not render the video again: {_client.CutListRefusal}", screen.Error);
         Assert.True(screen.HasEdits);   // still yours, to fix
+    }
+
+    /// <summary>
+    /// Whatever stops a button, a refusal or something nobody planned for, shows on the screen as
+    /// "Could not …", the way the Script matrix says it; nothing is left for the last-resort box.
+    /// </summary>
+    [Fact]
+    public async Task An_approve_that_fails_for_any_reason_says_so_on_the_screen()
+    {
+        var screen = await OpenAsync(Review());
+        _client.StageFailure = new System.IO.IOException("The disk is full.");
+
+        await screen.ApproveCommand.ExecuteAsync(null);
+
+        Assert.Equal("Could not approve the video: The disk is full.", screen.Error);
     }
 
     [Fact]
