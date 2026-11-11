@@ -5,6 +5,11 @@ Script → Voice → Storyboard → References → Stills → Clips → Assembly
 ffmpeg and DaVinci Resolve. Long-form conventions with code examples: the `csharp-conventions`
 skill (`.claude/skills/csharp-conventions/SKILL.md`).
 
+**Spec and decisions** live outside the code: the claude.ai Design canvas
+https://claude.ai/artifact/PjhEHQtoisZtPRSuQKLsFV (screen mockups plus the decision log; build
+against its Settled column; it opens only from the owner's own account), and `.superpowers/` (specs
+and plans per issue; `pending-canvas-decisions.md` holds decisions not yet written onto the canvas).
+
 ## Solution layout (`StoryForgeX.slnx`, projects next to it, no `src/`)
 
 | Project | TFM / output | Role |
