@@ -735,6 +735,125 @@ public sealed class BuildScriptTests
         Assert.Contains($"result={expected}", result.Output);
     }
 
+    [Fact]
+    public void AFolderId_CarriesTheRealVolumeSerial()
+    {
+        // BY_HANDLE_FILE_INFORMATION packs its FILETIMEs on 4 bytes. Declared as 8-aligned longs,
+        // every field after them moved, the serial read as 0 and C:\ and E:\ got the same ID - so
+        // folders on two drives could pass for one.
+        using var temp = new TempFolder();
+        var drive = temp.Path[..2];
+
+        var result = Pwsh.RunCommon(
+            $"(Get-FolderId '{temp.Path}').Split(':')[0]; " +
+            $"(Get-CimInstance Win32_LogicalDisk -Filter \"DeviceID='{drive}'\").VolumeSerialNumber");
+
+        var lines = Lines(result.Output);
+        Assert.Equal(2, lines.Length);
+        Assert.Equal(lines[1], lines[0], ignoreCase: true);
+    }
+
+    [Fact]
+    public void ACurrentLinkThatCannotBeRemade_KeepsPointingAtTheOldVersion()
+    {
+        // The old link is deleted before the new one is made. When the new one fails - a virus
+        // scanner, access denied - the Start Menu entry and every taskbar pin would lead nowhere.
+        using var temp = new TempFolder();
+        var root = Directory.CreateDirectory(Path.Combine(temp.Path, "root")).FullName;
+        var old = Directory.CreateDirectory(Path.Combine(root, "StoryForgeX-1.2.2.8")).FullName;
+        var link = Path.Combine(root, "StoryForgeX");
+
+        var result = Pwsh.RunCommon(
+            $"New-Item -ItemType Junction -Path '{link}' -Target '{old}' | Out-Null; " +
+            $"Set-CurrentLink '{root}' '{Path.Combine(root, "no|such|folder")}'");
+
+        Assert.Equal(1, result.ExitCode);
+        Assert.Contains("still opens the previous version", result.Output);
+        Assert.Equal(old, new DirectoryInfo(link).LinkTarget);
+    }
+
+    [Fact]
+    public void AFirstCurrentLinkThatCannotBeMade_DoesNotClaimOneWasLost()
+    {
+        // On a first build there was no link before and no Start Menu entry yet: nothing is "gone",
+        // and pointing at the Start Menu sends the user looking for the wrong fix.
+        using var temp = new TempFolder();
+        var root = Directory.CreateDirectory(Path.Combine(temp.Path, "root")).FullName;
+
+        var result = Pwsh.RunCommon($"Set-CurrentLink '{root}' '{Path.Combine(root, "no|such|folder")}'");
+
+        Assert.Equal(1, result.ExitCode);
+        Assert.Contains("There was no current link before", result.Output);
+        Assert.DoesNotContain("is gone", result.Output);
+        Assert.DoesNotContain("Start Menu", result.Output);
+    }
+
+    [Fact]
+    public void ACurrentLinkThatCannotBePutBack_SaysWhy()
+    {
+        // When the old link cannot be made again either, the second reason was swallowed, and the
+        // message never said why the link is gone. A function wins over the cmdlet New-Item.
+        using var temp = new TempFolder();
+        var root = Directory.CreateDirectory(Path.Combine(temp.Path, "root")).FullName;
+        var old = Directory.CreateDirectory(Path.Combine(root, "StoryForgeX-1.2.2.8")).FullName;
+        var target = Directory.CreateDirectory(Path.Combine(root, "StoryForgeX-1.2.2.9")).FullName;
+        var link = Path.Combine(root, "StoryForgeX");
+
+        var result = Pwsh.RunCommon(
+            $"New-Item -ItemType Junction -Path '{link}' -Target '{old}' | Out-Null; " +
+            "function New-Item { throw 'every junction is refused' }; " +
+            $"Set-CurrentLink '{root}' '{target}'");
+
+        Assert.Equal(1, result.ExitCode);
+        Assert.Contains("could not be put back (every junction is refused)", result.Output);
+        Assert.False(Directory.Exists(link));
+    }
+
+    [Fact]
+    public void ADriveRootAsTheParent_IsTheRoot_NotTheFolderTheScriptRunsIn()
+    {
+        // A local $parent was the parameter $Parent (names ignore case), so the ID was asked of "E:",
+        // which Windows reads as the current folder on E:. Only a share path gets as far as the ID,
+        // and only a run from another folder shows it.
+        using var temp = new TempFolder();
+        var drive = temp.Path[..2];
+        var runFrom = Directory.CreateDirectory(Path.Combine(temp.Path, "runFrom")).FullName;
+        var share = @"\\localhost\" + temp.Path[0] + "$" + temp.Path[2..];
+        if (!Directory.Exists(share))
+        {
+            return; // No admin share to this drive for this user: nothing to ask.
+        }
+
+        var result = Pwsh.RunCommon(
+            $"[Environment]::CurrentDirectory = '{runFrom}'; " +
+            $"Test-PathUnder '{share}\\root\\StoryForgeX-1.2.2.9' '{drive}\\'; " +
+            $"Test-PathUnder '{share}\\root\\StoryForgeX-1.2.2.9' '{runFrom}'");
+
+        Assert.Equal(["True", "False"], Lines(result.Output));
+    }
+
+    [Fact]
+    public void ADriveRootAsThePath_IsTheRoot_NotTheFolderTheScriptRunsIn()
+    {
+        // The same trap on the path side: with -OrEqual the ID loop started at "E:". Run from inside the
+        // stable root, -InstallDir E:\ was the stable root itself. The share spelling of the root as the
+        // parent passes the text check by, so the ID answers the second line.
+        using var temp = new TempFolder();
+        var drive = temp.Path[..3];
+        var shareRoot = @"\\localhost\" + temp.Path[0] + "$";
+        if (!Directory.Exists(shareRoot))
+        {
+            return; // No admin share to this drive for this user: nothing to ask.
+        }
+
+        var result = Pwsh.RunCommon(
+            $"[Environment]::CurrentDirectory = '{temp.Path}'; " +
+            $"Test-PathUnder '{drive}' '{temp.Path}' -OrEqual; " +
+            $"Test-PathUnder '{drive}' '{shareRoot}' -OrEqual");
+
+        Assert.Equal(["False", "True"], Lines(result.Output));
+    }
+
     private static string[] Lines(string output) =>
         output.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 

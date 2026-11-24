@@ -59,7 +59,7 @@ function Resolve-FullPath {
 # the number whenever the C# changes, or a window that ran an older copy keeps using that one. The
 # C# is kept to what Windows PowerShell 5.1 compiles.
 function Get-PathInfoType {
-    $name = 'StoryForgeX.BuildScripts.PathInfoV2'
+    $name = 'StoryForgeX.BuildScripts.PathInfoV3'
     if (-not ($name -as [type])) {
         Add-Type -TypeDefinition @'
 using System;
@@ -69,9 +69,12 @@ using Microsoft.Win32.SafeHandles;
 
 namespace StoryForgeX.BuildScripts
 {
-    public static class PathInfoV2
+    public static class PathInfoV3
     {
-        [StructLayout(LayoutKind.Sequential)]
+        // Pack = 4: the FILETIMEs in BY_HANDLE_FILE_INFORMATION are two DWORDs, aligned on 4 bytes.
+        // As 8-aligned longs every later field moved, the volume serial read as 0, and C:\ and E:\
+        // got the same ID.
+        [StructLayout(LayoutKind.Sequential, Pack = 4)]
         private struct FileInformation
         {
             public uint Attributes;
@@ -178,15 +181,19 @@ function Test-SamePath {
 # of each folder above the path catches a share or a mapped drive that leads back to this PC.
 function Test-PathUnder {
     param([string]$Path, [string]$Parent, [switch]$OrEqual)
-    $full   = (Resolve-RealPath $Path).TrimEnd('\')
-    $parent = (Resolve-RealPath $Parent).TrimEnd('\')
-    if ($OrEqual -and $full.Equals($parent, [StringComparison]::OrdinalIgnoreCase)) { return $true }
-    if ($full.StartsWith($parent + '\', [StringComparison]::OrdinalIgnoreCase)) { return $true }
+    # Names of their own: PowerShell ignores case, so a local $parent would be the parameter $Parent,
+    # and the ID below would be asked of the trimmed path. For a drive root that is "E:", which
+    # Windows reads as the current folder on E:, not as E:\.
+    $realPath   = (Resolve-RealPath $Path).TrimEnd('\')
+    $realParent = (Resolve-RealPath $Parent).TrimEnd('\')
+    if ($OrEqual -and $realPath.Equals($realParent, [StringComparison]::OrdinalIgnoreCase)) { return $true }
+    if ($realPath.StartsWith($realParent + '\', [StringComparison]::OrdinalIgnoreCase)) { return $true }
 
     $parentId = Get-FolderId $Parent
     if (-not $parentId) { return $false }
-    $folder = (Resolve-FullPath $Path).TrimEnd('\')
-    if (-not $OrEqual) { $folder = [System.IO.Path]::GetDirectoryName($folder) }
+    # Untrimmed for the same reason: a drive root stays E:\, never E:.
+    $folder = Resolve-FullPath $Path
+    if (-not $OrEqual) { $folder = [System.IO.Path]::GetDirectoryName($folder.TrimEnd('\')) }
     while ($folder) {
         if ((Get-FolderId $folder) -eq $parentId) { return $true }
         $folder = [System.IO.Path]::GetDirectoryName($folder.TrimEnd('\'))
@@ -388,23 +395,49 @@ function Get-CurrentLinkPath {
 
 # Points the fixed path at the folder just published: creates the junction, or retargets the one an
 # earlier build made. A real folder of that name is left alone and reported - the shortcut then has to
-# point at the versioned folder directly. Returns $true when the link now points at the target.
+# point at the versioned folder directly. Returns $true when the link now points at the target. When
+# the new link cannot be made, it does not return: it puts the old link back when there was one, and
+# ends the build with Fail (exit 1), saying which state it left.
 function Set-CurrentLink {
     param([string]$InstallRoot, [string]$Target)
-    $linkPath = Get-CurrentLinkPath $InstallRoot
-    $target   = (Resolve-FullPath $Target).TrimEnd('\')
+    $linkPath   = Get-CurrentLinkPath $InstallRoot
+    $targetPath = (Resolve-FullPath $Target).TrimEnd('\')
 
+    $existingTarget = $null
     if (Test-Path -LiteralPath $linkPath) {
         $existingTarget = Get-DirectoryLinkTarget $linkPath
         if (-not $existingTarget) {
             Write-Warn "$linkPath is a real folder, not a link to a version - left alone"
             return $false
         }
-        if ((Resolve-FullPath $existingTarget).TrimEnd('\') -ieq $target) { return $true }
+        if ((Resolve-FullPath $existingTarget).TrimEnd('\') -ieq $targetPath) { return $true }
         Remove-DirectoryLink $linkPath
     }
 
-    New-Item -ItemType Junction -Path $linkPath -Target $target | Out-Null
+    # The old link is gone by now. When the new one cannot be made - a virus scanner, access denied -
+    # the old one is put back, so the Start Menu entry and every taskbar pin still open the previous
+    # version instead of nothing. The message says which of the cases it is.
+    try { New-Item -ItemType Junction -Path $linkPath -Target $targetPath | Out-Null }
+    catch {
+        $reason = $_.Exception.Message
+        if (-not $existingTarget) {
+            $state = "There was no current link before, and there is none now."
+        }
+        else {
+            try {
+                New-Item -ItemType Junction -Path $linkPath -Target $existingTarget | Out-Null
+                $state = "$linkPath still opens the previous version."
+            }
+            catch {
+                $state = "$linkPath is gone and could not be put back ($($_.Exception.Message)), so the Start Menu entry cannot start StoryForgeX until a build succeeds."
+            }
+        }
+        Fail "Could not point $linkPath at $targetPath - $reason" @(
+            $state,
+            "$targetPath is published but not current, and the version is not bumped; the next run rebuilds it.",
+            "If something holds $linkPath or $targetPath (a virus scanner, an Explorer window inside one), close it, then run the build again."
+        )
+    }
     return $true
 }
 
